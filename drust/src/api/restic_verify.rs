@@ -23,7 +23,7 @@ use serde::Deserialize;
 use serde_json::{Value, json};
 
 use super::{
-    restic::{Repo, Restic, SystemRestic, answer, args, staging_dir},
+    restic::{Repo, Restic, SystemRestic, answer, args, snapshot_path, staging_dir},
     restic_restore::{Target, nodes, owned},
 };
 use crate::{api::ApiState, platform};
@@ -114,10 +114,11 @@ pub(crate) fn verify(restic: &dyn Restic, repo: &Repo, snapshot: &str, website: 
     owned(restic, repo, snapshot, website)?;
 
     let listed = nodes(restic, repo, snapshot, home)?;
+    let home_named = snapshot_path(home);
     let mut files: Vec<&Value> = listed
         .iter()
         .filter(|node| node["type"] == "file")
-        .filter(|node| node["path"].as_str().is_some_and(|path| Path::new(path).starts_with(home)))
+        .filter(|node| node["path"].as_str().is_some_and(|path| Path::new(path).starts_with(&home_named)))
         .collect();
     files.sort_by(|a, b| a["path"].as_str().cmp(&b["path"].as_str()));
     let total_bytes: u64 = files.iter().map(|node| size_of(node)).sum();
@@ -139,11 +140,12 @@ pub(crate) fn verify(restic: &dyn Restic, repo: &Repo, snapshot: &str, website: 
     }
 
     let dump_dir = staging_dir(state_dir, &website.id).join("databases");
+    let dump_dir_named = snapshot_path(&dump_dir);
     // A website without databases has no dumps in its restore point.
     let dumps: Vec<Value> = match nodes(restic, repo, snapshot, &dump_dir) {
         Ok(listed) => listed
             .into_iter()
-            .filter(|node| node["type"] == "file" && node["path"].as_str().is_some_and(|path| Path::new(path).parent() == Some(dump_dir.as_path())))
+            .filter(|node| node["type"] == "file" && node["path"].as_str().is_some_and(|path| Path::new(path).parent() == Some(Path::new(&dump_dir_named))))
             .collect(),
         Err(error) if error.contains("not found") || error.contains("no such file") => Vec::new(),
         Err(error) => return Err(error),
@@ -300,13 +302,13 @@ mod tests {
         ls.insert("/home/shop".to_string(), listing(&home));
         if !dumps.is_empty() {
             let dir = dumps_path(state);
-            let mut listed = vec![node(&dir.display().to_string(), "dir", 0)];
+            let mut listed = vec![node(&snapshot_path(&dir), "dir", 0)];
             for (name, body) in dumps {
-                let path = dir.join(name).display().to_string();
+                let path = snapshot_path(&dir.join(name));
                 listed.push(node(&path, "file", body.len() as u64));
                 contents.insert(path, Ok(body.to_vec()));
             }
-            ls.insert(dir.display().to_string(), listing(&listed));
+            ls.insert(snapshot_path(&dir), listing(&listed));
         }
         FakeRestic { ls, dumps: contents, check: None, asked: Mutex::default() }
     }
@@ -331,7 +333,7 @@ mod tests {
         assert_eq!(report["databases"][0]["name"], "shop_wp");
         assert_eq!(report["databases"][0]["ok"], true);
         let dumped: Vec<String> = fake.asked().iter().filter(|call| call[0] == "dump").map(|call| call[2].clone()).collect();
-        assert!(dumped.contains(&dumps_path(state.path()).join("shop_wp").display().to_string()));
+        assert!(dumped.contains(&snapshot_path(&dumps_path(state.path()).join("shop_wp"))));
         // Only reads: no restore, backup or forget.
         assert!(fake.asked().iter().all(|call| ["snapshots", "ls", "dump"].contains(&call[0].as_str())));
     }

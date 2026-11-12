@@ -187,6 +187,40 @@ pub fn plain_path(path: &Path) -> PathBuf {
     }
 }
 
+/// How restic names a local path inside a snapshot. On Unix that is the path
+/// itself. On Windows restic writes `C:\Users\a` as `/C/Users/a`.
+pub fn restic_snapshot_path(path: &Path) -> String {
+    #[cfg(unix)]
+    {
+        path.display().to_string()
+    }
+    #[cfg(windows)]
+    {
+        use std::path::{Component, Prefix};
+        let mut out = String::new();
+        for part in path.components() {
+            match part {
+                Component::Prefix(prefix) => match prefix.kind() {
+                    Prefix::Disk(letter) | Prefix::VerbatimDisk(letter) => {
+                        out.push('/');
+                        out.push(char::from(letter));
+                    }
+                    // UNC shares: kept with forward slashes; dPanel keeps its
+                    // sites and state on a local disk.
+                    _ => out.push_str(&prefix.as_os_str().to_string_lossy().replace('\\', "/")),
+                },
+                Component::RootDir | Component::CurDir => {}
+                Component::ParentDir => out.push_str("/.."),
+                Component::Normal(name) => {
+                    out.push('/');
+                    out.push_str(&name.to_string_lossy());
+                }
+            }
+        }
+        if out.is_empty() { "/".into() } else { out }
+    }
+}
+
 /// The one CLI to run. Linux always means its first place, so a copy elsewhere
 /// is never picked up by accident; the others take the first that is there.
 fn chosen_php(os: Os, mut places: Vec<PathBuf>, is_file: impl Fn(&Path) -> bool) -> PathBuf {
@@ -472,6 +506,17 @@ impl Paths {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_path_is_named_as_restic_names_it_in_a_snapshot() {
+        #[cfg(windows)]
+        {
+            assert_eq!(restic_snapshot_path(Path::new(r"C:\Users\shop\site")), "/C/Users/shop/site");
+            assert_eq!(restic_snapshot_path(Path::new(r"\\?\D:\state\x")), "/D/state/x");
+            assert_eq!(restic_snapshot_path(Path::new("C:/a/b")), "/C/a/b");
+        }
+        assert_eq!(restic_snapshot_path(Path::new("/home/shop/site")), "/home/shop/site");
+    }
 
     fn paths(os: Os, profile: Profile) -> Paths {
         Paths::for_system(os, profile, |name| {

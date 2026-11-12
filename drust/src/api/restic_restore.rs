@@ -28,7 +28,7 @@ use axum::{
 use serde::Deserialize;
 use serde_json::{Value, json};
 
-use super::restic::{Database, Repo, Restic, SystemRestic, answer, args, safe_word, staging_dir};
+use super::restic::{Database, Repo, Restic, SystemRestic, answer, args, safe_word, snapshot_path, staging_dir};
 use crate::{
     api::ApiState,
     database::cli,
@@ -152,11 +152,11 @@ fn safe_snapshot(id: &str) -> bool {
 
 /// An absolute path at or below `home`, without `.` or `..`.
 fn within(home: &Path, path: &str) -> Result<PathBuf, String> {
-    let candidate = PathBuf::from(path.trim_end_matches('/'));
+    let candidate = PathBuf::from(path.trim_end_matches(['/', std::path::MAIN_SEPARATOR]));
     let plain = candidate.is_absolute()
         && path.len() <= 4096
         && !path.chars().any(char::is_control)
-        && candidate.components().all(|part| matches!(part, Component::RootDir | Component::Normal(_)));
+        && candidate.components().all(|part| matches!(part, Component::Prefix(_) | Component::RootDir | Component::Normal(_)));
     if !plain || !candidate.starts_with(home) {
         return Err(format!("Only paths in {} can be restored.", home.display()));
     }
@@ -182,7 +182,7 @@ pub(crate) fn owned(restic: &dyn Restic, repo: &Repo, snapshot: &str, website: &
 
 /// `restic ls` of `path`: its own node and, for a folder, what is directly in it.
 pub(crate) fn nodes(restic: &dyn Restic, repo: &Repo, snapshot: &str, path: &Path) -> Result<Vec<Value>, String> {
-    let run = restic.run(repo, &args(&["ls", "--json", snapshot, &path.display().to_string()]))?;
+    let run = restic.run(repo, &args(&["ls", "--json", snapshot, &snapshot_path(path)]))?;
     if !run.ok() {
         return Err(format!("restic could not list the restore point: {}", run.reason()));
     }
@@ -195,28 +195,31 @@ pub(crate) fn nodes(restic: &dyn Restic, repo: &Repo, snapshot: &str, path: &Pat
 }
 
 fn node_at<'a>(nodes: &'a [Value], path: &Path) -> Option<&'a Value> {
-    nodes.iter().find(|node| node["path"].as_str().is_some_and(|value| Path::new(value) == path))
+    let path = snapshot_path(path);
+    nodes.iter().find(|node| node["path"].as_str().is_some_and(|value| Path::new(value) == Path::new(&path)))
 }
 
 pub(crate) fn list(restic: &dyn Restic, repo: &Repo, snapshot: &str, website: &Target, home: &Path, path: &str) -> Result<Value, String> {
     website.checked()?;
     let path = within(home, path)?;
     owned(restic, repo, snapshot, website)?;
+    let named = snapshot_path(&path);
     let entries: Vec<Value> = nodes(restic, repo, snapshot, &path)?
         .iter()
-        .filter(|node| node["path"].as_str().is_some_and(|value| Path::new(value).parent() == Some(path.as_path())))
+        .filter(|node| node["path"].as_str().is_some_and(|value| Path::new(value).parent() == Some(Path::new(&named))))
         .map(|node| json!({ "name": node["name"], "path": node["path"], "type": node["type"], "size": node["size"], "mtime": node["mtime"] }))
         .collect();
     Ok(json!({ "path": path.display().to_string(), "entries": entries }))
 }
 
 /// A restic tar entry's path relative to the folder that was dumped, however
-/// restic names it (`/home/a/x/f`, `home/a/x/f` or `x/f`). `None` for the
-/// folder itself, and for anything that climbs out.
-fn relative(entry: &str, dumped: &Path) -> Option<PathBuf> {
+/// restic names it (`/home/a/x/f`, `home/a/x/f` or `x/f`). `dumped` is the
+/// folder as restic names it (`snapshot_path`). `None` for the folder
+/// itself, and for anything that climbs out.
+fn relative(entry: &str, dumped: &str) -> Option<PathBuf> {
     let entry = Path::new(entry.trim_start_matches("./").trim_start_matches('/'));
-    let full = dumped.strip_prefix("/").unwrap_or(dumped);
-    let name = dumped.file_name().map(Path::new);
+    let full = Path::new(dumped.trim_start_matches('/'));
+    let name = full.file_name().map(Path::new);
     let rest = entry
         .strip_prefix(full)
         .ok()
@@ -302,7 +305,7 @@ pub(crate) fn restore_files(tools: &Tools, repo: &Repo, snapshot: &str, website:
     let name = path.file_name().map(PathBuf::from).unwrap_or_else(|| PathBuf::from(&website.site_owner));
     let folder = PathBuf::from(format!("restored-{stamp}"));
     let target = folder.join(&name);
-    let path_text = path.display().to_string();
+    let path_text = snapshot_path(&path);
 
     match node["type"].as_str() {
         Some("file") => {
@@ -314,7 +317,7 @@ pub(crate) fn restore_files(tools: &Tools, repo: &Repo, snapshot: &str, website:
         }
         Some("dir") => {
             tools.extract.extract(&website.site_owner, home, &mut |out| {
-                let mut place = |entry: &Path, kind| match relative(&entry.display().to_string(), &path) {
+                let mut place = |entry: &Path, kind| match relative(&entry.display().to_string(), &path_text) {
                     Some(rest) => vec![(target.join(rest), kind)],
                     None => vec![],
                 };
@@ -369,9 +372,9 @@ pub(crate) fn restore_mailbox(tools: &Tools, repo: &Repo, snapshot: &str, websit
     }
     let folder = format!("Restored-{stamp}");
     let mut created = BTreeSet::new();
-    let path_text = maildir.display().to_string();
+    let path_text = snapshot_path(&maildir);
     tools.extract.extract(&website.site_owner, &maildir, &mut |out| {
-        let mut place = |entry: &Path, kind| match relative(&entry.display().to_string(), &maildir) {
+        let mut place = |entry: &Path, kind| match relative(&entry.display().to_string(), &path_text) {
             Some(rest) => mail_place(&folder, &mut created, &rest, kind),
             None => vec![],
         };
@@ -420,7 +423,7 @@ pub(crate) fn restore_database(
             let mut file = fs::File::open(&saved).map_err(|error| error.to_string())?;
             single(&mut file, out, &before, size, 0o600)
         })?;
-        let dump_text = dump.display().to_string();
+        let dump_text = snapshot_path(&dump);
         tools.restic.stream(repo, &args(&["dump", snapshot, &dump_text]), &mut |input| tools.databases.import(database, input))?;
         Ok(json!({ "kind": "database", "database": name, "before_restore": home.join(before).display().to_string() }))
     })();
@@ -609,9 +612,10 @@ mod tests {
         fs::create_dir_all(home.join("site")).unwrap();
         fs::write(home.join("site/index.php"), "today").unwrap();
         let site = home.join("site").display().to_string();
-        let base = site.trim_start_matches('/').to_string();
-        let restic = fake(&home, vec![node(&site, "dir", 0)], vec![(
-            site.clone(),
+        let named = snapshot_path(Path::new(&site));
+        let base = named.trim_start_matches('/').to_string();
+        let restic = fake(&home, vec![node(&named, "dir", 0)], vec![(
+            named.clone(),
             dumped(&[(&base, None), (&format!("{base}/index.php"), Some("then")), (&format!("{base}/sub/a.txt"), Some("A")), ("etc/passwd", Some("x"))]),
         )]);
         let extract = FakeTar::default();
@@ -619,7 +623,7 @@ mod tests {
 
         let data = restore_files(&tools, &repo(), SNAP, &website(), &home, &site, "20261111-120000").unwrap();
 
-        let restored = home.join("restored-20261111-120000/site");
+        let restored = home.join("restored-20261111-120000").join("site");
         assert_eq!(data["restored_to"], restored.display().to_string());
         assert_eq!(fs::read_to_string(restored.join("index.php")).unwrap(), "then");
         assert_eq!(fs::read_to_string(restored.join("sub/a.txt")).unwrap(), "A");
@@ -635,14 +639,15 @@ mod tests {
         let home = folder.path().join("shop");
         fs::create_dir_all(&home).unwrap();
         let file = home.join("wp-config.php").display().to_string();
-        let restic = fake(&home, vec![node(&file, "file", 5)], vec![(file.clone(), b"<?php".to_vec())]);
+        let named = snapshot_path(Path::new(&file));
+        let restic = fake(&home, vec![node(&named, "file", 5)], vec![(named.clone(), b"<?php".to_vec())]);
         let extract = FakeTar::default();
         let tools = Tools { restic: &restic, extract: &extract, databases: &FakeDb::default() };
 
         restore_files(&tools, &repo(), SNAP, &website(), &home, &file, "s1").unwrap();
 
         assert_eq!(fs::read_to_string(home.join("restored-s1/wp-config.php")).unwrap(), "<?php");
-        assert_eq!(restic.asked.lock().unwrap().last().unwrap(), &args(&["dump", SNAP, &file]));
+        assert_eq!(restic.asked.lock().unwrap().last().unwrap(), &args(&["dump", SNAP, &named]));
     }
 
     #[test]
@@ -673,13 +678,16 @@ mod tests {
         let maildir = home.join("mail/shop.test/info/Maildir");
         fs::create_dir_all(maildir.join("cur")).unwrap();
         let text = maildir.display().to_string();
-        let base = text.trim_start_matches('/').to_string();
-        let restic = fake(&home, vec![node(&text, "dir", 0)], vec![(
-            text.clone(),
+        let named = snapshot_path(&maildir);
+        let base = named.trim_start_matches('/').to_string();
+        // Real names carry flags after a `:` (`1.eml:2,S`); restoring treats
+        // names as opaque, and Windows file names cannot hold a `:`.
+        let restic = fake(&home, vec![node(&named, "dir", 0)], vec![(
+            named.clone(),
             dumped(&[
-                (&format!("{base}/cur/1.eml:2,S"), Some("old read")),
+                (&format!("{base}/cur/1.eml"), Some("old read")),
                 (&format!("{base}/new/2.eml"), Some("old new")),
-                (&format!("{base}/.Sent/cur/3.eml:2,S"), Some("old sent")),
+                (&format!("{base}/.Sent/cur/3.eml"), Some("old sent")),
                 (&format!("{base}/tmp/x"), Some("half")),
                 (&format!("{base}/dovecot.index"), Some("idx")),
             ]),
@@ -690,9 +698,9 @@ mod tests {
         let data = restore_mailbox(&tools, &repo(), SNAP, &website(), &home, &text, "2026-11-10").unwrap();
 
         assert_eq!(data["folder"], "Restored-2026-11-10");
-        assert_eq!(fs::read_to_string(maildir.join(".Restored-2026-11-10/cur/1.eml:2,S")).unwrap(), "old read");
+        assert_eq!(fs::read_to_string(maildir.join(".Restored-2026-11-10/cur/1.eml")).unwrap(), "old read");
         assert_eq!(fs::read_to_string(maildir.join(".Restored-2026-11-10/new/2.eml")).unwrap(), "old new");
-        assert_eq!(fs::read_to_string(maildir.join(".Restored-2026-11-10.Sent/cur/3.eml:2,S")).unwrap(), "old sent");
+        assert_eq!(fs::read_to_string(maildir.join(".Restored-2026-11-10.Sent/cur/3.eml")).unwrap(), "old sent");
         for restored in [".Restored-2026-11-10", ".Restored-2026-11-10.Sent"] {
             assert!(maildir.join(restored).join("tmp").is_dir());
             assert!(maildir.join(restored).join("maildirfolder").is_file());
@@ -710,7 +718,7 @@ mod tests {
         let home = folder.path().join("shop");
         let state = folder.path().join("state");
         fs::create_dir_all(&home).unwrap();
-        let dump = staging_dir(&state, "w1").join("databases").join(cli::dump_file_name("shop_db")).display().to_string();
+        let dump = snapshot_path(&staging_dir(&state, "w1").join("databases").join(cli::dump_file_name("shop_db")));
         let restic = fake(&home, vec![node(&dump, "file", 9)], vec![(dump.clone(), b"-- then".to_vec())]);
         let extract = FakeTar::default();
         let databases = FakeDb::default();
@@ -718,7 +726,7 @@ mod tests {
 
         let data = restore_database(&tools, &repo(), SNAP, &website(), &home, &state, "shop_db", "s1").unwrap();
 
-        let before = home.join("restored-s1/before-restore").join(cli::dump_file_name("shop_db"));
+        let before = home.join("restored-s1").join("before-restore").join(cli::dump_file_name("shop_db"));
         assert_eq!(data["before_restore"], before.display().to_string());
         assert_eq!(fs::read_to_string(&before).unwrap(), "-- today's content");
         assert_eq!(*databases.imported.lock().unwrap(), ["-- then"]);
@@ -736,7 +744,8 @@ mod tests {
         let folder = tempfile::tempdir().unwrap();
         let home = folder.path().join("shop");
         let site = home.join("site").display().to_string();
-        let restic = fake(&home, vec![node(&site, "dir", 0), node(&format!("{site}/index.php"), "file", 10), node(&format!("{site}/sub/deep.txt"), "file", 1)], vec![]);
+        let named = snapshot_path(Path::new(&site));
+        let restic = fake(&home, vec![node(&named, "dir", 0), node(&format!("{named}/index.php"), "file", 10), node(&format!("{named}/sub/deep.txt"), "file", 1)], vec![]);
 
         let data = list(&restic, &repo(), SNAP, &website(), &home, &site).unwrap();
 
@@ -746,7 +755,7 @@ mod tests {
 
     #[test]
     fn entry_names_are_read_however_restic_writes_them() {
-        let dumped = Path::new("/home/shop/site");
+        let dumped = "/home/shop/site";
         assert_eq!(relative("/home/shop/site/a/b.txt", dumped), Some(PathBuf::from("a/b.txt")));
         assert_eq!(relative("home/shop/site/a", dumped), Some(PathBuf::from("a")));
         assert_eq!(relative("site/a", dumped), Some(PathBuf::from("a")));

@@ -235,6 +235,12 @@ pub(crate) fn staging_dir(state_dir: &Path, website_id: &str) -> PathBuf {
     state_dir.join("restic-staging").join(website_id)
 }
 
+/// How restic names a local path inside a snapshot, in `ls` output and in
+/// the paths `ls` and `dump` take.
+pub(crate) fn snapshot_path(path: &Path) -> String {
+    crate::platform::paths::restic_snapshot_path(path)
+}
+
 /// The numbers restic's `summary` line gives.
 fn summary(stdout: &str) -> Option<Value> {
     stdout
@@ -504,16 +510,24 @@ mod tests {
 
     #[test]
     fn only_repositories_outside_the_sites_and_known_settings_are_accepted() {
-        let sites = Path::new("/home");
-        assert!(repo("/var/backups/restic").checked(sites).is_ok());
+        // A local repository must be an absolute path of this OS; the temp
+        // folder is one everywhere.
+        let base = std::env::temp_dir();
+        let text = |path: PathBuf| path.to_string_lossy().into_owned();
+        let sites = base.join("dpanel-sites");
+        let local = text(base.join("dpanel-backups").join("restic"));
+        let inside = text(sites.join("shop").join("backups"));
+        let climbing = text(base.join("x").join("..").join("dpanel-sites"));
+        let sites = sites.as_path();
+        assert!(repo(&local).checked(sites).is_ok());
         assert!(repo("s3:s3.amazonaws.com/bucket/dpanel").checked(sites).is_ok());
         assert!(repo("sftp:backup@203.0.113.9:/srv/restic").checked(sites).is_ok());
         assert!(repo("rclone:gdrive:dpanel").checked(sites).is_ok());
 
-        for bad in ["", "relative/path", "/", "/home/shop/backups", "/var/../home/x", "--repo=/tmp", "ftp:host/x", "/var/backups\nx"] {
+        for bad in ["", "relative/path", "/", &inside, &climbing, "--repo=/tmp", "ftp:host/x", "/var/backups\nx"] {
             assert!(repo(bad).checked(sites).is_err(), "{bad:?} was accepted");
         }
-        let mut no_password = repo("/var/backups/restic");
+        let mut no_password = repo(&local);
         no_password.password.clear();
         assert!(no_password.checked(sites).is_err());
         let mut odd_env = repo("s3:host/bucket");

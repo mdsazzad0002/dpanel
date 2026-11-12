@@ -162,7 +162,7 @@ where
 
 #[cfg(test)]
 mod tests {
-    use std::{process::Command, sync::Arc, time::Duration};
+    use std::{sync::Arc, time::Duration};
 
     use rustls::{
         DigitallySignedStruct, SignatureScheme,
@@ -182,27 +182,10 @@ mod tests {
     fn generate_self_signed_cert(dir: &std::path::Path) -> (std::path::PathBuf, std::path::PathBuf) {
         let cert = dir.join("cert.pem");
         let key = dir.join("key.pem");
-        let status = Command::new("openssl")
-            .args([
-                "req",
-                "-x509",
-                "-newkey",
-                "rsa:2048",
-                "-nodes",
-                "-keyout",
-                key.to_str().unwrap(),
-                "-out",
-                cert.to_str().unwrap(),
-                "-days",
-                "1",
-                "-subj",
-                "/CN=localhost",
-                "-addext",
-                "subjectAltName=DNS:localhost",
-            ])
-            .status()
-            .expect("openssl invocation failed; is openssl installed?");
-        assert!(status.success(), "openssl cert generation failed");
+        // In-process, so the test needs no `openssl` program (Windows has none).
+        let made = rcgen::generate_simple_self_signed(vec!["localhost".to_string()]).unwrap();
+        std::fs::write(&cert, made.cert.pem()).unwrap();
+        std::fs::write(&key, made.signing_key.serialize_pem()).unwrap();
         (cert, key)
     }
 

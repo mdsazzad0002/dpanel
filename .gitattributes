@@ -1,0 +1,5 @@
+# Files that bash or Linux reads must keep LF, even in a Windows checkout
+# with core.autocrlf on: a CR breaks `read`, shebangs and systemd.
+*.sh                                    text eol=lf
+*.service                               text eol=lf
+.github/scripts/*.txt                   text eol=lf
