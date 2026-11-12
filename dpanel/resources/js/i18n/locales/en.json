@@ -1828,6 +1828,11 @@
             "delete": "Delete",
             "empty": "No cron jobs added for this website.",
             "deleteConfirm": "Delete this cron job?"
+        },
+        "wpSso": {
+            "failed": "Could not create a login link.",
+            "creating": "Creating login link…",
+            "login": "Login to WordPress"
         }
     }
 }

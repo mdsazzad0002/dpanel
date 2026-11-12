@@ -1828,6 +1828,11 @@
             "delete": "মুছুন",
             "empty": "এই website-এ কোনো cron job যোগ করা হয়নি।",
             "deleteConfirm": "এই cron job মুছে ফেলবেন?"
+        },
+        "wpSso": {
+            "failed": "Login link তৈরি করা যায়নি।",
+            "creating": "Login link তৈরি হচ্ছে…",
+            "login": "WordPress-এ login করুন"
         }
     }
 }
