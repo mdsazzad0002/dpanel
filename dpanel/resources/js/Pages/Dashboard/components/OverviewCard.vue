@@ -1,6 +1,7 @@
 <script setup>
 import { Link } from '@inertiajs/vue3';
 import { computed } from 'vue';
+import { useI18n } from 'vue-i18n';
 
 const props = defineProps({
     stats: { type: Object, default: null },
@@ -10,12 +11,14 @@ const props = defineProps({
     showServer: { type: Boolean, default: false },
 });
 
+const { t } = useI18n();
+
 const initials = computed(() => String(props.user?.name ?? 'U')
     .split(' ').filter(Boolean).slice(0, 2).map((p) => p[0]?.toUpperCase() ?? '').join('') || 'U');
 
 const formatLoginTime = (value) => value
     ? new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(value))
-    : 'Not recorded';
+    : t('dashboard.notRecorded');
 
 // The monitoring page is limited to these roles.
 const canMonitor = computed(() => props.roles.some((role) => ['admin', 'reseller'].includes(role)));
@@ -24,12 +27,12 @@ const percentOf = (used, total) => (Number(total) > 0 ? Math.min(100, Math.round
 const loadBar = (p) => (p < 50 ? 'bg-emerald-500' : p < 75 ? 'bg-amber-500' : 'bg-red-500');
 
 const rows = computed(() => [
-    { label: 'Package', value: props.summary ? (props.summary.package_name ?? 'None') : null },
-    { label: 'Last login', value: props.summary ? (props.summary.last_login_ip ?? 'Not recorded') : null, mono: true, sub: props.summary ? formatLoginTime(props.summary.last_login_at) : '' },
-    { label: 'Hostname', value: props.stats ? props.stats.hostname : null },
-    { label: 'Server IP', value: props.stats ? props.stats.server_ip : null, mono: true },
-    { label: 'OS', value: props.stats ? props.stats.os : null },
-    { label: 'Uptime', value: props.stats ? props.stats.uptime : null },
+    { label: t('dashboard.package'), value: props.summary ? (props.summary.package_name ?? t('dashboard.none')) : null },
+    { label: t('dashboard.lastLogin'), value: props.summary ? (props.summary.last_login_ip ?? t('dashboard.notRecorded')) : null, mono: true, sub: props.summary ? formatLoginTime(props.summary.last_login_at) : '' },
+    { label: t('dashboard.hostname'), value: props.stats ? props.stats.hostname : null },
+    { label: t('dashboard.serverIp'), value: props.stats ? props.stats.server_ip : null, mono: true },
+    { label: t('dashboard.os'), value: props.stats ? props.stats.os : null },
+    { label: t('dashboard.uptime'), value: props.stats ? props.stats.uptime : null },
 ]);
 
 const load = computed(() => {
@@ -38,9 +41,9 @@ const load = computed(() => {
     const mem = percentOf(s.memory_used_mb, s.memory_total_mb);
     const disk = percentOf(s.disk_used_gb, s.disk_total_gb);
     return [
-        { label: 'CPU', percent: cpu, detail: `${s.cpu_cores ?? '—'} cores` },
-        { label: 'Memory', percent: mem, detail: `${s.memory_used_mb ?? 0} / ${s.memory_total_mb ?? 0} MB` },
-        { label: 'Disk', percent: disk, detail: `${s.disk_used_gb ?? 0} / ${s.disk_total_gb ?? 0} GB` },
+        { label: t('dashboard.cpu'), percent: cpu, detail: t('dashboard.cores', { count: s.cpu_cores ?? '—' }) },
+        { label: t('dashboard.memory'), percent: mem, detail: `${s.memory_used_mb ?? 0} / ${s.memory_total_mb ?? 0} MB` },
+        { label: t('dashboard.disk'), percent: disk, detail: `${s.disk_used_gb ?? 0} / ${s.disk_total_gb ?? 0} GB` },
     ];
 });
 </script>
@@ -51,11 +54,11 @@ const load = computed(() => {
         <header class="relative overflow-hidden bg-[#03060f] px-4 py-4 text-slate-100 sm:px-5">
             <div class="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top_left,rgba(16,185,129,0.22),transparent_45%),radial-gradient(circle_at_bottom_right,rgba(59,130,246,0.18),transparent_40%)]"></div>
             <div class="pointer-events-none absolute inset-0 opacity-40 [background-image:linear-gradient(rgba(255,255,255,0.03)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.03)_1px,transparent_1px)] [background-size:32px_32px]"></div>
-            <p class="relative font-mono text-[10px] uppercase tracking-[0.28em] text-emerald-300/80">General information</p>
+            <p class="relative font-mono text-[10px] uppercase tracking-[0.28em] text-emerald-300/80">{{ t('dashboard.generalInfo') }}</p>
             <div class="relative mt-3 flex items-center gap-3">
                 <span class="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-emerald-400 to-cyan-400 text-sm font-bold text-slate-950">{{ initials }}</span>
                 <div class="min-w-0">
-                    <p class="truncate font-semibold text-slate-50">{{ user?.name ?? 'User' }}</p>
+                    <p class="truncate font-semibold text-slate-50">{{ user?.name ?? t('dashboard.user') }}</p>
                     <p class="truncate text-xs text-slate-300">{{ user?.email }}</p>
                 </div>
             </div>
@@ -78,7 +81,7 @@ const load = computed(() => {
         </dl>
 
         <div v-if="showServer" class="space-y-3 border-t border-slate-200 px-4 py-4 sm:px-5 dark:border-white/10">
-            <p class="font-mono text-[10px] uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400">Server load</p>
+            <p class="font-mono text-[10px] uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400">{{ t('dashboard.serverLoad') }}</p>
             <div v-for="item in load" :key="item.label">
                 <div class="flex items-baseline justify-between gap-2 text-sm">
                     <span class="font-medium text-slate-700 dark:text-slate-200">{{ item.label }}</span>
@@ -90,7 +93,7 @@ const load = computed(() => {
                 </div>
             </div>
             <Link v-if="canMonitor" :href="route('monitoring.index')" class="inline-flex items-center gap-1 text-xs font-medium text-blue-600 hover:underline dark:text-blue-400">
-                <i class="bi bi-activity"></i>View monitoring<i class="bi bi-arrow-right"></i>
+                <i class="bi bi-activity"></i>{{ t('dashboard.viewMonitoring') }}<i class="bi bi-arrow-right"></i>
             </Link>
         </div>
     </section>

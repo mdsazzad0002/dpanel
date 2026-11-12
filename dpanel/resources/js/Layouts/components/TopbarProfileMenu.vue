@@ -18,7 +18,7 @@ const props = defineProps({
 const emit = defineEmits(['toggle-theme']);
 const { t } = useI18n();
 
-const userName = computed(() => String(props.user?.name ?? 'User'));
+const userName = computed(() => String(props.user?.name ?? t('layout.user')));
 const userEmail = computed(() => String(props.user?.email ?? ''));
 const userInitials = computed(() => userName.value
     .split(' ')
@@ -57,7 +57,7 @@ const copyEmail = async () => {
             <button
                 type="button"
                 class="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-sm font-medium text-slate-700 transition-all hover:border-slate-300 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:border-slate-600 dark:hover:bg-slate-800"
-                aria-label="Account menu"
+                :aria-label="t('layout.accountMenu')"
             >
                 <span
                     class="relative inline-flex h-7 w-7 items-center justify-center rounded-full text-[10px] font-semibold text-white shadow-sm ring-2 ring-white dark:ring-slate-900"
@@ -69,7 +69,7 @@ const copyEmail = async () => {
                 <span class="hidden max-w-[10rem] text-left leading-tight sm:block">
                     <span class="block truncate text-xs font-semibold text-slate-900 dark:text-slate-100">{{ userName }}</span>
                     <span class="block truncate text-[10px] capitalize text-slate-500 dark:text-slate-400">
-                        {{ impersonation?.active ? 'Viewing as user' : primaryRole }}
+                        {{ impersonation?.active ? t('layout.viewingAsUser') : primaryRole }}
                     </span>
                 </span>
                 <i class="bi bi-chevron-down text-[10px] text-slate-400"></i>
@@ -90,7 +90,7 @@ const copyEmail = async () => {
                             v-if="userEmail"
                             type="button"
                             class="group flex max-w-full items-center gap-1 text-xs text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200"
-                            :title="emailCopied ? 'Copied' : 'Copy email'"
+                            :title="emailCopied ? t('layout.copied') : t('layout.copyEmail')"
                             @click.stop="copyEmail"
                         >
                             <span class="truncate">{{ userEmail }}</span>
@@ -98,7 +98,7 @@ const copyEmail = async () => {
                         </button>
                         <div class="mt-1.5 flex flex-wrap gap-1">
                             <span
-                                v-for="role in (roles.length ? roles : ['No role'])"
+                                v-for="role in (roles.length ? roles : [t('layout.noRole')])"
                                 :key="role"
                                 class="inline-flex items-center rounded-md px-2 py-0.5 text-[10px] font-medium capitalize"
                                 :class="roleClass(role)"
@@ -119,30 +119,30 @@ const copyEmail = async () => {
                 >
                     <span class="flex items-center gap-2">
                         <i :class="['bi', twoFactorEnabled ? 'bi-shield-check' : 'bi-shield-exclamation']"></i>
-                        {{ twoFactorEnabled ? 'Two-factor is on' : 'Two-factor is off' }}
+                        {{ twoFactorEnabled ? t('layout.twoFactorOn') : t('layout.twoFactorOff') }}
                     </span>
-                    <span v-if="!twoFactorEnabled" class="font-semibold">Enable <i class="bi bi-arrow-right"></i></span>
+                    <span v-if="!twoFactorEnabled" class="font-semibold">{{ t('layout.enable') }} <i class="bi bi-arrow-right"></i></span>
                 </Link>
             </div>
 
             <!-- Account -->
             <div class="py-2">
-                <p class="px-4 pb-1 text-[10px] font-semibold uppercase tracking-wider text-slate-400">Account</p>
+                <p class="px-4 pb-1 text-[10px] font-semibold uppercase tracking-wider text-slate-400">{{ t('layout.account') }}</p>
                 <DropdownLink :href="profileTab('profile')">
                     <i class="bi bi-person mr-3 text-slate-400"></i>
-                    <span>My Profile</span>
+                    <span>{{ t('layout.myProfile') }}</span>
                 </DropdownLink>
                 <DropdownLink :href="profileTab('password')">
                     <i class="bi bi-key mr-3 text-slate-400"></i>
-                    <span>Change Password</span>
+                    <span>{{ t('layout.changePassword') }}</span>
                 </DropdownLink>
                 <DropdownLink v-if="route().has('security.manager')" :href="panelRoute('security.manager')">
                     <i class="bi bi-shield-lock mr-3 text-slate-400"></i>
-                    <span>Security</span>
+                    <span>{{ t('layout.security') }}</span>
                 </DropdownLink>
                 <DropdownLink v-if="route().has('self-connection.manager')" :href="panelRoute('self-connection.manager')">
                     <i class="bi bi-hdd-network mr-3 text-slate-400"></i>
-                    <span>Database & Redis</span>
+                    <span>{{ t('layout.databaseRedis') }}</span>
                 </DropdownLink>
                 <DropdownLink v-if="route().has('settings.api-tokens')" :href="panelRoute('settings.api-tokens')">
                     <i class="bi bi-key-fill mr-3 text-slate-400"></i>
@@ -150,7 +150,7 @@ const copyEmail = async () => {
                 </DropdownLink>
                 <DropdownLink v-if="route().has('mcp.tokens.index')" :href="panelRoute('mcp.tokens.index')">
                     <i class="bi bi-plug mr-3 text-slate-400"></i>
-                    <span>MCP Access</span>
+                    <span>{{ t('layout.mcpAccess') }}</span>
                 </DropdownLink>
             </div>
 
@@ -165,7 +165,7 @@ const copyEmail = async () => {
                 >
                     <span class="flex items-center">
                         <i :class="['bi mr-3 text-slate-400', theme === 'dark' ? 'bi-moon-stars' : 'bi-sun']"></i>
-                        Dark mode
+                        {{ t('layout.darkMode') }}
                     </span>
                     <span
                         class="relative inline-flex h-5 w-9 items-center rounded-full transition-colors"
@@ -189,11 +189,11 @@ const copyEmail = async () => {
                     class="text-indigo-600 hover:bg-indigo-50 dark:text-indigo-400 dark:hover:bg-indigo-900/20"
                 >
                     <i class="bi bi-person-bounding-box mr-3"></i>
-                    <span>Back to {{ impersonation.admin_name || 'admin' }}</span>
+                    <span>{{ t('layout.backTo', { name: impersonation.admin_name || t('layout.admin') }) }}</span>
                 </DropdownLink>
                 <DropdownLink :href="panelRoute('logout')" method="post" as="button" class="text-red-600 hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-900/20">
                     <i class="bi bi-box-arrow-right mr-3"></i>
-                    <span>Log Out</span>
+                    <span>{{ t('layout.logOut') }}</span>
                 </DropdownLink>
             </div>
 

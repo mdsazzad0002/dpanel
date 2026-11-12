@@ -16,7 +16,10 @@ import Modal from '@/Components/Modal.vue';
 import TopbarProfileMenu from '@/Layouts/components/TopbarProfileMenu.vue';
 import LanguageSwitch from '@/Components/i18n/LanguageSwitch.vue';
 import { Link, router, usePage, useRemember } from '@inertiajs/vue3';
-import { buildPanelMenu, filterPanelMenu, resolveItemRouteName } from '@/navigation/panelMenu';
+import { buildPanelMenu, filterPanelMenu, resolveItemRouteName, sectionLabel } from '@/navigation/panelMenu';
+import { useI18n } from 'vue-i18n';
+
+const { t } = useI18n();
 
 const sidebarOpen = useRemember(false, 'layout.sidebar.open');
 const sidebarCollapsed = useRemember(false, 'layout.sidebar.collapsed');
@@ -176,7 +179,7 @@ const appVersion = computed(() => page.props.app?.version ?? '1.0');
 const panelSearchItems = computed(() => Array.isArray(page.props.panelSearch?.items) ? page.props.panelSearch.items : []);
 const currentUser = computed(() => page.props.auth?.user ?? {});
 const impersonation = computed(() => page.props.auth?.impersonation ?? null);
-const userName = computed(() => String(currentUser.value?.name ?? 'User'));
+const userName = computed(() => String(currentUser.value?.name ?? t('layout.user')));
 
 const panelRoute = (name, params = {}) => (panelToken.value
     ? route(name, { token: panelToken.value, ...params })
@@ -416,7 +419,7 @@ const sendAiMessage = async (text) => {
         } else if (eventName === 'done') {
             assistantMessage.content = payload.content;
         } else if (eventName === 'error') {
-            aiError.value = payload.message || 'AI request failed.';
+            aiError.value = payload.message || t('layout.aiFailed');
             aiMessages.value = aiMessages.value.filter((m) => m !== assistantMessage);
         }
     };
@@ -464,7 +467,7 @@ const sendAiMessage = async (text) => {
         });
     } catch (error) {
         if (error?.code !== 'ERR_CANCELED' && !aiError.value) {
-            aiError.value = 'AI request failed.';
+            aiError.value = t('layout.aiFailed');
         }
     } finally {
         aiStreaming.value = false;
@@ -682,7 +685,7 @@ watch(isSearchOpen, async (open) => {
             <nav ref="sidebarNavRef" :class="sidebarCollapsed ? 'px-2' : 'px-3'" class="mt-3 min-h-0 flex-1 space-y-0.5 overflow-y-auto pb-4 scrollbar-thin" @scroll="updateSidebarScrollTop">
                 <template v-for="item in visibleMenu" :key="item.id || item.label">
                     <div v-if="item.sectionStart" :class="sidebarCollapsed ? 'mx-2 my-2 border-t border-slate-200 dark:border-slate-700' : 'px-3 pb-0.5 pt-3'">
-                        <span v-if="!sidebarCollapsed" class="text-[11px] font-semibold uppercase tracking-wider text-slate-400 dark:text-slate-500">{{ item.sectionStart }}</span>
+                        <span v-if="!sidebarCollapsed" class="text-[11px] font-semibold uppercase tracking-wider text-slate-400 dark:text-slate-500">{{ sectionLabel(item.sectionStart) }}</span>
                     </div>
                     <!-- Grouped Items -->
                     <div v-if="item.children">
@@ -802,8 +805,8 @@ watch(isSearchOpen, async (open) => {
                     <button
                         @click="toggleTheme"
                         class="rounded-lg p-2 text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-600 dark:hover:bg-slate-800 dark:hover:text-slate-300"
-                        :aria-label="theme === 'dark' ? 'Switch to day mode' : 'Switch to night mode'"
-                        :title="theme === 'dark' ? 'Switch to day mode' : 'Switch to night mode'"
+                        :aria-label="theme === 'dark' ? t('layout.dayMode') : t('layout.nightMode')"
+                        :title="theme === 'dark' ? t('layout.dayMode') : t('layout.nightMode')"
                     >
                         <i :class="['text-base', theme === 'dark' ? 'bi bi-sun-fill' : 'bi bi-moon-stars-fill']"></i>
                     </button>
@@ -822,7 +825,7 @@ watch(isSearchOpen, async (open) => {
                             class="flex h-9 w-9 items-center justify-center rounded-lg text-slate-600 transition-colors hover:bg-slate-100 md:hidden dark:text-slate-300 dark:hover:bg-slate-800"
                             @click="sidebarOpen = true"
                         >
-                            <span class="sr-only">Open sidebar</span>
+                            <span class="sr-only">{{ t('layout.openSidebar') }}</span>
                             <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor">
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16" />
                             </svg>
@@ -832,8 +835,8 @@ watch(isSearchOpen, async (open) => {
                         <button
                             type="button"
                             class="hidden h-9 w-9 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-500 transition-all hover:border-slate-300 hover:bg-slate-50 hover:text-slate-700 dark:border-slate-700 dark:bg-slate-900/70 dark:text-slate-300 dark:hover:border-slate-600 dark:hover:bg-slate-800/80 md:inline-flex"
-                            :aria-label="sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'"
-                            :title="sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'"
+                            :aria-label="sidebarCollapsed ? t('layout.expandSidebar') : t('layout.collapseSidebar')"
+                            :title="sidebarCollapsed ? t('layout.expandSidebar') : t('layout.collapseSidebar')"
                             @click="toggleSidebar"
                         >
                             <i :class="['bi text-xs', sidebarCollapsed ? 'bi-text-indent-left' : 'bi-text-indent-right']"></i>
@@ -847,7 +850,7 @@ watch(isSearchOpen, async (open) => {
                             class="flex h-9 w-full items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3 text-xs text-slate-500 transition-all hover:border-slate-300 hover:bg-slate-100 hover:text-slate-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-400 dark:hover:border-slate-600 dark:hover:bg-slate-700 dark:hover:text-slate-300"
                         >
                             <i class="bi bi-search text-xs"></i>
-                            <span>Search websites, emails...</span>
+                            <span>{{ t('layout.searchButton') }}</span>
                             <kbd class="ml-auto rounded border border-slate-300 bg-white px-1.5 py-0.5 text-[10px] font-semibold text-slate-400 dark:border-slate-600 dark:bg-slate-700 dark:text-slate-500">⌘K</kbd>
                         </button>
                     </div>
@@ -858,8 +861,8 @@ watch(isSearchOpen, async (open) => {
                         <button
                             type="button"
                             class="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-500 transition-all hover:border-slate-300 hover:bg-slate-50 hover:text-slate-700 dark:border-slate-700 dark:bg-slate-900/70 dark:text-slate-300 dark:hover:border-slate-600 dark:hover:bg-slate-800/80 md:hidden"
-                            aria-label="Open search"
-                            title="Open search"
+                            :aria-label="t('layout.openSearch')"
+                            :title="t('layout.openSearch')"
                             @click="openSearch"
                         >
                             <i class="bi bi-search text-xs"></i>
@@ -872,8 +875,8 @@ watch(isSearchOpen, async (open) => {
                             <button
                                 type="button"
                                 class="relative inline-flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-500 transition-all hover:border-slate-300 hover:bg-slate-50 hover:text-slate-700 dark:border-slate-700 dark:bg-slate-900/70 dark:text-slate-300 dark:hover:border-slate-600 dark:hover:bg-slate-800/80"
-                                aria-label="Notifications"
-                                title="Notifications"
+                                :aria-label="t('layout.notifications')"
+                                :title="t('layout.notifications')"
                                 @click.stop="toggleNotifications"
                             >
                                 <i class="bi bi-bell text-xs"></i>
@@ -900,21 +903,21 @@ watch(isSearchOpen, async (open) => {
                                 >
                                     <!-- Header -->
                                     <div class="flex items-center justify-between border-b border-slate-200 px-4 py-3 dark:border-slate-700">
-                                        <h3 class="text-sm font-semibold text-slate-900 dark:text-slate-100">Notifications</h3>
+                                        <h3 class="text-sm font-semibold text-slate-900 dark:text-slate-100">{{ t('layout.notifications') }}</h3>
                                         <div class="flex items-center gap-2">
                                             <button
                                                 v-if="unreadNotificationsCount > 0"
                                                 @click="markAllAsRead"
                                                 class="text-xs text-blue-600 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300"
                                             >
-                                                Mark all read
+                                                {{ t('layout.markAllRead') }}
                                             </button>
                                             <button
                                                 v-if="notifications.length > 0"
                                                 @click="clearNotifications"
                                                 class="text-xs text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-300"
                                             >
-                                                Clear all
+                                                {{ t('layout.clearAll') }}
                                             </button>
                                         </div>
                                     </div>
@@ -948,14 +951,14 @@ watch(isSearchOpen, async (open) => {
                                                             class="rounded-md border border-slate-300 px-2 py-1 text-[11px] font-medium text-slate-700 hover:bg-slate-100 dark:border-slate-600 dark:text-slate-200 dark:hover:bg-slate-700"
                                                             @click="copyNotificationLink(notification, $event)"
                                                         >
-                                                            <i class="bi bi-clipboard mr-1"></i>Copy
+                                                            <i class="bi bi-clipboard mr-1"></i>{{ t('layout.copy') }}
                                                         </button>
                                                         <button
                                                             type="button"
                                                             class="rounded-md bg-violet-600 px-2 py-1 text-[11px] font-semibold text-white hover:bg-violet-700"
                                                             @click="downloadNotification(notification, $event)"
                                                         >
-                                                            <i class="bi bi-download mr-1"></i>Download
+                                                            <i class="bi bi-download mr-1"></i>{{ t('layout.download') }}
                                                         </button>
                                                     </div>
                                                 </div>
@@ -967,7 +970,7 @@ watch(isSearchOpen, async (open) => {
                                         </template>
                                         <div v-else class="px-4 py-8 text-center">
                                             <i class="bi bi-bell-slash text-3xl text-slate-300 dark:text-slate-600"></i>
-                                            <p class="mt-2 text-sm text-slate-500 dark:text-slate-400">No notifications</p>
+                                            <p class="mt-2 text-sm text-slate-500 dark:text-slate-400">{{ t('layout.noNotifications') }}</p>
                                         </div>
                                     </div>
 
@@ -977,7 +980,7 @@ watch(isSearchOpen, async (open) => {
                                             class="w-full text-center text-xs font-medium text-blue-600 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300"
                                             @click="router.visit(panelRoute('notifications.all'))"
                                         >
-                                            View all notifications
+                                            {{ t('layout.viewAllNotifications') }}
                                         </button>
                                     </div>
                                 </div>
@@ -990,25 +993,25 @@ watch(isSearchOpen, async (open) => {
                                 <button
                                     type="button"
                                     class="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-500 transition-all hover:border-slate-300 hover:bg-slate-50 hover:text-slate-700 dark:border-slate-700 dark:bg-slate-900/70 dark:text-slate-300 dark:hover:border-slate-600 dark:hover:bg-slate-800/80"
-                                    aria-label="Quick actions"
-                                    title="Quick actions"
+                                    :aria-label="t('layout.quickActions')"
+                                    :title="t('layout.quickActions')"
                                 >
                                     <i class="bi bi-plus-lg text-xs"></i>
                                 </button>
                             </template>
                             <template #content>
                                 <DropdownLink v-if="userRoles.includes('admin') || userRoles.includes('reseller') || userPermissions.includes('manage_websites')" :href="panelRoute('websites.create')">
-                                    <i class="bi bi-globe mr-2"></i>New Website
+                                    <i class="bi bi-globe mr-2"></i>{{ t('layout.newWebsite') }}
                                 </DropdownLink>
                                 <DropdownLink v-if="userRoles.includes('admin') || userRoles.includes('reseller') || userPermissions.includes('manage_email')" :href="panelRoute('emails.create')">
-                                    <i class="bi bi-envelope mr-2"></i>New Email
+                                    <i class="bi bi-envelope mr-2"></i>{{ t('layout.newEmail') }}
                                 </DropdownLink>
                                 <DropdownLink v-if="userRoles.includes('admin') || userRoles.includes('reseller')" :href="panelRoute('databases.create')">
-                                    <i class="bi bi-database mr-2"></i>New Database
+                                    <i class="bi bi-database mr-2"></i>{{ t('layout.newDatabase') }}
                                 </DropdownLink>
                                 <div class="border-t border-slate-200 dark:border-slate-700"></div>
                                 <DropdownLink v-if="userRoles.includes('admin') || userRoles.includes('reseller')" :href="panelRoute('users.manage')">
-                                    <i class="bi bi-person-plus mr-2"></i>New User
+                                    <i class="bi bi-person-plus mr-2"></i>{{ t('layout.newUser') }}
                                 </DropdownLink>
                             </template>
                         </Dropdown>
@@ -1034,7 +1037,10 @@ watch(isSearchOpen, async (open) => {
                 >
                     <span>
                         <i class="bi bi-person-bounding-box mr-2"></i>
-                        Viewing as <strong>{{ userName }}</strong>. Admin: {{ impersonation.admin_name }}
+                        <i18n-t keypath="layout.viewingAs" tag="span" scope="global">
+                            <template #name><strong>{{ userName }}</strong></template>
+                            <template #admin>{{ impersonation.admin_name }}</template>
+                        </i18n-t>
                     </span>
                     <Link
                         :href="panelRoute('impersonation.stop')"
@@ -1042,7 +1048,7 @@ watch(isSearchOpen, async (open) => {
                         as="button"
                         class="rounded-md bg-indigo-600 px-3 py-2 font-medium text-white hover:bg-indigo-700"
                     >
-                        Back to Admin
+                        {{ t('layout.backToAdmin') }}
                     </Link>
                 </div>
                 <!-- Page Header with Breadcrumb -->
@@ -1053,9 +1059,9 @@ watch(isSearchOpen, async (open) => {
                                 <i class="bi bi-house-door"></i>
                             </Link>
                             <i class="bi bi-chevron-right text-xs"></i>
-                            <span class="font-medium text-slate-900 dark:text-slate-100">Dashboard</span>
+                            <span class="font-medium text-slate-900 dark:text-slate-100">{{ t('layout.dashboard') }}</span>
                         </div>
-                        <h1 class="mt-2 text-2xl font-bold text-slate-900 dark:text-slate-100">Dashboard</h1>
+                        <h1 class="mt-2 text-2xl font-bold text-slate-900 dark:text-slate-100">{{ t('layout.dashboard') }}</h1>
                     </slot>
                 </div>
 
@@ -1063,10 +1069,10 @@ watch(isSearchOpen, async (open) => {
             </main>
 
             <footer class="flex flex-wrap items-center justify-between gap-2 border-t border-slate-200 px-4 py-4 text-xs text-slate-500 dark:border-slate-800 dark:text-slate-400 sm:px-6">
-                <span>{{ appName }} v{{ appVersion }} - Websites, Mail, Databases and more</span>
+                <span>{{ appName }} v{{ appVersion }} - {{ t('layout.footerTagline') }}</span>
                 <span class="flex items-center gap-3">
-                    <a href="/privacy-policy" target="_blank" class="hover:text-slate-700 dark:hover:text-slate-200">Privacy Policy</a>
-                    <a href="/terms-and-conditions" target="_blank" class="hover:text-slate-700 dark:hover:text-slate-200">Terms &amp; Conditions</a>
+                    <a href="/privacy-policy" target="_blank" class="hover:text-slate-700 dark:hover:text-slate-200">{{ t('layout.privacyPolicy') }}</a>
+                    <a href="/terms-and-conditions" target="_blank" class="hover:text-slate-700 dark:hover:text-slate-200">{{ t('layout.terms') }}</a>
                 </span>
             </footer>
         </div>
@@ -1084,13 +1090,13 @@ watch(isSearchOpen, async (open) => {
                         v-model="searchQuery"
                         type="text"
                         class="min-w-0 flex-1 border-0 bg-transparent p-0 text-sm text-slate-900 outline-none placeholder:text-slate-400 focus:ring-0 dark:text-slate-100"
-                        placeholder="Search pages, websites, and settings"
+                        :placeholder="t('layout.searchPlaceholder')"
                     />
 
                     <div class="hidden shrink-0 items-center gap-1 text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-400 sm:flex">
                         <span class="rounded-md border border-slate-200 bg-white px-2 py-1 dark:border-slate-700 dark:bg-slate-900">↑</span>
                         <span class="rounded-md border border-slate-200 bg-white px-2 py-1 dark:border-slate-700 dark:bg-slate-900">↓</span>
-                        <span class="rounded-md border border-slate-200 bg-white px-2 py-1 dark:border-slate-700 dark:bg-slate-900">Enter</span>
+                        <span class="rounded-md border border-slate-200 bg-white px-2 py-1 dark:border-slate-700 dark:bg-slate-900">{{ t('layout.enterKey') }}</span>
                     </div>
                 </div>
             </div>
@@ -1100,21 +1106,21 @@ watch(isSearchOpen, async (open) => {
                 <button
                     type="button"
                     class="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-slate-500 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-800"
-                    title="Back to search"
+                    :title="t('layout.backToSearch')"
                     @click="backToKeywordSearch"
                 >
                     <i class="bi bi-arrow-left"></i>
                 </button>
                 <div class="flex min-w-0 flex-1 items-center gap-2">
                     <i class="bi bi-stars text-violet-500"></i>
-                    <span class="truncate text-sm font-semibold text-slate-900 dark:text-slate-100">Ask AI</span>
+                    <span class="truncate text-sm font-semibold text-slate-900 dark:text-slate-100">{{ t('layout.askAi') }}</span>
                 </div>
                 <button
                     type="button"
                     class="shrink-0 text-xs font-medium text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200"
                     @click="resetAiChat"
                 >
-                    New chat
+                    {{ t('layout.newChat') }}
                 </button>
             </div>
 
@@ -1129,13 +1135,13 @@ watch(isSearchOpen, async (open) => {
                         <i class="bi bi-stars text-base"></i>
                     </span>
                     <span class="min-w-0 flex-1">
-                        <span class="block truncate text-sm font-semibold text-violet-900 dark:text-violet-200">Ask AI: "{{ searchQuery.trim() }}"</span>
-                        <span class="block truncate text-xs text-violet-600/80 dark:text-violet-400/80">Get an AI-generated answer and keep chatting</span>
+                        <span class="block truncate text-sm font-semibold text-violet-900 dark:text-violet-200">{{ t('layout.askAiQuery', { query: searchQuery.trim() }) }}</span>
+                        <span class="block truncate text-xs text-violet-600/80 dark:text-violet-400/80">{{ t('layout.askAiHint') }}</span>
                     </span>
                 </button>
 
                 <div v-if="searchLoading && !filteredSearchResults.length" class="px-4 py-12 text-center text-sm text-slate-500 dark:text-slate-400">
-                    Searching...
+                    {{ t('layout.searching') }}
                 </div>
 
                 <template v-else-if="filteredSearchResults.length">
@@ -1160,7 +1166,7 @@ watch(isSearchOpen, async (open) => {
                                 {{ item.label }}
                             </span>
                             <span class="block truncate text-xs text-slate-500 dark:text-slate-400">
-                                {{ item.hint || item.group || 'Open page' }}
+                                {{ item.hint || item.group || t('layout.openPage') }}
                             </span>
                         </span>
 
@@ -1174,7 +1180,7 @@ watch(isSearchOpen, async (open) => {
                 </template>
 
                 <div v-else-if="searchLoaded" class="px-4 py-12 text-center text-sm text-slate-500 dark:text-slate-400">
-                    No results found.
+                    {{ t('layout.noResults') }}
                 </div>
             </div>
 
@@ -1200,7 +1206,7 @@ watch(isSearchOpen, async (open) => {
                                     </div>
                                 </div>
                                 <span v-if="!message.content && aiStreaming" class="inline-flex items-center gap-1 text-slate-400">
-                                    <i class="bi bi-three-dots animate-pulse"></i> {{ message.tools?.some((t) => t.status === 'running') ? 'Checking the server…' : 'Thinking…' }}
+                                    <i class="bi bi-three-dots animate-pulse"></i> {{ message.tools?.some((step) => step.status === 'running') ? t('layout.checkingServer') : t('layout.thinking') }}
                                 </span>
                                 <MarkdownContent v-else :content="message.content" />
                             </template>
@@ -1216,7 +1222,7 @@ watch(isSearchOpen, async (open) => {
                             v-model="aiInput"
                             type="text"
                             class="min-w-0 flex-1 border-0 bg-transparent p-0 text-sm text-slate-900 outline-none placeholder:text-slate-400 focus:ring-0 dark:text-slate-100"
-                            placeholder="Ask a follow-up…"
+                            :placeholder="t('layout.followUp')"
                             @keydown.enter.exact.prevent="sendAiFollowUp"
                         />
                         <button

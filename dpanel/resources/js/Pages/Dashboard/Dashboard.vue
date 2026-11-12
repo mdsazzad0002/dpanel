@@ -2,7 +2,8 @@
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
 import { computed, ref } from 'vue';
 import { Head, Link, usePage } from '@inertiajs/vue3';
-import { buildPanelMenu, filterPanelMenu, resolveItemRouteName } from '@/navigation/panelMenu';
+import { buildPanelMenu, filterPanelMenu, resolveItemRouteName, sectionLabel } from '@/navigation/panelMenu';
+import { useI18n } from 'vue-i18n';
 import { useDashboardLayout } from './composables/useDashboardLayout';
 import DashboardHeader from './components/DashboardHeader.vue';
 import SectionCustomizer from './components/SectionCustomizer.vue';
@@ -12,6 +13,7 @@ import OverviewCard from './components/OverviewCard.vue';
 import AccountUsage from './components/AccountUsage.vue';
 import ServiceStatusList from './components/ServiceStatusList.vue';
 
+const { t } = useI18n();
 const page = usePage();
 const panelToken = page.props.panel?.token;
 const panelRoute = (name, params = {}) => (
@@ -42,7 +44,7 @@ const looseSectionIcons = {
 // Left out of the dashboard (and so of Quick Access); still in the sidebar.
 const excludedSections = ['Security', 'AI'];
 const excludedGroups = ['docker', 'rules', 'seo-tools', 'user-management', 'billing-system'];
-const excludedItems = ['Backups', 'Trash Backup'];
+const excludedItems = ['backups', 'trash-backup'];
 
 // Tool sections come straight from the sidebar menu: every group becomes a card,
 // and stand-alone links are gathered into one card per sidebar section heading.
@@ -58,14 +60,14 @@ const sections = computed(() => {
 
     for (const item of menu) {
         if (item.routeName === 'dashboard') continue;
-        if (excludedSections.includes(item.section) || excludedGroups.includes(item.id) || excludedItems.includes(item.label)) continue;
+        if (excludedSections.includes(item.section) || excludedGroups.includes(item.id) || excludedItems.includes(item.id)) continue;
         if (item.children) {
             result.push({ id: item.id, label: item.label, iconClass: item.iconClass, color: item.color, items: item.children });
             continue;
         }
         const name = item.section ?? 'General';
         if (!loose.has(name)) {
-            const card = { id: `section:${name}`, label: name, iconClass: looseSectionIcons[name] ?? 'bi bi-grid', color: item.color, items: [] };
+            const card = { id: `section:${name}`, label: sectionLabel(name), iconClass: looseSectionIcons[name] ?? 'bi bi-grid', color: item.color, items: [] };
             loose.set(name, card);
             result.push(card);
         }
@@ -95,7 +97,7 @@ const onDrop = (targetId) => {
 </script>
 
 <template>
-    <Head title="Dashboard" />
+    <Head :title="t('dashboard.title')" />
 
     <AuthenticatedLayout>
         <template #header>
@@ -117,10 +119,9 @@ const onDrop = (targetId) => {
         >
             <i class="bi bi-envelope-exclamation mt-0.5 text-xl" aria-hidden="true"></i>
             <div class="min-w-0 flex-1">
-                <p class="font-semibold">{{ systemMailWarning.source === 'system' ? 'The system email is not working' : 'Set up a system email' }}</p>
+                <p class="font-semibold">{{ systemMailWarning.source === 'system' ? t('dashboard.mailBroken') : t('dashboard.mailMissing') }}</p>
                 <p class="mt-0.5 text-sm">
-                    The panel sends login codes (OTP), password reset and email verification links from it.
-                    Without one, these emails never arrive and users, including you, can be locked out.
+                    {{ t('dashboard.mailWhy') }}
                 </p>
                 <p class="mt-1 text-xs opacity-80">{{ systemMailWarning.problem }}</p>
             </div>
@@ -128,7 +129,7 @@ const onDrop = (targetId) => {
                 :href="panelRoute('emails.system-mail')"
                 class="shrink-0 rounded-lg bg-amber-600 px-3 py-2 text-sm font-medium text-white hover:bg-amber-700"
             >
-                {{ systemMailWarning.source === 'system' ? 'Fix system email' : 'Set up system email' }}
+                {{ systemMailWarning.source === 'system' ? t('dashboard.mailFix') : t('dashboard.mailSetUp') }}
             </Link>
         </div>
 
@@ -138,7 +139,7 @@ const onDrop = (targetId) => {
             <div class="contents xl:flex xl:min-w-0 xl:flex-col xl:gap-3">
                 <div class="order-3 flex min-w-0 flex-col gap-3 xl:order-none">
                     <div class="flex items-center justify-between gap-3">
-                        <h2 class="font-mono text-xs uppercase tracking-[0.22em] text-slate-500 dark:text-slate-400">Tools</h2>
+                        <h2 class="font-mono text-xs uppercase tracking-[0.22em] text-slate-500 dark:text-slate-400">{{ t('dashboard.tools') }}</h2>
                         <SectionCustomizer
                             :sections="layout.ordered.value"
                             :is-hidden="layout.isHidden"
@@ -170,7 +171,9 @@ const onDrop = (targetId) => {
                     </TransitionGroup>
 
                     <div v-if="!layout.visible.value.length" class="rounded-2xl border border-dashed border-slate-300 px-4 py-10 text-center text-sm text-slate-500 dark:border-white/10 dark:text-slate-400">
-                        All sections are hidden. Use <span class="font-semibold">Customize</span> to bring them back.
+                        <i18n-t keypath="dashboard.allHidden" scope="global">
+                            <template #customize><span class="font-semibold">{{ t('dashboard.customize') }}</span></template>
+                        </i18n-t>
                     </div>
                 </div>
             </div>

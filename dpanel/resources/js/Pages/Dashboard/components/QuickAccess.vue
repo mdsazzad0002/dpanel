@@ -1,6 +1,7 @@
 <script setup>
 import { computed, ref } from 'vue';
 import { usePage } from '@inertiajs/vue3';
+import { useI18n } from 'vue-i18n';
 import ToolTile from './ToolTile.vue';
 import { clearPageUsage, compareUsage, normalizeLink, readPageUsage } from '@/composables/usePageUsage';
 
@@ -11,6 +12,8 @@ const props = defineProps({
     limit: { type: Number, default: 12 },
     compactLimit: { type: Number, default: 8 },
 });
+
+const { t } = useI18n();
 
 // Clicks are recorded in the browser by app.js; this card only reads them.
 const usage = ref(readPageUsage(props.userId));
@@ -69,19 +72,19 @@ const reset = () => {
                 <i class="bi bi-lightning-charge-fill"></i>
             </span>
             <span class="min-w-0 flex-1">
-                <span class="block truncate text-sm font-semibold text-slate-900 dark:text-slate-50">Quick Access</span>
+                <span class="block truncate text-sm font-semibold text-slate-900 dark:text-slate-50">{{ t('dashboard.quickAccess') }}</span>
                 <span class="block truncate text-[11px] text-slate-500 dark:text-slate-400">
-                    {{ hasUsage ? 'Your most clicked tools, saved in this browser' : 'Suggested tools — the links you click most will show up here' }}
+                    {{ hasUsage ? t('dashboard.quickAccessUsed') : t('dashboard.quickAccessSuggested') }}
                 </span>
             </span>
             <button
                 v-if="hasUsage"
                 type="button"
                 class="flex h-8 shrink-0 items-center gap-1 rounded-lg px-2 text-xs font-medium text-slate-400 hover:bg-slate-100 hover:text-slate-700 dark:hover:bg-white/[0.06] dark:hover:text-slate-200"
-                title="Forget click history in this browser"
+                :title="t('dashboard.forgetClicks')"
                 @click="reset"
             >
-                <i class="bi bi-arrow-counterclockwise"></i><span class="hidden min-[400px]:inline">Reset</span>
+                <i class="bi bi-arrow-counterclockwise"></i><span class="hidden min-[400px]:inline">{{ t('dashboard.reset') }}</span>
             </button>
         </header>
 
@@ -96,7 +99,7 @@ const reset = () => {
                 <span
                     v-if="item.visits"
                     class="ml-auto shrink-0 rounded-full bg-slate-100 px-1.5 py-0.5 text-[10px] font-medium tabular-nums text-slate-500 dark:bg-white/[0.06] dark:text-slate-400"
-                    :title="`Clicked ${item.visits} time${item.visits === 1 ? '' : 's'}`"
+                    :title="t('dashboard.clicked', { count: item.visits }, item.visits)"
                 >{{ item.visits }}×</span>
             </ToolTile>
         </div>

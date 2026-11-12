@@ -1,11 +1,13 @@
 <script setup>
 import { computed } from 'vue';
 import { Link, usePage } from '@inertiajs/vue3';
+import { useI18n } from 'vue-i18n';
 
 const props = defineProps({
     summary: { type: Object, default: null },
 });
 
+const { t } = useI18n();
 const page = usePage();
 const panelRoute = (name) => page.props.panel?.token
     ? route(name, { token: page.props.panel.token })
@@ -35,24 +37,24 @@ const barClass = (percent) => {
 const quotas = computed(() => {
     const s = props.summary ?? {};
     return [
-        { label: 'Websites', icon: 'bi-globe', used: s.websites_used, limit: s.websites_limit },
-        { label: 'Website disk', icon: 'bi-hdd', used: s.disk_used_mb, limit: s.disk_limit_mb, format: formatMb },
-        { label: 'Databases', icon: 'bi-database', used: s.databases_used, limit: s.databases_limit },
-        { label: 'Mailboxes', icon: 'bi-envelope', used: s.mailboxes_used, limit: s.mailboxes_limit, note: `${formatMb(s.mail_storage_mb)} allocated storage` },
-        { label: 'Bandwidth', icon: 'bi-activity', used: s.bandwidth_used_gb, limit: s.bandwidth_limit_gb, format: formatBandwidth, note: `${s.bandwidth_status ?? ''} · ${s.bandwidth_requests ?? 0} requests` },
+        { label: t('dashboard.websites'), icon: 'bi-globe', used: s.websites_used, limit: s.websites_limit },
+        { label: t('dashboard.websiteDisk'), icon: 'bi-hdd', used: s.disk_used_mb, limit: s.disk_limit_mb, format: formatMb },
+        { label: t('dashboard.databases'), icon: 'bi-database', used: s.databases_used, limit: s.databases_limit },
+        { label: t('dashboard.mailboxes'), icon: 'bi-envelope', used: s.mailboxes_used, limit: s.mailboxes_limit, note: t('dashboard.mailStorage', { size: formatMb(s.mail_storage_mb) }) },
+        { label: t('dashboard.bandwidth'), icon: 'bi-activity', used: s.bandwidth_used_gb, limit: s.bandwidth_limit_gb, format: formatBandwidth, note: t('dashboard.bandwidthNote', { status: s.bandwidth_status ?? '', count: s.bandwidth_requests ?? 0 }) },
         // Only when the package limits them (P4); sampled every five minutes.
-        ...(s.cpu_limit_percent ? [{ label: 'CPU', icon: 'bi-cpu', used: s.cpu_used_percent, limit: s.cpu_limit_percent, format: (v) => `${Number(v || 0).toFixed(0)}%`, note: '100% is one core, measured over the last five minutes' }] : []),
-        ...(s.memory_limit_mb ? [{ label: 'Memory', icon: 'bi-memory', used: s.memory_used_mb, limit: s.memory_limit_mb, format: formatMb }] : []),
+        ...(s.cpu_limit_percent ? [{ label: t('dashboard.cpu'), icon: 'bi-cpu', used: s.cpu_used_percent, limit: s.cpu_limit_percent, format: (v) => `${Number(v || 0).toFixed(0)}%`, note: t('dashboard.cpuNote') }] : []),
+        ...(s.memory_limit_mb ? [{ label: t('dashboard.memory'), icon: 'bi-memory', used: s.memory_used_mb, limit: s.memory_limit_mb, format: formatMb }] : []),
     ].map((q) => {
         const format = q.format ?? ((v) => Number(v || 0));
         const percent = quotaPercent(q.used, q.limit);
         return {
             ...q,
             usedLabel: format(q.used),
-            limitLabel: isUnlimited(q.limit) ? 'Unlimited' : format(q.limit),
+            limitLabel: isUnlimited(q.limit) ? t('dashboard.unlimited') : format(q.limit),
             percent,
             barClass: barClass(percent),
-            note: q.note ?? (isUnlimited(q.limit) ? 'No limit on this package' : `${percent}% used`),
+            note: q.note ?? (isUnlimited(q.limit) ? t('dashboard.noLimit') : t('dashboard.percentUsed', { percent })),
         };
     });
 });
@@ -61,12 +63,12 @@ const quotas = computed(() => {
 <template>
     <section class="overflow-hidden rounded-2xl border border-slate-200 bg-white dark:border-white/10 dark:bg-slate-900">
         <header class="flex items-center justify-between gap-3 border-b border-slate-200 px-4 py-3.5 sm:px-5 dark:border-white/10">
-            <h2 class="font-mono text-xs uppercase tracking-[0.22em] text-slate-500 dark:text-slate-400">Statistics</h2>
+            <h2 class="font-mono text-xs uppercase tracking-[0.22em] text-slate-500 dark:text-slate-400">{{ t('dashboard.statistics') }}</h2>
             <div class="flex min-w-0 items-center gap-2">
                 <span v-if="summary" class="truncate text-[11px] text-slate-500 dark:text-slate-400">{{ summary.scope }}</span>
                 <span v-else class="h-3 w-24 animate-pulse rounded bg-slate-100 dark:bg-white/[0.06]"></span>
                 <Link v-if="summary" :href="panelRoute('bandwidth.index')" class="shrink-0 rounded-md px-2 py-1 text-xs font-medium text-emerald-700 hover:bg-emerald-50 dark:text-emerald-300 dark:hover:bg-emerald-400/10">
-                    Bandwidth <i class="bi bi-arrow-up-right ml-1"></i>
+                    {{ t('dashboard.bandwidth') }} <i class="bi bi-arrow-up-right ml-1"></i>
                 </Link>
             </div>
         </header>

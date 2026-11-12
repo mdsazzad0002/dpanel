@@ -1,5 +1,6 @@
 <script setup>
 import { onBeforeUnmount, onMounted, ref } from 'vue';
+import { useI18n } from 'vue-i18n';
 
 defineProps({
     sections: { type: Array, required: true },
@@ -8,6 +9,7 @@ defineProps({
 });
 
 const emit = defineEmits(['set-hidden', 'collapse-all', 'reset']);
+const { t } = useI18n();
 
 const open = ref(false);
 const root = ref(null);
@@ -26,7 +28,7 @@ onBeforeUnmount(() => document.removeEventListener('click', onOutside));
             @click="emit('collapse-all', !allCollapsed)"
         >
             <i :class="['bi', allCollapsed ? 'bi-arrows-expand' : 'bi-arrows-collapse']"></i>
-            <span class="hidden min-[400px]:inline">{{ allCollapsed ? 'Expand all' : 'Collapse all' }}</span>
+            <span class="hidden min-[400px]:inline">{{ allCollapsed ? t('dashboard.expandAll') : t('dashboard.collapseAll') }}</span>
         </button>
 
         <div ref="root" class="relative">
@@ -36,7 +38,7 @@ onBeforeUnmount(() => document.removeEventListener('click', onOutside));
                 :aria-expanded="open"
                 @click="open = !open"
             >
-                <i class="bi bi-sliders"></i> Customize
+                <i class="bi bi-sliders"></i> {{ t('dashboard.customize') }}
             </button>
 
             <div
@@ -44,8 +46,8 @@ onBeforeUnmount(() => document.removeEventListener('click', onOutside));
                 class="absolute right-0 z-30 mt-2 w-[min(18rem,calc(100vw-2rem))] overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-xl dark:border-white/10 dark:bg-slate-900"
             >
                 <div class="border-b border-slate-100 px-4 py-3 dark:border-white/[0.06]">
-                    <p class="text-sm font-semibold text-slate-900 dark:text-slate-50">Dashboard sections</p>
-                    <p class="text-xs text-slate-500 dark:text-slate-400">Pick what shows. Drag cards or use the arrows to reorder.</p>
+                    <p class="text-sm font-semibold text-slate-900 dark:text-slate-50">{{ t('dashboard.sections') }}</p>
+                    <p class="text-xs text-slate-500 dark:text-slate-400">{{ t('dashboard.sectionsHelp') }}</p>
                 </div>
                 <ul class="max-h-80 overflow-y-auto p-1.5">
                     <li v-for="section in sections" :key="section.id">
@@ -64,7 +66,7 @@ onBeforeUnmount(() => document.removeEventListener('click', onOutside));
                 </ul>
                 <div class="border-t border-slate-100 p-2 dark:border-white/[0.06]">
                     <button type="button" class="w-full rounded-lg px-3 py-2 text-left text-xs font-medium text-slate-500 hover:bg-slate-50 hover:text-red-600 dark:text-slate-400 dark:hover:bg-white/[0.04]" @click="emit('reset'); open = false">
-                        <i class="bi bi-arrow-counterclockwise mr-1"></i> Reset layout
+                        <i class="bi bi-arrow-counterclockwise mr-1"></i> {{ t('dashboard.resetLayout') }}
                     </button>
                 </div>
             </div>

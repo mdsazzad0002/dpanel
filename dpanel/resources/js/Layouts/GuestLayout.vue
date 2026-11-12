@@ -1,6 +1,9 @@
 <script setup>
 import ApplicationLogo from '@/Components/ApplicationLogo.vue';
 import { Link } from '@inertiajs/vue3';
+import { useI18n } from 'vue-i18n';
+
+const { t } = useI18n();
 </script>
 
 <template>
@@ -24,21 +27,21 @@ import { Link } from '@inertiajs/vue3';
                     <div class="relative max-w-xl">
 
                         <h1 class="mt-5 max-w-lg text-4xl font-semibold leading-tight tracking-tight text-slate-50 xl:text-5xl">
-                            Secure access for server operations
+                            {{ t('guest.title') }}
                         </h1>
                         <p class="mt-5 max-w-lg text-base leading-7 text-slate-300">
-                            A focused admin surface for production control, recovery, and daily maintenance with a cleaner visual hierarchy.
+                            {{ t('guest.subtitle') }}
                         </p>
                     </div>
 
                     <div class="relative grid gap-4 text-sm text-slate-200/80 sm:grid-cols-2">
                         <div class="rounded-2xl border border-white/10 bg-white/[0.05] p-4 shadow-lg shadow-black/10">
-                            <p class="font-mono text-xs uppercase tracking-[0.22em] text-emerald-300">Operations</p>
-                            <p class="mt-2 leading-6">Centralized tools for production workflows and quick recovery.</p>
+                            <p class="font-mono text-xs uppercase tracking-[0.22em] text-emerald-300">{{ t('guest.operations') }}</p>
+                            <p class="mt-2 leading-6">{{ t('guest.operationsText') }}</p>
                         </div>
                         <div class="rounded-2xl border border-white/10 bg-white/[0.05] p-4 shadow-lg shadow-black/10">
-                            <p class="font-mono text-xs uppercase tracking-[0.22em] text-sky-300">Security</p>
-                            <p class="mt-2 leading-6">Protected access with a calm login flow and password checks.</p>
+                            <p class="font-mono text-xs uppercase tracking-[0.22em] text-sky-300">{{ t('guest.security') }}</p>
+                            <p class="mt-2 leading-6">{{ t('guest.securityText') }}</p>
                         </div>
                     </div>
                 </div>
@@ -59,9 +62,9 @@ import { Link } from '@inertiajs/vue3';
                         </div>
 
                         <div class="mt-8 flex flex-wrap items-center justify-center gap-x-3 gap-y-1 text-xs text-slate-400">
-                            <Link href="/privacy-policy" class="hover:text-slate-200">Privacy Policy</Link>
+                            <Link href="/privacy-policy" class="hover:text-slate-200">{{ t('layout.privacyPolicy') }}</Link>
                             <span>·</span>
-                            <Link href="/terms-and-conditions" class="hover:text-slate-200">Terms &amp; Conditions</Link>
+                            <Link href="/terms-and-conditions" class="hover:text-slate-200">{{ t('layout.terms') }}</Link>
                         </div>
                     </div>
                 </div>
