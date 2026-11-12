@@ -6,7 +6,7 @@ use std::sync::Arc;
 
 use crate::api::{ApiResponse, ApiState, check_token, operation_response};
 use crate::app::info;
-use crate::platform::{self, fs::FileMode};
+use crate::platform::{self, fs::{FileMode, ModeChange}};
 use axum::{
     extract::{Json, State},
     http::HeaderMap,
@@ -18,7 +18,6 @@ use super::common::{
     ensure_canonical_inside_home, ensure_directory_inside_home, validate_account,
     validate_user_path,
 };
-use crate::app::run_status;
 
 const DEFAULT_MAX_ENTRIES: usize = 100_000;
 const DEFAULT_MAX_EXPANDED_BYTES: u64 = 20 * 1024 * 1024 * 1024;
@@ -507,41 +506,18 @@ pub(crate) fn fix_touched_permissions(
     if platform::current().one_user() {
         return set_local_modes(touched_dirs, touched_files);
     }
-    let owner = format!("{username}:{group}");
-    let dir_paths: Vec<String> = touched_dirs
-        .iter()
-        .map(|p| p.to_string_lossy().into_owned())
-        .collect();
-    let file_paths: Vec<String> = touched_files
-        .iter()
-        .map(|p| p.to_string_lossy().into_owned())
-        .collect();
-
-    let all_paths: Vec<&str> = dir_paths
-        .iter()
-        .chain(file_paths.iter())
-        .map(String::as_str)
-        .collect();
-    for chunk in all_paths.chunks(500) {
-        let mut args = vec![owner.as_str()];
-        args.extend_from_slice(chunk);
-        run_status("chown", &args)?;
+    let files = platform::files();
+    let owner = platform::fs::owner_named(username, group).map_err(|e| e.to_string())?;
+    // Like `chown` and `chmod` without -R: each path is followed if a link.
+    for path in touched_dirs.iter().chain(touched_files) {
+        files.set_owner(path, &owner).map_err(platform::fs::error_at(path))?;
     }
-
-    let dir_refs: Vec<&str> = dir_paths.iter().map(String::as_str).collect();
-    for chunk in dir_refs.chunks(500) {
-        let mut args = vec!["0755"];
-        args.extend_from_slice(chunk);
-        run_status("chmod", &args)?;
+    for dir in touched_dirs {
+        platform::fs::change_mode(files, dir, ModeChange::Exact(0o755)).map_err(platform::fs::error_at(dir))?;
     }
-
-    let file_refs: Vec<&str> = file_paths.iter().map(String::as_str).collect();
-    for chunk in file_refs.chunks(500) {
-        let mut args = vec!["0644"];
-        args.extend_from_slice(chunk);
-        run_status("chmod", &args)?;
+    for file in touched_files {
+        platform::fs::change_mode(files, file, ModeChange::Exact(0o644)).map_err(platform::fs::error_at(file))?;
     }
-
     Ok(())
 }
 
@@ -566,48 +542,45 @@ fn fix_laravel_writable_dirs(root: &str) -> Result<(), String> {
     if platform::current().one_user() {
         return Ok(());
     }
-    let _ = run_status(
-        "find",
-        &[
-            root,
-            "-type",
-            "d",
-            "(",
-            "-name",
-            "storage",
-            "-o",
-            "-path",
-            "*/bootstrap/cache",
-            ")",
-            "-exec",
-            "chgrp",
-            "-R",
-            "www-data",
-            "{}",
-            "+",
-        ],
-    );
-    run_status(
-        "find",
-        &[
-            root,
-            "-type",
-            "d",
-            "(",
-            "-name",
-            "storage",
-            "-o",
-            "-path",
-            "*/bootstrap/cache",
-            ")",
-            "-exec",
-            "chmod",
-            "-R",
-            "0775",
-            "{}",
-            "+",
-        ],
-    )
+    // `find root -type d ( -name storage -o -path */bootstrap/cache )`, then
+    // `chgrp -R www-data` (best effort) and `chmod -R 0775` on each.
+    let mut dirs = Vec::new();
+    let found = laravel_writable_dirs(Path::new(root), &mut dirs);
+    let files = platform::files();
+    if let Ok(gid) = platform::accounts().group_id("www-data") {
+        for dir in &dirs {
+            let _ = platform::fs::set_group_tree(files, dir, gid);
+        }
+    }
+    for dir in &dirs {
+        platform::fs::change_mode_tree(files, dir, ModeChange::Exact(0o775))
+            .map_err(|e| format!("{}: {e}", dir.display()))?;
+    }
+    found.map_err(|e| format!("failed to read {root}: {e}"))
+}
+
+/// Every real folder under `root` (and `root` itself) named `storage` or
+/// ending in `bootstrap/cache`, without going through a symlink. Collects
+/// what it can read and returns the first error.
+fn laravel_writable_dirs(root: &Path, dirs: &mut Vec<PathBuf>) -> std::io::Result<()> {
+    let metadata = fs::symlink_metadata(root)?;
+    if !metadata.is_dir() {
+        return Ok(());
+    }
+    let cache = root.file_name() == Some("cache".as_ref())
+        && root.parent().and_then(Path::file_name) == Some("bootstrap".as_ref())
+        && root.parent().and_then(Path::parent).is_some_and(|p| !p.as_os_str().is_empty());
+    if root.file_name() == Some("storage".as_ref()) || cache {
+        dirs.push(root.to_path_buf());
+    }
+    let mut first = Ok(());
+    for entry in fs::read_dir(root)? {
+        let result = entry.and_then(|entry| laravel_writable_dirs(&entry.path(), dirs));
+        if result.is_err() && first.is_ok() {
+            first = result;
+        }
+    }
+    first
 }
 
 /// Clears whatever sits at `target` so a new file or folder can take its

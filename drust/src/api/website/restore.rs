@@ -142,11 +142,7 @@ pub(super) fn restore_archive(value: &str, progress: &RestoreProgress) -> Result
         }
     }
     progress.update("permissions", 90, "Fixing file ownership and permissions");
-    crate::app::try_chown(&[
-        "-R",
-        &format!("{owner}:{owner}"),
-        project_root.to_string_lossy().as_ref(),
-    ]);
+    crate::app::try_chown(owner, owner, &project_root, crate::app::Depth::Tree);
     crate::filemanager::fix_permissions::run(Some(owner), owner_home.to_str(), false).map_err(
         |error| format!("files restored but permissions could not be repaired: {error}"),
     )?;

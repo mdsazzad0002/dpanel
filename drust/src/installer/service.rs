@@ -13,8 +13,7 @@ use std::{
     time::Duration,
 };
 
-use crate::app::run_status;
-use crate::platform::{self, fs::FileMode, process::new_process_group};
+use crate::platform::{self, fs::{FileMode, ModeChange}, process::new_process_group};
 use crate::filemanager::common::{ensure_directory_inside_home, validate_account, validate_user_path};
 
 /// composer create-project/require and npm install/build.
@@ -210,24 +209,25 @@ impl Site {
     /// the gateway falls back to the shared www-data pool when that pool can't
     /// be provisioned, so both need access.
     pub fn finalize(&self, permissions: &Permissions) -> Result<String, String> {
-        let owner = format!("{}:www-data", self.username);
+        let files = platform::files();
+        let owner = platform::fs::owner_named(&self.username, "www-data").map_err(|e| e.to_string())?;
         if let Some(config) = permissions
             .secret_config
             .map(|relative| self.target.join(relative))
             .filter(|path| path.is_file())
         {
-            let config = config.to_string_lossy();
-            run_status("chown", &[&owner, config.as_ref()])?;
-            run_status("chmod", &["640", config.as_ref()])?;
+            files.set_owner(&config, &owner).map_err(platform::fs::error_at(&config))?;
+            platform::fs::change_mode(files, &config, ModeChange::Exact(0o640)).map_err(platform::fs::error_at(&config))?;
         }
+        // u+rwX,g+rwX,o-rwx
+        let writable = ModeChange::Adjust { add: 0o660, add_exec: 0o110, remove: 0o007 };
         for dir in permissions.writable {
             let path = self.target.join(dir);
             if !path.is_dir() {
                 continue;
             }
-            let path = path.to_string_lossy();
-            run_status("chown", &["-R", &owner, path.as_ref()])?;
-            run_status("chmod", &["-R", "u+rwX,g+rwX,o-rwx", path.as_ref()])?;
+            platform::fs::set_owner_tree(files, &path, &owner).map_err(platform::fs::error_at(&path))?;
+            platform::fs::change_mode_tree(files, &path, writable).map_err(platform::fs::error_at(&path))?;
         }
         Ok("Writable directory permissions prepared.".into())
     }

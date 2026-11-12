@@ -3,7 +3,7 @@ use std::fs;
 use std::sync::Arc;
 
 use crate::api::{ApiState, check_token, operation_response};
-use crate::app::{info, try_chown};
+use crate::app::info;
 use crate::platform::fs::FileMode;
 use axum::{
     extract::{Json, State},
@@ -31,11 +31,22 @@ pub fn run(paths: &[String]) -> Result<(), String> {
                 .map_err(|e| format!("failed to create {}: {e}", path.display()))?;
             info(&format!("folder created: {}", path.display()));
         }
-        if let (Ok(uid), Ok(gid)) = (env::var("SUDO_UID"), env::var("SUDO_GID")) {
-            try_chown(&[&format!("{uid}:{gid}"), path.to_string_lossy().as_ref()]);
-        }
+        give_to_sudo_user(&path);
     }
     Ok(())
+}
+
+/// Best effort: a folder made through `sudo` belongs to the user who ran it.
+/// A local profile has no other owner to give it to.
+fn give_to_sudo_user(path: &std::path::Path) {
+    if crate::platform::current().one_user() {
+        return;
+    }
+    let id = |name: &str| env::var(name).ok().and_then(|value| value.parse::<u32>().ok());
+    if let (Some(uid), Some(gid)) = (id("SUDO_UID"), id("SUDO_GID")) {
+        let owner = crate::platform::fs::OwnerId { uid, gid };
+        let _ = crate::platform::files().set_owner(path, &owner);
+    }
 }
 
 pub fn run_for_user(username: &str, paths: &[String]) -> Result<(), String> {

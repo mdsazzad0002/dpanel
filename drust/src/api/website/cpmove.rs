@@ -135,11 +135,13 @@ pub(super) fn archive_cpmove(
         Path::new(&format!("{}.json", archive_path.display())),
         FileMode::SiteFile,
     );
-    crate::app::try_chown(&[
-        "root:www-data",
-        archive_path.to_string_lossy().as_ref(),
-        &format!("{}.json", archive_path.display()),
-    ]);
+    crate::app::try_chown("root", "www-data", archive_path, crate::app::Depth::One);
+    crate::app::try_chown(
+        "root",
+        "www-data",
+        Path::new(&format!("{}.json", archive_path.display())),
+        crate::app::Depth::One,
+    );
     Ok(
         serde_json::json!({ "archive_path": archive_path, "format": "cpanel-cpmove", "website": website_meta }),
     )
@@ -305,11 +307,7 @@ pub(super) fn restore_cpmove_staged(
         }
     }
     progress.update("permissions", 96, "Fixing file ownership");
-    crate::app::try_chown(&[
-        "-R",
-        &format!("{owner}:{owner}"),
-        home.to_string_lossy().as_ref(),
-    ]);
+    crate::app::try_chown(owner, owner, &home, crate::app::Depth::Tree);
     progress.update("finalizing", 98, "Saving panel records");
     Ok(website)
 }

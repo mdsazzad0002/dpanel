@@ -230,7 +230,7 @@ pub(super) fn archive_website(zip_path: &str, website: &WebsiteArchive) -> Resul
     platform::files()
         .set_mode(&zip_path, FileMode::SiteFile)
         .map_err(|e| format!("failed to protect archive: {e}"))?;
-    crate::app::try_chown(&["root:www-data", zip_path.to_string_lossy().as_ref()]);
+    crate::app::try_chown("root", "www-data", &zip_path, crate::app::Depth::One);
     Ok(serde_json::json!({
         "zip_path": zip_path.display().to_string(),
         "files": stats.files,

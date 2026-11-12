@@ -23,7 +23,6 @@ use tokio::sync::mpsc;
 
 use crate::platform::{self, fs::FileMode};
 
-use crate::app::run_status;
 
 use super::server::DemoServerState;
 
@@ -251,14 +250,12 @@ fn create_identity_files(ticket: &TerminalTicket, uid: &str, gid: &str) -> Resul
     }
     // bwrap now runs as the site owner (see spawn_pty), not root, so it needs
     // read/traverse access to these files itself in order to bind-mount them.
-    run_status(
-        "chown",
-        &["-R", &format!("{}:{}", ticket.site_owner, ticket.site_owner), &dir.to_string_lossy()],
-    )
-    .map_err(|e| {
-        let _ = fs::remove_dir_all(&dir);
-        e
-    })?;
+    platform::fs::owner_named(&ticket.site_owner, &ticket.site_owner)
+        .and_then(|owner| platform::fs::set_owner_tree(platform::files(), &dir, &owner))
+        .map_err(|e| {
+            let _ = fs::remove_dir_all(&dir);
+            e.to_string()
+        })?;
     Ok(dir)
 }
 
@@ -281,7 +278,8 @@ fn ensure_protected_mountpoint(owner: &str, root: &Path, name: &str) -> Result<(
     // bwrap binds onto this as the unprivileged site owner (see spawn_pty),
     // so it must own the mountpoint — re-assert this every call in case a
     // leftover mountpoint from before this fix is still root-owned.
-    run_status("chown", &[&format!("{owner}:{owner}"), &path.to_string_lossy()])
+    let owner = platform::fs::owner_named(owner, owner).map_err(|e| e.to_string())?;
+    platform::files().set_owner(&path, &owner).map_err(|e| e.to_string())
 }
 
 fn spawn_pty(

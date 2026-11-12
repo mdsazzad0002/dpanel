@@ -132,6 +132,8 @@ pub trait AccountManager: Send + Sync + std::fmt::Debug {
     /// Does nothing when the group does not exist on this system.
     fn add_to_group(&self, name: &str, group: &str) -> Result<(), PlatformError>;
     fn primary_group(&self, name: &str) -> Result<String, PlatformError>;
+    /// The id of a group by name, as `chown user:group` resolves it.
+    fn group_id(&self, name: &str) -> Result<u32, PlatformError>;
     fn home(&self, name: &str) -> Result<PathBuf, PlatformError>;
     /// `None` when the account has no login shell to report.
     fn shell(&self, name: &str) -> Option<String>;
@@ -346,6 +348,16 @@ impl AccountManager for LinuxAccounts {
         run("id", &["-gn", name])
     }
 
+    fn group_id(&self, name: &str) -> Result<u32, PlatformError> {
+        run("getent", &["group", name])?
+            .split(':')
+            .nth(2)
+            .and_then(|gid| gid.parse().ok())
+            .ok_or_else(|| PlatformError::NotFound {
+                what: format!("Unable to read the group {name}"),
+            })
+    }
+
     fn home(&self, name: &str) -> Result<PathBuf, PlatformError> {
         passwd_field(name, 5).map(PathBuf::from)
     }
@@ -458,6 +470,10 @@ impl AccountManager for LocalAccounts {
         Ok(name.to_string())
     }
 
+    fn group_id(&self, _name: &str) -> Result<u32, PlatformError> {
+        Ok(OwnerId::LOGGED_IN_USER.gid)
+    }
+
     fn home(&self, name: &str) -> Result<PathBuf, PlatformError> {
         self.folder(name)
     }
@@ -532,6 +548,10 @@ impl AccountManager for NoAccounts {
     }
 
     fn primary_group(&self, _name: &str) -> Result<String, PlatformError> {
+        unsupported()
+    }
+
+    fn group_id(&self, _name: &str) -> Result<u32, PlatformError> {
         unsupported()
     }
 

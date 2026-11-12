@@ -15,7 +15,10 @@ use crate::{
     app::{ensure_root, program_exists, run_status, user_group, valid_username},
     platform::{
         self,
-        fs::{FileAccess, FileMode},
+        fs::{
+            FileAccess, FileMode, ModeChange, change_mode, change_mode_tree,
+            owner_named as fs_owner_named, set_owner_tree,
+        },
     },
 };
 
@@ -156,36 +159,37 @@ fn fix_target(username: &str, root_path: &Path) -> Result<(), String> {
         return fix_local_target(platform::files(), root_path);
     }
     let path = root_path.to_string_lossy();
-    let owner = format!("{username}:www-data");
+    let files = platform::files();
+    let owner = |group: &str| fs_owner_named(username, group).map_err(platform::fs::error_at(root_path));
 
-    run_status("chown", &["-R", &owner, path.as_ref()])?;
+    set_owner_tree(files, root_path, &owner("www-data")?).map_err(platform::fs::error_at(root_path))?;
     if program_exists("setfacl") {
         run_status("setfacl", &["-R", "-b", path.as_ref()])?;
         run_status("setfacl", &["-R", "-k", path.as_ref()])?;
     }
-    run_status("chmod", &["-R", "u+rwX,g+rX,g-w,o-rwx", path.as_ref()])?;
-    run_status("chmod", &["0750", path.as_ref()])?;
+    // u+rwX,g+rX,g-w,o-rwx
+    let site = ModeChange::Adjust { add: 0o640, add_exec: 0o110, remove: 0o027 };
+    change_mode_tree(files, root_path, site).map_err(platform::fs::error_at(root_path))?;
+    change_mode(files, root_path, ModeChange::Exact(0o750)).map_err(platform::fs::error_at(root_path))?;
 
     // root_path here is always the account home (see resolve_target). The
     // terminal's bwrap sandbox drops CAP_DAC_OVERRIDE before it can create
     // e.g. <home>/.ssh, so it needs "other" execute on the home dir itself
-    // to traverse into it. Re-assert that after the recursive chmod above.
-    run_status("chmod", &["711", path.as_ref()])?;
+    // to traverse into it. Re-assert that after the recursive mode above.
+    change_mode(files, root_path, ModeChange::Exact(0o711)).map_err(platform::fs::error_at(root_path))?;
 
-    // The recursive chmod above keeps an existing execute bit, so a Passport
+    // The recursive mode above keeps an existing execute bit, so a Passport
     // key uploaded as 755 ends up 750, and league/oauth2-server rejects any
     // key mode outside 400/440/600/640/660. PHP-FPM runs as the site user,
-    // so owner-only access is enough.
-    run_status(
-        "find",
-        &[
-            path.as_ref(),
-            "-type", "f",
-            "-path", "*/storage/*",
-            "(", "-name", "oauth-private.key", "-o", "-name", "oauth-public.key", ")",
-            "-exec", "chmod", "0600", "{}", "+",
-        ],
-    )?;
+    // so owner-only access is enough. As `find -path '*/storage/*'`, a
+    // `storage` in the home's own path counts too.
+    let mut keys = Vec::new();
+    let in_storage = root_path.components().any(|part| part.as_os_str() == "storage");
+    find_oauth_keys(root_path, in_storage, &mut keys)
+        .map_err(|e| format!("failed to read {}: {e}", root_path.display()))?;
+    for key in keys {
+        change_mode(files, &key, ModeChange::Exact(0o600)).map_err(platform::fs::error_at(&key))?;
+    }
 
     // Maildirs belong to the site user alone, as mailbox-storage creates them.
     // Dovecot copies a Maildir's group onto every new file and runs as the
@@ -194,9 +198,10 @@ fn fix_target(username: &str, root_path: &Path) -> Result<(), String> {
     // sent mail). The web server has no business reading mail either.
     let mail_path = root_path.join("mail");
     if mail_path.is_dir() {
-        let mail_path = mail_path.to_string_lossy();
-        run_status("chown", &["-R", &format!("{username}:{username}"), mail_path.as_ref()])?;
-        run_status("chmod", &["-R", "u+rwX,go-rwx", mail_path.as_ref()])?;
+        set_owner_tree(files, &mail_path, &owner(username)?).map_err(platform::fs::error_at(&mail_path))?;
+        // u+rwX,go-rwx
+        let private = ModeChange::Adjust { add: 0o600, add_exec: 0o100, remove: 0o077 };
+        change_mode_tree(files, &mail_path, private).map_err(platform::fs::error_at(&mail_path))?;
     }
 
     // The home directory is root:root 711 (traverse-only), so the sandboxed

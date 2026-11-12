@@ -762,7 +762,10 @@ fn repair_phpmyadmin_sensitive_permissions(root: &Path) -> Result<(), String> {
             continue;
         }
 
-        crate::app::run_status("chown", &["root:www-data", path.to_string_lossy().as_ref()])?;
+        let owner = platform::fs::owner_named("root", "www-data").map_err(|e| e.to_string())?;
+        platform::files()
+            .set_owner(&path, &owner)
+            .map_err(|error| format!("failed to chown {}: {error}", path.display()))?;
         platform::files().set_mode(&path, FileMode::Raw(mode))
             .map_err(|error| format!("failed to chmod {}: {error}", path.display()))?;
         crate::app::info(&format!(

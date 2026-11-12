@@ -75,7 +75,7 @@ pub(super) fn build_clone_package(
         platform::files()
             .set_mode(&package, FileMode::SiteFile)
             .map_err(|e| format!("cannot protect clone package: {e}"))?;
-        crate::app::try_chown(&["root:www-data", package.to_string_lossy().as_ref()]);
+        crate::app::try_chown("root", "www-data", &package, crate::app::Depth::One);
 
         Ok(serde_json::json!({
             "package_path": package.display().to_string(),

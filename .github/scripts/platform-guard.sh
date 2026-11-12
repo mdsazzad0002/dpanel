@@ -7,6 +7,8 @@
 #    code elsewhere may not grow: each file may hold at most the count in
 #    platform-guard-baseline.txt. Lower a count when you remove paths
 #    (`--update` rewrites the file); never raise one to make CI pass.
+# 3. A direct chown/chmod (process, PermissionsExt, std/nix/libc call)
+#    anywhere else fails outright.
 #
 # Usage: platform-guard.sh [--update]
 set -euo pipefail
@@ -19,6 +21,10 @@ cd "$src"
 
 cfg_hits="$(grep -rnE 'cfg!?\((not\()?(any\(|all\()?(target_os|target_family|unix|windows)' --include='*.rs' . \
     | sed 's|^\./||' | grep -v '^platform/' || true)"
+
+# Ownership and mode changes go through platform::fs / FileAccess.
+perm_hits="$(grep -rnE 'Command::new\("(chown|chmod)"|PermissionsExt|os::unix::fs::(chown|lchown|fchown)|unistd::(chown|fchownat)|libc::(chown|lchown|chmod)' \
+    --include='*.rs' . | sed 's|^\./||' | grep -v '^platform/' || true)"
 
 # Code before the first `#[cfg(test)]` line, comments dropped, Linux paths counted.
 count_paths() {
@@ -58,6 +64,12 @@ failed=0
 if [ -n "$cfg_hits" ]; then
     echo "OS cfg outside drust/src/platform/ (move it behind a platform interface):"
     printf '  %s\n' "$cfg_hits"
+    failed=1
+fi
+
+if [ -n "$perm_hits" ]; then
+    echo "chown/chmod outside drust/src/platform/ (use platform::fs or FileAccess):"
+    printf '  %s\n' "$perm_hits"
     failed=1
 fi
 

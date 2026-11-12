@@ -810,7 +810,7 @@ fn restore(
     let restored_db = result?;
     let (connected, warnings) = connect_sites(layout, &domains, &restored_db, credentials);
     let home = layout.home();
-    crate::app::try_chown(&["-R", &format!("{0}:{0}", layout.account), home.to_string_lossy().as_ref()]);
+    crate::app::try_chown(&layout.account, &layout.account, &home, crate::app::Depth::Tree);
 
     Ok(serde_json::json!({
         "account": layout.account,
@@ -883,7 +883,7 @@ fn restore_into(
         restored.push(db.clone());
     }
 
-    crate::app::try_chown(&["-R", &format!("{0}:{0}", layout.account), home.to_string_lossy().as_ref()]);
+    crate::app::try_chown(&layout.account, &layout.account, &home, crate::app::Depth::Tree);
     crate::filemanager::fix_permissions::run(Some(&layout.account), home.to_str(), false)?;
     Ok(restored)
 }

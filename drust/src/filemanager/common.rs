@@ -2,7 +2,7 @@ use std::fs;
 use std::path::{Component, Path, PathBuf};
 
 use crate::app::{ensure_root, run_status, user_group, valid_username};
-use crate::platform::{self, fs::FileMode};
+use crate::platform::{self, fs::{FileMode, ModeChange}};
 
 pub(super) fn validate_absolute_path(target: &str) -> Result<PathBuf, String> {
     if !Path::new(target).is_absolute() {
@@ -128,18 +128,11 @@ pub(super) fn apply_owner_and_mode(
             .set_mode(path, mode)
             .map_err(|e| e.to_string());
     }
-    run_status(
-        "chown",
-        &[
-            &format!("{username}:{group}"),
-            path.to_string_lossy().as_ref(),
-        ],
-    )?;
-    run_status("chmod", &[&chmod_argument(mode), path.to_string_lossy().as_ref()])
-}
-
-fn chmod_argument(mode: FileMode) -> String {
-    format!("{:04o}", mode.bits())
+    let files = platform::files();
+    let failed = |e: platform::PlatformError| format!("{}: {e}", path.display());
+    let owner = platform::fs::owner_named(username, group).map_err(failed)?;
+    files.set_owner(path, &owner).map_err(failed)?;
+    platform::fs::change_mode(files, path, ModeChange::Exact(mode.bits())).map_err(failed)
 }
 
 /// `chown -R`, for a tree that a copy or move just put in the account home.
@@ -147,14 +140,9 @@ pub(super) fn apply_owner_to_tree(username: &str, group: &str, path: &Path) -> R
     if platform::current().one_user() {
         return Ok(());
     }
-    run_status(
-        "chown",
-        &[
-            "-R",
-            &format!("{username}:{group}"),
-            path.to_string_lossy().as_ref(),
-        ],
-    )
+    let failed = |e: platform::PlatformError| format!("{}: {e}", path.display());
+    let owner = platform::fs::owner_named(username, group).map_err(failed)?;
+    platform::fs::set_owner_tree(platform::files(), path, &owner).map_err(failed)
 }
 
 /// Copies a file or folder, merging into a folder that is already there.
@@ -163,9 +151,8 @@ pub(super) fn copy_tree(source: &Path, destination: &Path) -> Result<(), String>
         return copy_natively(source, destination);
     }
     // Shell out to `cp -a` rather than hand-rolling a recursive walk: it
-    // preserves directory structure atomically for large trees, the same
-    // way the rest of this module relies on system tools (chown/chmod)
-    // instead of reimplementing them. `--remove-destination` unlinks an
+    // preserves directory structure atomically for large trees.
+    // `--remove-destination` unlinks an
     // existing file before writing, so a merge never writes through it.
     run_status(
         "cp",
@@ -213,14 +200,6 @@ fn copy_natively(source: &Path, destination: &Path) -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn chmod_gets_the_same_text_as_before() {
-        assert_eq!(chmod_argument(FileMode::Executable), "0755");
-        assert_eq!(chmod_argument(FileMode::Shared), "0644");
-        assert_eq!(chmod_argument(FileMode::SiteFile), "0640");
-        assert_eq!(chmod_argument(FileMode::Raw(0o2775)), "2775");
-    }
 
     #[test]
     fn a_native_copy_merges_and_replaces() {

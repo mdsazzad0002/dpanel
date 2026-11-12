@@ -7,7 +7,7 @@ pub use support::{
     random_hex, read_to_string, run_output, run_status, split_aliases, user_group, valid_username,
     warn, write_string,
 };
-pub(crate) use support::{archive, program_exists, try_chown, valid_email};
+pub(crate) use support::{Depth, archive, program_exists, try_chown, valid_email};
 
 pub fn run_admin_user(args: Vec<String>) -> Result<(), String> {
     admin::create_user::run(args)

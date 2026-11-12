@@ -109,15 +109,8 @@ fn own(path: &str, owner: &str) -> Result<(), String> {
     if platform::current().one_user() {
         return Ok(());
     }
-    let output = Command::new("chown")
-        .args(["-R", &format!("{owner}:{owner}"), path])
-        .output()
-        .map_err(|e| e.to_string())?;
-    if output.status.success() {
-        Ok(())
-    } else {
-        Err(String::from_utf8_lossy(&output.stderr).trim().to_string())
-    }
+    let owner = platform::fs::owner_named(owner, owner).map_err(|e| e.to_string())?;
+    platform::fs::set_owner_tree(platform::files(), Path::new(path), &owner).map_err(|e| e.to_string())
 }
 
 fn create(path: &str, owner: &str) -> Result<(), String> {

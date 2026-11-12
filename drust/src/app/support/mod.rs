@@ -14,7 +14,7 @@ pub use system::{
 pub use user::{random_hex, user_group, valid_username};
 
 pub(crate) use filesystem::current_epoch;
-pub(crate) use process::{program_exists, try_chown};
+pub(crate) use process::{Depth, program_exists, try_chown};
 pub(crate) use user::{user_home, valid_email};
 
 pub fn info(message: &str) {

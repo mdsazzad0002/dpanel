@@ -231,11 +231,7 @@ fn generic_restore(req: &GenericRestoreRequest) -> Result<serde_json::Value, Str
     };
     let saved_archive = keep_generic_upload(req, &source, &home)?;
     let (framework, config_path, document_root) = detect_generic_application(&project_root);
-    crate::app::try_chown(&[
-        "-R",
-        &format!("{}:{}", req.site_owner, req.site_owner),
-        home.to_string_lossy().as_ref(),
-    ]);
+    crate::app::try_chown(&req.site_owner, &req.site_owner, &home, crate::app::Depth::Tree);
     crate::filemanager::fix_permissions::run(Some(&req.site_owner), home.to_str(), false)?;
     fs::remove_dir_all(stage).ok();
     Ok(
