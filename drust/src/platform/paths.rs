@@ -187,6 +187,57 @@ pub fn plain_path(path: &Path) -> PathBuf {
     }
 }
 
+/// Whether one percent-decoded segment of a URL path names, on this OS, a
+/// file by another name, so that a check made on the name (is it PHP, is the
+/// folder blocked) would not hold for the file the OS opens. Unix opens
+/// every name as itself.
+pub fn web_segment_names_another_file(segment: &str) -> bool {
+    #[cfg(windows)]
+    {
+        windows_alias(segment)
+    }
+    #[cfg(unix)]
+    {
+        let _ = segment;
+        false
+    }
+}
+
+/// Windows drops trailing dots and spaces (`x.php.` is `x.php`), reads
+/// `name:stream` as a stream of `name` (`x.php::$DATA` is its source),
+/// splits on `\`, opens a device for `CON`, `NUL`, `COM1`… with any
+/// extension, and answers to 8.3 short names (`CONFIG~1` is `config.d`).
+/// The rest are characters no Windows name may hold.
+#[cfg_attr(unix, allow(dead_code))]
+fn windows_alias(segment: &str) -> bool {
+    if segment.is_empty() || segment == "." || segment == ".." {
+        return false;
+    }
+    if segment.ends_with(['.', ' ']) {
+        return true;
+    }
+    if segment.chars().any(|c| matches!(c, '\\' | ':' | '<' | '>' | '"' | '|' | '?' | '*') || c.is_control()) {
+        return true;
+    }
+    let stem = segment.split('.').next().unwrap_or("").trim_end_matches(' ').to_ascii_uppercase();
+    let numbered = |prefix: &str| {
+        stem.strip_prefix(prefix)
+            .is_some_and(|rest| matches!(rest, "0" | "1" | "2" | "3" | "4" | "5" | "6" | "7" | "8" | "9" | "¹" | "²" | "³"))
+    };
+    if matches!(stem.as_str(), "CON" | "PRN" | "AUX" | "NUL" | "CONIN$" | "CONOUT$") || numbered("COM") || numbered("LPT") {
+        return true;
+    }
+    let (name, extension) = segment.rsplit_once('.').unwrap_or((segment, ""));
+    name.rsplit_once('~').is_some_and(|(head, tail)| {
+        !head.is_empty()
+            && head.len() <= 6
+            && !tail.is_empty()
+            && tail.bytes().all(|byte| byte.is_ascii_digit())
+            && name.len() <= 8
+            && extension.len() <= 3
+    })
+}
+
 /// How restic names a local path inside a snapshot. On Unix that is the path
 /// itself. On Windows restic writes `C:\Users\a` as `/C/Users/a`.
 pub fn restic_snapshot_path(path: &Path) -> String {
@@ -506,6 +557,31 @@ impl Paths {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn windows_reads_these_names_as_other_files() {
+        for alias in [
+            "secret.php.",
+            "secret.php ",
+            "secret.php...  ",
+            "secret.php::$DATA",
+            "config:$i30:$INDEX_ALLOCATION",
+            r"a\..\..\x",
+            "CON",
+            "nul.txt",
+            "Com1.php",
+            "lpt³",
+            "CONFIG~1",
+            "WP-CON~2.PHP",
+            "x?y",
+            "a\u{1}b",
+        ] {
+            assert!(windows_alias(alias), "{alias:?} was taken as itself");
+        }
+        for plain in ["", ".", "..", "index.php", ".well-known", "~user", "file~1.backup", "console.log", "com10", "a.b.c", "Ünïcødé файл.txt", "with space.txt"] {
+            assert!(!windows_alias(plain), "{plain:?} was refused");
+        }
+    }
 
     #[test]
     fn a_path_is_named_as_restic_names_it_in_a_snapshot() {

@@ -167,7 +167,7 @@ pub fn canonical_path(path: &str) -> String {
 }
 
 /// `%XX` to the byte it stands for; anything malformed stays as it is.
-fn percent_decode(path: &str) -> String {
+pub(super) fn percent_decode(path: &str) -> String {
     let bytes = path.as_bytes();
     let mut out = Vec::with_capacity(bytes.len());
     let mut i = 0;

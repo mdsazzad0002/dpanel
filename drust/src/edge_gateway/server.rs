@@ -390,6 +390,11 @@ async fn respond(
         .to_string();
     let path = request.uri().path().to_string();
     tracing::debug!(host = %host, path = %path, "incoming request");
+    // Before anything looks at the name: on Windows `x.php.` would be served
+    // as the source of `x.php`, and `CONFIG~1` would pass a blocked `config`.
+    if super::site_guards::names_another_file(&path) {
+        return (StatusCode::BAD_REQUEST, "Not a valid file name on this server").into_response();
+    }
     let snapshot = get_cached_snapshot(&state).await;
     let site = super::select_site(snapshot.as_ref(), &host, local_ip(&request));
     let canonical_domain = site.and_then(|site| site.hostnames.first().cloned());
@@ -1531,6 +1536,23 @@ mod edge_cache_tests {
         let label = response.headers().get(edge_cache::CACHE_STATUS_HEADER).map(|v| v.to_str().unwrap().to_string()).unwrap_or_default();
         let body = axum::body::to_bytes(response.into_body(), usize::MAX).await.unwrap();
         (status, label, String::from_utf8_lossy(&body).into_owned())
+    }
+
+    #[tokio::test]
+    async fn a_name_the_os_reads_as_another_file_never_reaches_the_site() {
+        let hits = Arc::new(AtomicUsize::new(0));
+        let addr = origin(Arc::new(AtomicU16::new(200)), hits.clone()).await;
+        let router = gateway(addr, Duration::from_secs(0));
+        // On Windows these are wp-config.php's source; on Unix, files of their own.
+        let refused = crate::platform::paths::web_segment_names_another_file("wp-config.php.");
+        for path in ["/wp-config.php.", "/wp-config.php%20", "/wp-config.php::$DATA", "/wp-config.php%3A%3A$DATA", "/WP-CON~1.PHP"] {
+            let (code, _, _) = get(&router, path).await;
+            assert_eq!(code == StatusCode::BAD_REQUEST, refused, "{path}");
+        }
+        let before = hits.load(Ordering::SeqCst);
+        let (code, _, _) = get(&router, "/wp-config.php").await;
+        assert_ne!(code, StatusCode::BAD_REQUEST);
+        assert_eq!(hits.load(Ordering::SeqCst), before + 1);
     }
 
     #[tokio::test]

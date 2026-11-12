@@ -150,6 +150,14 @@ pub fn check(site: &super::SiteConfig, request: &Request<Body>) -> Option<Respon
     None
 }
 
+/// A URL path the OS would open as some other file (`platform::paths::
+/// web_segment_names_another_file`), checked once decoded. Never true on Unix.
+pub fn names_another_file(path: &str) -> bool {
+    basic_auth::percent_decode(path)
+        .split('/')
+        .any(crate::platform::paths::web_segment_names_another_file)
+}
+
 /// A segment starting with a dot. `/.well-known/` is public by convention
 /// (ACME, security.txt, OAuth discovery, app links); a hidden name inside it is not.
 fn is_hidden(path: &str) -> bool {
