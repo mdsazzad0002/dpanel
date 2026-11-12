@@ -1,10 +1,13 @@
 <script setup>
+import { useI18n } from 'vue-i18n';
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
 import { Head, Link, router, usePage } from '@inertiajs/vue3';
 import { computed, reactive, ref, watch } from 'vue';
 import SslBadgeMenu from '@/Pages/Websites/components/SslBadgeMenu.vue';
 import SiteFavicon from '@/Pages/Websites/components/SiteFavicon.vue';
 import BulkDownloadPanel from '@/Pages/Websites/components/bulk-download/BulkDownloadPanel.vue';
+
+const { t } = useI18n();
 
 const page = usePage();
 const panelToken = computed(() => String(page.props.panel?.token || ''));
@@ -29,13 +32,13 @@ let toastSequence = 0;
 const perPage = 50;
 
 const sslValidityLabel = (item) => {
-    if (!item?.enable_ssl) return 'SSL disabled';
-    if (item?.ssl_days_remaining === null || item?.ssl_days_remaining === undefined || item?.ssl_days_remaining === '') return 'Validity unknown';
+    if (!item?.enable_ssl) return t('websites.list.sslDisabled');
+    if (item?.ssl_days_remaining === null || item?.ssl_days_remaining === undefined || item?.ssl_days_remaining === '') return t('websites.list.validityUnknown');
     const days = Number(item?.ssl_days_remaining);
-    if (!Number.isFinite(days)) return 'Validity unknown';
-    if (days < 0) return `Expired ${Math.abs(days)}d ago`;
-    if (days === 0) return 'Expires today';
-    return `Valid ${days}d`;
+    if (!Number.isFinite(days)) return t('websites.list.validityUnknown');
+    if (days < 0) return t('websites.list.expiredAgo', { n: Math.abs(days) });
+    if (days === 0) return t('websites.list.expiresToday');
+    return t('websites.list.validFor', { n: days });
 };
 
 const sslValidityClass = (item) => {
@@ -167,15 +170,15 @@ const formatDate = (value) => {
     const diffMins = Math.floor(diffMs / 60000);
     const diffHours = Math.floor(diffMs / 3600000);
     const diffDays = Math.floor(diffMs / 86400000);
-    if (diffMins < 1) return 'Just now';
-    if (diffMins < 60) return `${diffMins}m ago`;
-    if (diffHours < 24) return `${diffHours}h ago`;
-    if (diffDays < 7) return `${diffDays}d ago`;
+    if (diffMins < 1) return t('websites.activity.justNow');
+    if (diffMins < 60) return t('websites.activity.minutesAgo', { n: diffMins });
+    if (diffHours < 24) return t('websites.activity.hoursAgo', { n: diffHours });
+    if (diffDays < 7) return t('websites.activity.daysAgo', { n: diffDays });
     return parsed.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
 };
 
 const deleteRequest = async (id) => {
-    if (!confirm('Delete this website?')) return;
+    if (!confirm(t('websites.list.deleteConfirm'))) return;
     const deletingId = String(id);
     if (!deletingId || deleteLoadingIds.has(deletingId)) return;
     deleteLoadingIds.add(deletingId);
@@ -193,13 +196,13 @@ const deleteRequest = async (id) => {
         const data = await response.json().catch(() => ({}));
         if (!response.ok) {
             const detail = Object.values(data.errors || {}).flat().find(Boolean);
-            throw new Error(detail ? `${data.message || 'Website delete failed.'} ${detail}` : (data.message || 'Website delete failed.'));
+            throw new Error(detail ? `${data.message || t('websites.list.deleteFailed')} ${detail}` : (data.message || t('websites.list.deleteFailed')));
         }
 
         websiteRequests.value = websiteRequests.value.filter((item) => String(item.id) !== deletingId);
-        pushToast(data.message || 'Website deleted successfully.');
+        pushToast(data.message || t('websites.list.deleted'));
     } catch (error) {
-        pushToast(error?.message || 'Website delete failed.', 'error');
+        pushToast(error?.message || t('websites.list.deleteFailed'), 'error');
     } finally {
         deleteLoadingIds.delete(deletingId);
     }
@@ -235,9 +238,9 @@ const reloadGatewayCache = async () => {
             headers: { Accept: 'application/json', 'X-Requested-With': 'XMLHttpRequest', 'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.content || '' },
         });
         const data = await response.json().catch(() => ({}));
-        if (!response.ok) throw new Error(data.message || 'Cache reload failed.');
-        pushToast(data.message || 'Website cache reloaded.');
-    } catch (error) { pushToast(error?.message || 'Cache reload failed.', 'error'); }
+        if (!response.ok) throw new Error(data.message || t('websites.list.cacheFailed'));
+        pushToast(data.message || t('websites.list.cacheReloaded'));
+    } catch (error) { pushToast(error?.message || t('websites.list.cacheFailed'), 'error'); }
     finally { cacheReloading.value = false; }
 };
 
@@ -259,12 +262,12 @@ const issueAliasSsl = async (alias) => {
             body: JSON.stringify({}),
         });
         const data = await response.json().catch(() => ({}));
-        if (!response.ok) throw new Error(data.message || 'SSL issue failed.');
+        if (!response.ok) throw new Error(data.message || t('websites.hero.sslIssueFailed'));
         alias.enable_ssl = true;
         alias.ssl_status = 'issued';
-        pushToast(data.message || 'SSL certificate issued successfully.');
+        pushToast(data.message || t('websites.hero.sslIssued'));
     } catch (error) {
-        pushToast(error?.message || 'SSL issue failed.', 'error');
+        pushToast(error?.message || t('websites.hero.sslIssueFailed'), 'error');
     } finally {
         sslLoadingIds.delete(id);
     }
@@ -277,7 +280,7 @@ const onSslReinstalled = (item, data) => {
         item.ssl_days_remaining = Math.max(0, Math.floor((new Date(expiresAt).getTime() - Date.now()) / 86400000));
     }
     item.ssl_status = 'valid';
-    pushToast(data?.message || 'SSL certificate reinstalled successfully.');
+    pushToast(data?.message || t('websites.list.sslReinstalled'));
 };
 
 const onSslUninstalled = (item, data) => {
@@ -285,7 +288,7 @@ const onSslUninstalled = (item, data) => {
     item.ssl_status = 'disabled';
     item.ssl_expires_at = null;
     item.ssl_days_remaining = null;
-    pushToast(data?.message || 'SSL certificate uninstalled.');
+    pushToast(data?.message || t('websites.list.sslUninstalled'));
 };
 
 const toggleAliasSsl = async (alias) => {
@@ -307,12 +310,12 @@ const toggleAliasSsl = async (alias) => {
             body: JSON.stringify({ enabled }),
         });
         const data = await response.json().catch(() => ({}));
-        if (!response.ok) throw new Error(data.message || 'SSL status update failed.');
+        if (!response.ok) throw new Error(data.message || t('websites.list.sslFailed'));
         alias.enable_ssl = enabled;
         alias.ssl_status = enabled ? 'unknown' : 'disabled';
-        pushToast(data.message || `SSL ${enabled ? 'enabled' : 'disabled'} successfully.`);
+        pushToast(data.message || (enabled ? t('websites.list.sslEnabledOk') : t('websites.hero.sslDisabled')));
     } catch (error) {
-        pushToast(error?.message || 'SSL status update failed.', 'error');
+        pushToast(error?.message || t('websites.list.sslFailed'), 'error');
     } finally {
         sslLoadingIds.delete(id);
     }
@@ -330,6 +333,13 @@ const statusClass = (status) => {
     if (v === 'live') return 'border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-800 dark:bg-emerald-500/10 dark:text-emerald-400';
     if (v === 'disabled') return 'border-red-200 bg-red-50 text-red-700 dark:border-red-800 dark:bg-red-500/10 dark:text-red-400';
     return 'border-slate-200 bg-slate-50 text-slate-600 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300';
+};
+
+const statusText = (status) => {
+    const v = String(status || '').toLowerCase();
+    if (v === 'live') return t('websites.status.live');
+    if (v === 'disabled') return t('websites.status.disabled');
+    return status;
 };
 
 const createdByLabel = (item) => String(item?.created_by_label || item?.assigned_reseller_name || item?.assigned_user_name || 'Admin');
@@ -384,7 +394,7 @@ const saveOwnership = async () => {
         const data = await response.json().catch(() => ({}));
         if (!response.ok) {
             const detail = Object.values(data.errors || {}).flat().find(Boolean);
-            throw new Error(detail || data.message || 'Ownership update failed.');
+            throw new Error(detail || data.message || t('websites.list.ownerFailed'));
         }
 
         const affectedIds = new Set((data.affected_ids || []).map(String));
@@ -398,13 +408,13 @@ const saveOwnership = async () => {
                 created_by_label: data.owner?.label || 'Admin',
             }
             : website);
-        pushToast(data.message || 'Website ownership updated.');
+        pushToast(data.message || t('websites.list.ownerUpdated'));
         ownershipItem.value = null;
         ownershipMode.value = 'owner';
         ownershipUserId.value = '';
         ownershipResellerId.value = '';
     } catch (error) {
-        pushToast(error?.message || 'Ownership update failed.', 'error');
+        pushToast(error?.message || t('websites.list.ownerFailed'), 'error');
     } finally {
         ownershipSaving.value = false;
     }
@@ -412,31 +422,31 @@ const saveOwnership = async () => {
 </script>
 
 <template>
-    <Head title="Websites" />
+    <Head :title="t('websites.list.title')" />
 
     <AuthenticatedLayout>
         <div v-if="ownershipItem" class="fixed inset-0 z-[110] flex items-center justify-center bg-slate-950/60 p-4" @click.self="closeOwnership">
             <div class="w-full max-w-md rounded-2xl border border-slate-200 bg-white p-6 shadow-2xl dark:border-slate-700 dark:bg-slate-900">
-                <h2 class="text-lg font-semibold text-slate-900 dark:text-slate-100">{{ ownershipMode === 'owner' ? 'Edit Ownership' : 'Edit Reseller' }}</h2>
+                <h2 class="text-lg font-semibold text-slate-900 dark:text-slate-100">{{ ownershipMode === 'owner' ? t('websites.list.editOwnership') : t('websites.list.editReseller') }}</h2>
                 <p class="mt-1 text-sm text-slate-500 dark:text-slate-400">{{ ownershipItem.domain }}</p>
-                <p class="mt-3 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-800 dark:bg-amber-950/40 dark:text-amber-300">Changing a root website also changes every child and alias owner.</p>
+                <p class="mt-3 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-800 dark:bg-amber-950/40 dark:text-amber-300">{{ t('websites.list.ownerHelp') }}</p>
 
-                <label v-if="ownershipMode === 'owner'" class="mt-4 block text-sm font-medium text-slate-700 dark:text-slate-300">Ownership</label>
+                <label v-if="ownershipMode === 'owner'" class="mt-4 block text-sm font-medium text-slate-700 dark:text-slate-300">{{ t('websites.list.ownership') }}</label>
                 <select v-if="ownershipMode === 'owner'" v-model="ownershipUserId" class="mt-1 w-full rounded-xl border-slate-300 dark:border-slate-700 dark:bg-slate-800">
-                    <option value="">Admin / No user owner</option>
+                    <option value="">{{ t('websites.list.noOwner') }}</option>
                     <option v-for="user in ownerOptions" :key="user.id" :value="String(user.id)">{{ user.name }} — {{ user.email }}</option>
                 </select>
 
-                <label v-if="ownershipMode === 'reseller'" class="mt-4 block text-sm font-medium text-slate-700 dark:text-slate-300">Reseller</label>
+                <label v-if="ownershipMode === 'reseller'" class="mt-4 block text-sm font-medium text-slate-700 dark:text-slate-300">{{ t('websites.list.reseller') }}</label>
                 <select v-if="ownershipMode === 'reseller'" v-model="ownershipResellerId" class="mt-1 w-full rounded-xl border-slate-300 dark:border-slate-700 dark:bg-slate-800">
-                    <option value="">No reseller</option>
+                    <option value="">{{ t('websites.list.noReseller') }}</option>
                     <option v-for="user in resellerOptions" :key="user.id" :value="String(user.id)">{{ user.name }} — {{ user.email }}</option>
                 </select>
 
                 <div class="mt-5 flex justify-end gap-2">
-                    <button type="button" :disabled="ownershipSaving" class="rounded-lg border border-slate-300 px-4 py-2 text-sm dark:border-slate-700" @click="closeOwnership">Cancel</button>
+                    <button type="button" :disabled="ownershipSaving" class="rounded-lg border border-slate-300 px-4 py-2 text-sm dark:border-slate-700" @click="closeOwnership">{{ t('common.cancel') }}</button>
                     <button type="button" :disabled="ownershipSaving" class="rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50" @click="saveOwnership">
-                        {{ ownershipSaving ? 'Updating...' : (ownershipMode === 'owner' ? 'Update Ownership' : 'Update Reseller') }}
+                        {{ ownershipSaving ? t('websites.list.updating') : (ownershipMode === 'owner' ? t('websites.list.updateOwnership') : t('websites.list.updateReseller')) }}
                     </button>
                 </div>
             </div>
@@ -457,8 +467,8 @@ const saveOwnership = async () => {
 
         <template #header>
             <div>
-                <h1 class="text-lg font-semibold">Websites</h1>
-                <p class="text-sm text-slate-500 dark:text-slate-400">Manage all your websites, domains and configurations.</p>
+                <h1 class="text-lg font-semibold">{{ t('websites.list.title') }}</h1>
+                <p class="text-sm text-slate-500 dark:text-slate-400">{{ t('websites.list.subtitle') }}</p>
             </div>
         </template>
 
@@ -477,7 +487,7 @@ const saveOwnership = async () => {
             <div class="grid grid-cols-2 gap-3 sm:grid-cols-3">
                 <div class="rounded-xl border border-slate-200/80 bg-white p-4 shadow-sm dark:border-slate-800/80 dark:bg-slate-900/50">
                     <div class="flex items-center justify-between">
-                        <p class="text-[11px] font-semibold uppercase tracking-wider text-slate-400 dark:text-slate-500">Total</p>
+                        <p class="text-[11px] font-semibold uppercase tracking-wider text-slate-400 dark:text-slate-500">{{ t('websites.list.total') }}</p>
                         <div class="flex h-8 w-8 items-center justify-center rounded-lg bg-slate-100 dark:bg-slate-800">
                             <svg viewBox="0 0 24 24" class="h-4 w-4 text-slate-500 dark:text-slate-400" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12a9 9 0 01-9 9m9-9a9 9 0 00-9-9m9 9H3m9 9a9 9 0 01-9-9m9 9c1.657 0 3-4.03 3-9s-1.343-9-3-9m0 18c-1.657 0-3-4.03-3-9s1.343-9 3-9" /></svg>
                         </div>
@@ -486,7 +496,7 @@ const saveOwnership = async () => {
                 </div>
                 <div class="rounded-xl border border-slate-200/80 bg-white p-4 shadow-sm dark:border-slate-800/80 dark:bg-slate-900/50">
                     <div class="flex items-center justify-between">
-                        <p class="text-[11px] font-semibold uppercase tracking-wider text-slate-400 dark:text-slate-500">Live</p>
+                        <p class="text-[11px] font-semibold uppercase tracking-wider text-slate-400 dark:text-slate-500">{{ t('websites.status.live') }}</p>
                         <div class="flex h-8 w-8 items-center justify-center rounded-lg bg-emerald-100 dark:bg-emerald-500/15">
                             <svg viewBox="0 0 24 24" class="h-4 w-4 text-emerald-600 dark:text-emerald-400" fill="currentColor"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z" /></svg>
                         </div>
@@ -495,7 +505,7 @@ const saveOwnership = async () => {
                 </div>
                 <div class="rounded-xl border border-slate-200/80 bg-white p-4 shadow-sm dark:border-slate-800/80 dark:bg-slate-900/50">
                     <div class="flex items-center justify-between">
-                        <p class="text-[11px] font-semibold uppercase tracking-wider text-slate-400 dark:text-slate-500">Disabled</p>
+                        <p class="text-[11px] font-semibold uppercase tracking-wider text-slate-400 dark:text-slate-500">{{ t('websites.status.disabled') }}</p>
                         <div class="flex h-8 w-8 items-center justify-center rounded-lg bg-red-100 dark:bg-red-500/15">
                             <svg viewBox="0 0 24 24" class="h-4 w-4 text-red-600 dark:text-red-400" fill="currentColor"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12zm5 13.59L15.59 17 12 13.41 8.41 17 7 15.59 10.59 12 7 8.41 8.41 7 12 10.59 15.59 7 17 8.41 13.41 12 17 15.59z" /></svg>
                         </div>
@@ -513,37 +523,37 @@ const saveOwnership = async () => {
                     <input
                         v-model.trim="search"
                         type="text"
-                        placeholder="Search by domain, path, PHP version..."
+                        :placeholder="t('websites.list.searchPlaceholder')"
                         class="w-full rounded-xl border border-slate-200 bg-slate-50 py-2.5 pl-10 pr-4 text-sm text-slate-700 placeholder:text-slate-400 focus:border-blue-400 focus:bg-white focus:ring-2 focus:ring-blue-100 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 dark:placeholder:text-slate-500 dark:focus:border-blue-500 dark:focus:bg-slate-900 dark:focus:ring-blue-500/20"
                     />
                 </div>
                 <div class="flex flex-wrap items-center gap-2">
-                    <label class="inline-flex items-center gap-2 rounded-xl border border-slate-200 px-3 py-2.5 text-sm text-slate-600 dark:border-slate-700 dark:text-slate-300" title="Select all websites on this page">
+                    <label class="inline-flex items-center gap-2 rounded-xl border border-slate-200 px-3 py-2.5 text-sm text-slate-600 dark:border-slate-700 dark:text-slate-300" :title="t('websites.list.selectAll')">
                         <input type="checkbox" class="rounded" :checked="allOnPageSelected" :disabled="!selectableOnPage.length" @change="toggleSelectPage" />
-                        All
+                        {{ t('websites.list.all') }}
                     </label>
                     <button type="button" :disabled="!selectedIds.size" class="inline-flex items-center gap-2 rounded-xl border border-blue-200 bg-blue-50 px-3 py-2.5 text-sm font-semibold text-blue-700 hover:bg-blue-100 disabled:opacity-50 dark:border-blue-800 dark:bg-blue-950 dark:text-blue-300" @click="bulkPanelOpen = true">
                         <i class="bi bi-download"></i>
-                        Bulk Download<span v-if="selectedIds.size"> ({{ selectedIds.size }})</span>
+                        {{ t('websites.list.bulkDownload') }}<span v-if="selectedIds.size"> ({{ selectedIds.size }})</span>
                     </button>
                     <button type="button" :disabled="cacheReloading" class="inline-flex items-center gap-2 rounded-xl border border-slate-200 px-3 py-2.5 text-sm font-semibold text-slate-600 hover:bg-slate-50 disabled:opacity-50 dark:border-slate-700 dark:text-slate-300" @click="reloadGatewayCache">
                         <i class="bi bi-arrow-clockwise" :class="{ 'animate-spin': cacheReloading }"></i>
-                        Reload cache
+                        {{ t('websites.list.reloadCache') }}
                     </button>
                     <select
                         v-model="statusFilter"
                         class="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm text-slate-600 focus:border-blue-400 focus:ring-2 focus:ring-blue-100 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300 dark:focus:border-blue-500 dark:focus:ring-blue-500/20"
                     >
-                        <option value="all">All Status</option>
-                        <option value="live">Live</option>
-                        <option value="disabled">Disabled</option>
+                        <option value="all">{{ t('websites.list.allStatus') }}</option>
+                        <option value="live">{{ t('websites.status.live') }}</option>
+                        <option value="disabled">{{ t('websites.status.disabled') }}</option>
                     </select>
                     <Link
                         :href="panelRoute('websites.create')"
                         class="inline-flex items-center gap-2 rounded-xl bg-gradient-to-r from-blue-600 to-blue-500 px-4 py-2.5 text-sm font-semibold text-white shadow-lg shadow-blue-500/20 transition hover:from-blue-500 hover:to-blue-400 hover:shadow-blue-500/30"
                     >
                         <svg viewBox="0 0 24 24" class="h-4 w-4 fill-current"><path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z" /></svg>
-                        Create
+                        {{ t('websites.list.create') }}
                     </Link>
                 </div>
             </div>
@@ -558,10 +568,10 @@ const saveOwnership = async () => {
                         </svg>
                     </div>
                     <p class="mt-4 text-sm font-medium text-slate-700 dark:text-slate-300">
-                        {{ search || statusFilter !== 'all' ? 'No websites match your filters' : 'No websites yet' }}
+                        {{ search || statusFilter !== 'all' ? t('websites.list.noMatch') : t('websites.list.empty') }}
                     </p>
                     <p class="mt-1 text-xs text-slate-400 dark:text-slate-500">
-                        {{ search || statusFilter !== 'all' ? 'Try adjusting your search or filters' : 'Create your first website to get started' }}
+                        {{ search || statusFilter !== 'all' ? t('websites.list.noMatchHelp') : t('websites.list.emptyHelp') }}
                     </p>
                 </div>
 
@@ -580,7 +590,7 @@ const saveOwnership = async () => {
                                     type="checkbox"
                                     class="h-4 w-4 shrink-0 rounded"
                                     :checked="selectedIds.has(String(item.id))"
-                                    :aria-label="`Select ${item.domain}`"
+                                    :aria-label="t('websites.list.select', { domain: item.domain })"
                                     @change="toggleSelected(item)"
                                 />
                                 <span v-else class="w-4 shrink-0"></span>
@@ -598,13 +608,13 @@ const saveOwnership = async () => {
                                             :href="siteUrl(item)"
                                             target="_blank"
                                             class="shrink-0 text-slate-400 transition hover:text-indigo-600 dark:text-slate-500 dark:hover:text-indigo-400"
-                                            title="Open website"
+                                            :title="t('websites.list.open')"
                                         >
                                             <svg viewBox="0 0 24 24" class="h-4 w-4 fill-current"><path d="M19 19H5V5h7V3H5c-1.11 0-2 .9-2 2v14c0 1.1.89 2 2 2h14c1.1 0 2-.9 2-2v-7h-2v7zM14 3v2h3.59l-9.83 9.83 1.41 1.41L19 6.41V10h2V3h-7z" /></svg>
                                         </a>
                                         <span class="inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] font-medium" :class="statusClass(item.status)">
                                             <span class="h-1.5 w-1.5 rounded-full" :class="statusDot(item.status)"></span>
-                                            {{ item.status }}
+                                            {{ statusText(item.status) }}
                                         </span>
                                     </div>
                                     <div class="mt-1 flex items-center gap-3 text-xs text-slate-500 dark:text-slate-400">
@@ -612,7 +622,7 @@ const saveOwnership = async () => {
                                             <svg viewBox="0 0 24 24" class="h-3 w-3 fill-current opacity-50"><path d="M10 4H4c-1.1 0-1.99.9-1.99 2L2 18c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2h-8l-2-2z" /></svg>
                                             {{ item.root_path || '-' }}
                                         </span>
-                                        <SslBadgeMenu v-if="item.enable_ssl" :website="item" :badge-class="['px-2 py-0.5 text-[11px]', sslValidityClass(item)]" :title="item.ssl_expires_at ? `Expires ${formatDate(item.ssl_expires_at)}` : 'Certificate expiry is unavailable'" @reinstalled="(data) => onSslReinstalled(item, data)" @uninstalled="(data) => onSslUninstalled(item, data)" @failed="(message) => pushToast(message, 'error')">
+                                        <SslBadgeMenu v-if="item.enable_ssl" :website="item" :badge-class="['px-2 py-0.5 text-[11px]', sslValidityClass(item)]" :title="item.ssl_expires_at ? t('websites.list.expires', { date: formatDate(item.ssl_expires_at) }) : t('websites.list.expiryUnknown')" @reinstalled="(data) => onSslReinstalled(item, data)" @uninstalled="(data) => onSslUninstalled(item, data)" @failed="(message) => pushToast(message, 'error')">
                                             <svg viewBox="0 0 24 24" class="h-3 w-3 fill-current"><path d="M12 1L3 5v6c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V5l-9-4z" /></svg>
                                             <span>SSL</span>
                                             <span class="opacity-40">|</span>
@@ -645,14 +655,14 @@ const saveOwnership = async () => {
                                 @click="openOwnership(item, 'owner')"
                             >
                                 <i class="bi bi-person"></i>
-                                Ownership: {{ item.assigned_user_name || 'Admin' }}
+                                {{ t('websites.list.ownershipOf', { name: item.assigned_user_name || t('websites.list.admin') }) }}
                             </button>
                             <span
                                 v-else
                                 class="inline-flex items-center gap-1 rounded-lg border border-violet-200 bg-violet-50 px-2 py-1 text-[11px] font-medium text-violet-700 dark:border-violet-800 dark:bg-violet-500/10 dark:text-violet-400"
                             >
                                 <i class="bi bi-person"></i>
-                                Owner: {{ item.assigned_user_name || 'Admin' }}
+                                {{ t('websites.list.ownerOf', { name: item.assigned_user_name || t('websites.list.admin') }) }}
                             </span>
                             <button
                                 v-if="canChangeReseller"
@@ -661,14 +671,14 @@ const saveOwnership = async () => {
                                 @click="openOwnership(item, 'reseller')"
                             >
                                 <i class="bi bi-person-workspace"></i>
-                                Reseller: {{ item.assigned_reseller_name || 'None' }}
+                                {{ t('websites.list.resellerOf', { name: item.assigned_reseller_name || t('common.none') }) }}
                             </button>
                             <span
                                 v-else
                                 class="inline-flex items-center gap-1 rounded-lg border border-indigo-200 bg-indigo-50 px-2 py-1 text-[11px] font-medium text-indigo-700 dark:border-indigo-800 dark:bg-indigo-500/10 dark:text-indigo-400"
                             >
                                 <i class="bi bi-person-workspace"></i>
-                                Reseller: {{ item.assigned_reseller_name || 'None' }}
+                                {{ t('websites.list.resellerOf', { name: item.assigned_reseller_name || t('common.none') }) }}
                             </span>
                             </div>
                             <div class="flex flex-wrap items-center gap-1">
@@ -677,7 +687,7 @@ const saveOwnership = async () => {
                                 class="inline-flex items-center gap-1 rounded-lg border border-blue-200 bg-blue-50 px-2 py-1 text-[11px] font-medium text-blue-700 transition hover:border-blue-300 hover:bg-blue-100 dark:border-blue-800 dark:bg-blue-500/10 dark:text-blue-400 dark:hover:border-blue-700"
                             >
                                 <svg viewBox="0 0 24 24" class="h-3.5 w-3.5 fill-current"><path d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04a1 1 0 000-1.41l-2.34-2.34a1 1 0 00-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z" /></svg>
-                                Manage
+                                {{ t('websites.list.manage') }}
                             </Link>
                             <Link
                                 v-if="String(item.id) !== '1'"
@@ -685,7 +695,7 @@ const saveOwnership = async () => {
                                 class="inline-flex items-center gap-1 rounded-lg border border-emerald-200 bg-emerald-50 px-2 py-1 text-[11px] font-medium text-emerald-700 transition hover:border-emerald-300 hover:bg-emerald-100 dark:border-emerald-800 dark:bg-emerald-500/10 dark:text-emerald-400 dark:hover:border-emerald-700"
                             >
                                 <svg viewBox="0 0 24 24" class="h-3.5 w-3.5 fill-current"><path d="M20 6h-8l-2-2H4c-1.1 0-1.99.9-1.99 2L2 18c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2zm0 12H4V8h16v10z" /></svg>
-                                Files
+                                {{ t('websites.list.files') }}
                             </Link>
                             <button
                                 type="button"
@@ -694,10 +704,10 @@ const saveOwnership = async () => {
                                 :class="item.enable_ssl
                                     ? 'border-amber-200 bg-amber-50 text-amber-700 hover:bg-amber-100 dark:border-amber-800 dark:bg-amber-500/10 dark:text-amber-400'
                                     : 'border-blue-200 bg-blue-50 text-blue-700 hover:bg-blue-100 dark:border-blue-800 dark:bg-blue-500/10 dark:text-blue-400'"
-                                :title="item.aliases?.length ? 'Also applies to alias child domains' : ''"
+                                :title="item.aliases?.length ? t('websites.list.aliasToo') : ''"
                                 @click="toggleAliasSsl(item)"
                             >
-                                {{ sslLoadingIds.has(String(item.id)) ? 'Updating...' : (item.enable_ssl ? 'Disable SSL' : 'Enable SSL') }}
+                                {{ sslLoadingIds.has(String(item.id)) ? t('websites.list.updating') : (item.enable_ssl ? t('websites.hero.disableSsl') : t('websites.list.enableSsl')) }}
                             </button>
                             <button
                                 v-if="String(item.id) !== '1'"
@@ -709,7 +719,7 @@ const saveOwnership = async () => {
                                     : 'border-amber-200 bg-amber-50 text-amber-700 hover:border-amber-300 hover:bg-amber-100 dark:border-amber-800 dark:bg-amber-500/10 dark:text-amber-400'"
                                 @click="toggleStatus(item)"
                             >
-                                {{ String(item.status || '').toLowerCase() === 'disabled' ? 'Enable' : 'Disable' }}
+                                {{ String(item.status || '').toLowerCase() === 'disabled' ? t('websites.list.enable') : t('websites.list.disable') }}
                             </button>
                             <button
                                 v-if="String(item.id) !== '1'"
@@ -718,7 +728,7 @@ const saveOwnership = async () => {
                                 @click="deleteRequest(item.id)"
                             >
                                 <svg viewBox="0 0 24 24" class="h-3.5 w-3.5 fill-current"><path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z" /></svg>
-                                {{ deleteLoadingIds.has(String(item.id)) ? 'Deleting...' : 'Delete' }}
+                                {{ deleteLoadingIds.has(String(item.id)) ? t('websites.delete.deleting') : t('websites.list.delete') }}
                             </button>
                             </div>
                         </div>
@@ -746,16 +756,16 @@ const saveOwnership = async () => {
                                         target="_blank"
                                         rel="noopener noreferrer"
                                         class="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border border-cyan-200 bg-cyan-50 text-cyan-700 transition hover:border-cyan-300 hover:bg-cyan-100 dark:border-cyan-800 dark:bg-cyan-500/10 dark:text-cyan-400"
-                                        :title="`Quick visit ${alias.domain}`"
-                                        :aria-label="`Quick visit ${alias.domain}`"
+                                        :title="t('websites.list.quickVisit', { domain: alias.domain })"
+                                        :aria-label="t('websites.list.quickVisit', { domain: alias.domain })"
                                     >
                                         <svg viewBox="0 0 24 24" class="h-3.5 w-3.5 fill-current"><path d="M19 19H5V5h7V3H5c-1.11 0-2 .9-2 2v14c0 1.1.89 2 2 2h14c1.1 0 2-.9 2-2v-7h-2v7zM14 3v2h3.59l-9.83 9.83 1.41 1.41L19 6.41V10h2V3h-7z" /></svg>
                                     </a>
                                     <span class="inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] font-medium" :class="statusClass(alias.status)">
                                         <span class="h-1.5 w-1.5 rounded-full" :class="statusDot(alias.status)"></span>
-                                        {{ alias.status }}
+                                        {{ statusText(alias.status) }}
                                     </span>
-                                    <SslBadgeMenu v-if="alias.enable_ssl" :website="alias" :badge-class="['px-2 py-0.5 text-[11px]', sslValidityClass(alias)]" :title="alias.ssl_expires_at ? `Expires ${formatDate(alias.ssl_expires_at)}` : 'Certificate expiry is unavailable'" @reinstalled="(data) => onSslReinstalled(alias, data)" @uninstalled="(data) => onSslUninstalled(alias, data)" @failed="(message) => pushToast(message, 'error')">
+                                    <SslBadgeMenu v-if="alias.enable_ssl" :website="alias" :badge-class="['px-2 py-0.5 text-[11px]', sslValidityClass(alias)]" :title="alias.ssl_expires_at ? t('websites.list.expires', { date: formatDate(alias.ssl_expires_at) }) : t('websites.list.expiryUnknown')" @reinstalled="(data) => onSslReinstalled(alias, data)" @uninstalled="(data) => onSslUninstalled(alias, data)" @failed="(message) => pushToast(message, 'error')">
                                         <svg viewBox="0 0 24 24" class="h-3 w-3 fill-current"><path d="M12 1L3 5v6c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V5l-9-4z" /></svg>
                                         <span>SSL</span>
                                         <span class="opacity-40">|</span>
@@ -773,7 +783,7 @@ const saveOwnership = async () => {
                                         : 'border-blue-200 bg-blue-50 text-blue-700 hover:bg-blue-100 dark:border-blue-800 dark:bg-blue-500/10 dark:text-blue-400'"
                                     @click="toggleAliasSsl(alias)"
                                 >
-                                    {{ sslLoadingIds.has(String(alias.id)) ? 'Updating...' : (alias.enable_ssl ? 'Disable SSL' : 'Enable SSL') }}
+                                    {{ sslLoadingIds.has(String(alias.id)) ? t('websites.list.updating') : (alias.enable_ssl ? t('websites.hero.disableSsl') : t('websites.list.enableSsl')) }}
                                 </button>
                                 <button
                                     type="button"
@@ -781,14 +791,14 @@ const saveOwnership = async () => {
                                     class="inline-flex items-center gap-1 rounded-lg border border-emerald-200 bg-emerald-50 px-2 py-1 text-[11px] font-medium text-emerald-700 transition hover:border-emerald-300 hover:bg-emerald-100 disabled:opacity-50 dark:border-emerald-800 dark:bg-emerald-500/10 dark:text-emerald-400"
                                     @click="issueAliasSsl(alias)"
                                 >
-                                    {{ sslLoadingIds.has(String(alias.id)) ? 'Issuing...' : 'Issue SSL' }}
+                                    {{ sslLoadingIds.has(String(alias.id)) ? t('websites.list.issuing') : t('websites.list.issueSsl') }}
                                 </button>
                                 <button
                                     :disabled="deleteLoadingIds.has(String(alias.id))"
                                     class="inline-flex items-center gap-1 rounded-lg border border-red-200 bg-red-50 px-2 py-1 text-[11px] font-medium text-red-700 transition hover:border-red-300 hover:bg-red-100 disabled:opacity-50 dark:border-red-800 dark:bg-red-500/10 dark:text-red-400 dark:hover:border-red-700"
                                     @click="deleteRequest(alias.id)"
                                 >
-                                    {{ deleteLoadingIds.has(String(alias.id)) ? 'Deleting...' : 'Delete' }}
+                                    {{ deleteLoadingIds.has(String(alias.id)) ? t('websites.delete.deleting') : t('websites.list.delete') }}
                                 </button>
                             </div>
                         </div>
@@ -799,7 +809,7 @@ const saveOwnership = async () => {
             <!-- Pagination -->
             <div v-if="groupedWebsites.length > perPage" class="flex items-center justify-between rounded-2xl border border-slate-200/80 bg-white px-4 py-3 shadow-sm dark:border-slate-800/80 dark:bg-slate-900/50">
                 <p class="text-xs text-slate-500 dark:text-slate-400">
-                    Showing <span class="font-medium text-slate-700 dark:text-slate-300">{{ pageStart }}</span> to <span class="font-medium text-slate-700 dark:text-slate-300">{{ pageEnd }}</span> of <span class="font-medium text-slate-700 dark:text-slate-300">{{ groupedWebsites.length }}</span> websites
+                    <i18n-t keypath="websites.list.showing"><template #from><span class="font-medium text-slate-700 dark:text-slate-300">{{ pageStart }}</span></template><template #to><span class="font-medium text-slate-700 dark:text-slate-300">{{ pageEnd }}</span></template><template #total><span class="font-medium text-slate-700 dark:text-slate-300">{{ groupedWebsites.length }}</span></template></i18n-t>
                 </p>
                 <div class="flex items-center gap-2">
                     <button
@@ -809,7 +819,7 @@ const saveOwnership = async () => {
                         @click="currentPage--"
                     >
                         <svg viewBox="0 0 24 24" class="h-3.5 w-3.5 fill-current"><path d="M15.41 7.41L14 6l-6 6 6 6 1.41-1.41L10.83 12z" /></svg>
-                        Prev
+                        {{ t('websites.list.prev') }}
                     </button>
                     <span class="text-xs text-slate-500 dark:text-slate-400">{{ currentPage }} / {{ totalPages }}</span>
                     <button
@@ -818,7 +828,7 @@ const saveOwnership = async () => {
                         :disabled="currentPage >= totalPages"
                         @click="currentPage++"
                     >
-                        Next
+                        {{ t('websites.list.next') }}
                         <svg viewBox="0 0 24 24" class="h-3.5 w-3.5 fill-current"><path d="M10 6L8.59 7.41 13.17 12l-4.58 4.59L10 18l6-6z" /></svg>
                     </button>
                 </div>

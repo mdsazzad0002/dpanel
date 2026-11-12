@@ -1,6 +1,9 @@
 <script setup>
+import { useI18n } from 'vue-i18n';
 import { ref } from 'vue';
 import { usePage } from '@inertiajs/vue3';
+
+const { t } = useI18n();
 
 const props = defineProps({
     websiteId: {
@@ -33,13 +36,13 @@ const loginToWordPress = async () => {
 
         const payload = response?.data || {};
         if (!payload.success || !payload.url) {
-            throw new Error(payload.message || 'Could not create a login link.');
+            throw new Error(payload.message || t('websites.wpSso.failed'));
         }
 
         window.open(payload.url, '_blank', 'noopener');
     } catch (error) {
         feedbackType.value = 'error';
-        feedback.value = error?.response?.data?.message || error?.message || 'Could not create a login link.';
+        feedback.value = error?.response?.data?.message || error?.message || t('websites.wpSso.failed');
     } finally {
         busy.value = false;
     }
@@ -58,7 +61,7 @@ const loginToWordPress = async () => {
             @click="loginToWordPress"
         >
             <i class="bi bi-box-arrow-in-right mr-2"></i>
-            {{ busy ? 'Creating login link...' : 'Login to WordPress' }}
+            {{ busy ? t('websites.wpSso.creating') : t('websites.wpSso.login') }}
         </button>
         <p v-if="feedback" class="text-xs" :class="feedbackType === 'error' ? 'text-red-600 dark:text-red-400' : 'text-emerald-600 dark:text-emerald-400'">
             {{ feedback }}

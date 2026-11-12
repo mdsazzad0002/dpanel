@@ -1,7 +1,10 @@
 <script setup>
+import { useI18n } from 'vue-i18n';
 import { computed, ref } from 'vue';
 import { router } from '@inertiajs/vue3';
 import { usePanelApi } from '@/Pages/Websites/composables/usePanelApi';
+
+const { t } = useI18n();
 
 const props = defineProps({
     website: {
@@ -19,7 +22,7 @@ const isAlias = computed(() => ['alias', 'alis'].includes(String(props.website?.
 // it lands on: the websites list on success, this page again on failure.
 const deleteWebsite = () => {
     if (deleting.value) return;
-    if (!confirm(`Delete ${props.website.domain}?`)) return;
+    if (!confirm(t('websites.delete.confirm', { domain: props.website.domain }))) return;
 
     router.delete(panelRoute('websites.destroy', { id: props.website.id }), {
         preserveScroll: true,
@@ -33,10 +36,10 @@ const deleteWebsite = () => {
     <section class="rounded-2xl border border-red-200 bg-white p-6 shadow-sm dark:border-red-900/60 dark:bg-slate-900/50">
         <div class="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
             <div class="min-w-0">
-                <h2 class="text-base font-semibold text-red-700 dark:text-red-400">Delete website</h2>
+                <h2 class="text-base font-semibold text-red-700 dark:text-red-400">{{ t('websites.delete.title') }}</h2>
                 <p class="mt-1 text-sm text-slate-500 dark:text-slate-400">
-                    <template v-if="isAlias">Removes the alias {{ website.domain }}. The main site is not affected.</template>
-                    <template v-else>Archives {{ website.domain }} to Website Trash, then removes its files, cron jobs and database records. Large sites can take a few minutes.</template>
+                    <template v-if="isAlias">{{ t('websites.delete.aliasHelp', { domain: website.domain }) }}</template>
+                    <template v-else>{{ t('websites.delete.help', { domain: website.domain }) }}</template>
                 </p>
             </div>
             <button
@@ -46,7 +49,7 @@ const deleteWebsite = () => {
                 @click="deleteWebsite"
             >
                 <i class="bi" :class="deleting ? 'bi-arrow-repeat animate-spin' : 'bi-trash'"></i>
-                {{ deleting ? 'Deleting...' : 'Delete website' }}
+                {{ deleting ? t('websites.delete.deleting') : t('websites.delete.title') }}
             </button>
         </div>
     </section>

@@ -1,4 +1,7 @@
 <script setup>
+import { useI18n } from 'vue-i18n';
+
+const { t } = useI18n();
 defineProps({
     toasts: {
         type: Array,
@@ -47,7 +50,7 @@ defineEmits(['dismiss']);
                     type="button"
                     class="rounded-lg p-1 text-slate-400 transition hover:text-slate-700 dark:hover:text-slate-200"
                     @click="$emit('dismiss', toast.id)"
-                    aria-label="Dismiss notification"
+                    :aria-label="t('websites.toast.dismiss')"
                 >
                     <svg viewBox="0 0 24 24" class="h-4 w-4 fill-current">
                         <path d="M18.3 5.71 12 12.01l-6.3-6.3-1.41 1.41 6.3 6.3-6.3 6.29 1.41 1.41 6.3-6.3 6.29 6.3 1.41-1.41-6.3-6.29 6.3-6.3z" />

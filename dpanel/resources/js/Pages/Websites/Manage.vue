@@ -1,4 +1,5 @@
 <script setup>
+import { useI18n } from 'vue-i18n';
 import { computed, provide, ref } from 'vue';
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
 import { Head, Link, usePage } from '@inertiajs/vue3';
@@ -15,6 +16,8 @@ import ServicesGrid from '@/Pages/Websites/components/ServicesGrid.vue';
 import ActivityTimeline from '@/Pages/Websites/components/ActivityTimeline.vue';
 import RuntimeSettingsModal from '@/Pages/Websites/components/RuntimeSettingsModal.vue';
 import DeleteWebsitePanel from '@/Pages/Websites/components/DeleteWebsitePanel.vue';
+
+const { t } = useI18n();
 
 const props = defineProps({
     website: {
@@ -91,7 +94,7 @@ const showQueueWorkers = computed(() => props.queueWorkerCount > 0
 </script>
 
 <template>
-    <Head title="Manage Website" />
+    <Head :title="t('websites.manage.title')" />
 
     <AuthenticatedLayout>
         <template #header>
@@ -102,12 +105,12 @@ const showQueueWorkers = computed(() => props.queueWorkerCount > 0
                             <i class="bi bi-house-door"></i>
                         </Link>
                         <i class="bi bi-chevron-right text-xs"></i>
-                        <Link :href="panelRoute('websites.list')" class="hover:text-slate-700 dark:hover:text-slate-300">Websites</Link>
+                        <Link :href="panelRoute('websites.list')" class="hover:text-slate-700 dark:hover:text-slate-300">{{ t('websites.manage.crumb') }}</Link>
                         <i class="bi bi-chevron-right text-xs"></i>
                         <span class="truncate font-medium text-slate-900 dark:text-slate-100">{{ website.domain }}</span>
                     </nav>
-                    <h1 class="mt-2 text-lg font-semibold">Website Management</h1>
-                    <p class="text-sm text-slate-500 dark:text-slate-400">Tools and configuration for {{ website.domain }}.</p>
+                    <h1 class="mt-2 text-lg font-semibold">{{ t('websites.manage.heading') }}</h1>
+                    <p class="text-sm text-slate-500 dark:text-slate-400">{{ t('websites.manage.subtitle', { domain: website.domain }) }}</p>
                 </div>
                 <WebsiteSwitcher :website="website" />
             </div>

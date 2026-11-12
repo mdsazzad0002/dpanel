@@ -19,33 +19,33 @@ const page = usePage();
 const isSystemWebsite = computed(() => String(props.website.id) === '1');
 
 const serviceLinks = computed(() => [
-    { label: 'Export & Share', icon: 'bi-file-earmark-zip', color: 'violet', href: panelRoute('websites.quick-export.page', { id: props.website.id }), description: 'Download files/database separately, or share a one-time clone link for another server' },
-    { label: 'Import & Clone', icon: 'bi-cloud-arrow-up', color: 'cyan', href: panelRoute('websites.import.index', { id: props.website.id }), description: 'Import files and database — upload directly, clone from another site on this server, or pull a share link' },
-    { label: 'Push to Live', icon: 'bi-rocket-takeoff', color: 'indigo', href: panelRoute('websites.push-to-live.index', { id: props.website.id }), description: 'Push a local site to a live panel by host URL + token, or issue tokens so another panel can push here' },
-    { label: 'Logs', icon: 'bi-journal-text', color: 'teal', href: panelRoute('websites.logs.index', { id: props.website.id }), description: 'Access log and PHP errors' },
-    { label: 'Edge Cache', icon: 'bi-speedometer2', color: 'emerald', href: panelRoute('websites.edge-cache.index', { id: props.website.id }), description: 'Page caching, purge and development mode' },
-    { label: 'Redis Cache', routeName: 'websites.redis-cache.index', icon: 'bi-lightning', color: 'amber', href: panelRoute('websites.redis-cache.index', { id: props.website.id }), description: 'Per-website cache isolation' },
-    { label: 'Redis Explorer', routeName: 'websites.redis-explorer.index', icon: 'bi-hdd-stack', color: 'red', href: panelRoute('websites.redis-explorer.index', { id: props.website.id }), description: 'Browse, inspect and delete this website\'s Redis keys' },
-    { label: 'File Manager', icon: 'bi-folder2-open', color: 'indigo', href: panelRoute('websites.filemanager', { id: props.website.id }), description: 'Browse and edit files' },
-    { label: 'FTP Accounts', routeName: 'ftp.index', icon: 'bi-hdd-network', color: 'cyan', href: panelRoute('ftp.index', { website: props.website.id }), description: 'Create client FTP access' },
-    { label: 'Cron Jobs', icon: 'bi-clock-history', color: 'rose', href: panelRoute('websites.cronjobs.index', { id: props.website.id }), description: 'Scheduled tasks' },
-    { label: 'Git Deployment', icon: 'bi-github', color: 'emerald', href: panelRoute('websites.git.index', { id: props.website.id }), description: 'Clone, pull, push & auto sync' },
-    { label: 'SSH Key Generator', icon: 'bi-key', color: 'amber', href: panelRoute('websites.ssh-key.index', { id: props.website.id }), description: 'Create a GitHub deployment key' },
-    { label: 'Website Terminal', routeName: 'websites.terminal.index', icon: 'bi-terminal', color: 'emerald', href: panelRoute('websites.terminal.index', { id: props.website.id }), description: 'Open the isolated project shell' },
-    { label: 'Alis API', icon: 'bi-code-slash', color: 'violet', href: panelRoute('websites.alias-api.index', { id: props.website.id }), description: 'Manage aliases and scoped API access' },
-    { label: 'Email Accounts', icon: 'bi-envelope', color: 'pink', href: panelRoute('emails.list'), description: 'Mailbox services' },
-    { label: 'Databases', icon: 'bi-database', color: 'orange', href: panelRoute('databases.list', { website: props.website.domain }), description: `Databases for ${props.website.domain}` },
-    { label: 'DNS Zones', icon: 'bi-diagram-3', color: 'teal', href: panelRoute('dns.zones'), description: 'DNS entries' },
-    { label: 'PHP Info', icon: 'bi-filetype-php', color: 'blue', href: panelRoute('websites.php-info.index', { id: props.website.id }), description: 'Private phpinfo() — see which PHP version this site runs' },
-    { label: 'PHP Manager', icon: 'bi-braces', color: 'indigo', href: panelRoute('php.manager'), description: 'PHP versions & modules' },
-    { label: '.htaccess Resolver', icon: 'bi-filetype-txt', color: 'teal', href: panelRoute('websites.htaccess.index', { id: props.website.id }), description: 'Check, convert and edit .htaccess for root and public' },
-    { label: 'IP Ban / Whitelist', icon: 'bi-shield-lock', color: 'red', href: panelRoute('websites.ip-rules.index', { id: props.website.id }), description: 'Control website IP access' },
+    { label: t('websites.services.exportShare'), id: 'Export & Share', icon: 'bi-file-earmark-zip', color: 'violet', href: panelRoute('websites.quick-export.page', { id: props.website.id }), description: t('websites.services.exportShareDesc') },
+    { label: t('websites.services.importClone'), id: 'Import & Clone', icon: 'bi-cloud-arrow-up', color: 'cyan', href: panelRoute('websites.import.index', { id: props.website.id }), description: t('websites.services.importCloneDesc') },
+    { label: t('websites.services.pushToLive'), id: 'Push to Live', icon: 'bi-rocket-takeoff', color: 'indigo', href: panelRoute('websites.push-to-live.index', { id: props.website.id }), description: t('websites.services.pushToLiveDesc') },
+    { label: t('websites.services.logs'), id: 'Logs', icon: 'bi-journal-text', color: 'teal', href: panelRoute('websites.logs.index', { id: props.website.id }), description: t('websites.services.logsDesc') },
+    { label: t('websites.services.edgeCache'), id: 'Edge Cache', icon: 'bi-speedometer2', color: 'emerald', href: panelRoute('websites.edge-cache.index', { id: props.website.id }), description: t('websites.services.edgeCacheDesc') },
+    { label: t('websites.services.redisCache'), id: 'Redis Cache', routeName: 'websites.redis-cache.index', icon: 'bi-lightning', color: 'amber', href: panelRoute('websites.redis-cache.index', { id: props.website.id }), description: t('websites.services.redisCacheDesc') },
+    { label: t('websites.services.redisExplorer'), id: 'Redis Explorer', routeName: 'websites.redis-explorer.index', icon: 'bi-hdd-stack', color: 'red', href: panelRoute('websites.redis-explorer.index', { id: props.website.id }), description: t('websites.services.redisExplorerDesc') },
+    { label: t('websites.services.fileManager'), id: 'File Manager', icon: 'bi-folder2-open', color: 'indigo', href: panelRoute('websites.filemanager', { id: props.website.id }), description: t('websites.services.fileManagerDesc') },
+    { label: t('websites.services.ftpAccounts'), id: 'FTP Accounts', routeName: 'ftp.index', icon: 'bi-hdd-network', color: 'cyan', href: panelRoute('ftp.index', { website: props.website.id }), description: t('websites.services.ftpAccountsDesc') },
+    { label: t('websites.services.cronJobs'), id: 'Cron Jobs', icon: 'bi-clock-history', color: 'rose', href: panelRoute('websites.cronjobs.index', { id: props.website.id }), description: t('websites.services.cronJobsDesc') },
+    { label: t('websites.services.gitDeployment'), id: 'Git Deployment', icon: 'bi-github', color: 'emerald', href: panelRoute('websites.git.index', { id: props.website.id }), description: t('websites.services.gitDeploymentDesc') },
+    { label: t('websites.services.sshKeyGenerator'), id: 'SSH Key Generator', icon: 'bi-key', color: 'amber', href: panelRoute('websites.ssh-key.index', { id: props.website.id }), description: t('websites.services.sshKeyGeneratorDesc') },
+    { label: t('websites.services.websiteTerminal'), id: 'Website Terminal', routeName: 'websites.terminal.index', icon: 'bi-terminal', color: 'emerald', href: panelRoute('websites.terminal.index', { id: props.website.id }), description: t('websites.services.websiteTerminalDesc') },
+    { label: t('websites.services.alisApi'), id: 'Alis API', icon: 'bi-code-slash', color: 'violet', href: panelRoute('websites.alias-api.index', { id: props.website.id }), description: t('websites.services.alisApiDesc') },
+    { label: t('websites.services.emailAccounts'), id: 'Email Accounts', icon: 'bi-envelope', color: 'pink', href: panelRoute('emails.list'), description: t('websites.services.emailAccountsDesc') },
+    { label: t('websites.services.databases'), id: 'Databases', icon: 'bi-database', color: 'orange', href: panelRoute('databases.list', { website: props.website.domain }), description: t('websites.services.databasesDesc', { domain: props.website.domain }) },
+    { label: t('websites.services.dnsZones'), id: 'DNS Zones', icon: 'bi-diagram-3', color: 'teal', href: panelRoute('dns.zones'), description: t('websites.services.dnsZonesDesc') },
+    { label: t('websites.services.phpInfo'), id: 'PHP Info', icon: 'bi-filetype-php', color: 'blue', href: panelRoute('websites.php-info.index', { id: props.website.id }), description: t('websites.services.phpInfoDesc') },
+    { label: t('websites.services.phpManager'), id: 'PHP Manager', icon: 'bi-braces', color: 'indigo', href: panelRoute('php.manager'), description: t('websites.services.phpManagerDesc') },
+    { label: t('websites.services.htaccessResolver'), id: '.htaccess Resolver', icon: 'bi-filetype-txt', color: 'teal', href: panelRoute('websites.htaccess.index', { id: props.website.id }), description: t('websites.services.htaccessResolverDesc') },
+    { label: t('websites.services.ipBanWhitelist'), id: 'IP Ban / Whitelist', icon: 'bi-shield-lock', color: 'red', href: panelRoute('websites.ip-rules.index', { id: props.website.id }), description: t('websites.services.ipBanWhitelistDesc') },
     // App installers are shown last, in their own "Installers" section.
-    { installer: true, label: 'WordPress Installer', icon: 'bi-wordpress', color: 'blue', href: panelRoute('websites.wordpress.manager', { id: props.website.id }), description: 'Install and manage WordPress' },
-    { installer: true, label: 'Laravel Installer', icon: 'bi-box-seam', color: 'red', href: panelRoute('websites.laravel.installer', { id: props.website.id }), description: 'Fresh Laravel, starter kits (Vue, React, Svelte, Livewire) or API' },
-    { installer: true, label: 'Joomla Installer', icon: 'bi-puzzle', color: 'orange', href: panelRoute('websites.apps.installer', { id: props.website.id, app: 'joomla' }), description: 'Joomla CMS with admin account and database' },
-    { installer: true, label: 'Drupal Installer', icon: 'bi-droplet', color: 'blue', href: panelRoute('websites.apps.installer', { id: props.website.id, app: 'drupal' }), description: 'Drupal CMS with Drush and an admin account' },
-    { installer: true, label: 'CodeIgniter Installer', icon: 'bi-fire', color: 'amber', href: panelRoute('websites.apps.installer', { id: props.website.id, app: 'codeigniter' }), description: 'CodeIgniter 4 app starter with .env configured' },
+    { installer: true, label: t('websites.services.wordpressInstaller'), id: 'WordPress Installer', icon: 'bi-wordpress', color: 'blue', href: panelRoute('websites.wordpress.manager', { id: props.website.id }), description: t('websites.services.wordpressInstallerDesc') },
+    { installer: true, label: t('websites.services.laravelInstaller'), id: 'Laravel Installer', icon: 'bi-box-seam', color: 'red', href: panelRoute('websites.laravel.installer', { id: props.website.id }), description: t('websites.services.laravelInstallerDesc') },
+    { installer: true, label: t('websites.services.joomlaInstaller'), id: 'Joomla Installer', icon: 'bi-puzzle', color: 'orange', href: panelRoute('websites.apps.installer', { id: props.website.id, app: 'joomla' }), description: t('websites.services.joomlaInstallerDesc') },
+    { installer: true, label: t('websites.services.drupalInstaller'), id: 'Drupal Installer', icon: 'bi-droplet', color: 'blue', href: panelRoute('websites.apps.installer', { id: props.website.id, app: 'drupal' }), description: t('websites.services.drupalInstallerDesc') },
+    { installer: true, label: t('websites.services.codeigniterInstaller'), id: 'CodeIgniter Installer', icon: 'bi-fire', color: 'amber', href: panelRoute('websites.apps.installer', { id: props.website.id, app: 'codeigniter' }), description: t('websites.services.codeigniterInstallerDesc') },
     // Backlog U8 catalog apps; hidden on the system website like the installers above.
     ...[
         { app: 'nextcloud', icon: 'bi-cloud', color: 'blue' },
@@ -53,18 +53,18 @@ const serviceLinks = computed(() => [
         { app: 'opencart', icon: 'bi-bag', color: 'cyan' },
         { app: 'mediawiki', icon: 'bi-book', color: 'emerald' },
     ].map((item) => ({ installer: true, systemHidden: true, label: t(`apps.${item.app}.installer`), icon: item.icon, color: item.color, href: panelRoute('websites.apps.installer', { id: props.website.id, app: item.app }), description: t(`apps.${item.app}.card`) })),
-    { installer: true, label: 'WHMCS Installer', icon: 'bi-receipt', color: 'teal', href: panelRoute('websites.apps.installer', { id: props.website.id, app: 'whmcs' }), description: 'Install your licensed WHMCS package with cron' },
+    { installer: true, label: t('websites.services.whmcsInstaller'), id: 'WHMCS Installer', icon: 'bi-receipt', color: 'teal', href: panelRoute('websites.apps.installer', { id: props.website.id, app: 'whmcs' }), description: t('websites.services.whmcsInstallerDesc') },
 // The system website is dpanel's own installation — hosting-management actions
 // that overwrite files/git/database or grant separate account access don't
 // apply to it and would risk breaking the panel itself, so hide them here.
 ].filter((item) => !isSystemWebsite.value || (!item.systemHidden && ![
     'WordPress Installer', 'Laravel Installer', 'Joomla Installer', 'Drupal Installer', 'CodeIgniter Installer', 'WHMCS Installer', 'File Manager', 'Import & Clone', 'FTP Accounts',
     'Cron Jobs', '.htaccess Resolver', 'Git Deployment', 'SSH Key Generator', 'Website Terminal', 'Export & Share', 'Push to Live',
-].includes(item.label))).filter((item) => !isClosedRoute(item.routeName, page.props.platform?.closedRoutes)));
+].includes(item.id))).filter((item) => !isClosedRoute(item.routeName, page.props.platform?.closedRoutes)));
 
 const sections = computed(() => [
-    { title: 'Services', items: serviceLinks.value.filter((item) => !item.installer), unit: 'tools' },
-    { title: 'Installers', items: serviceLinks.value.filter((item) => item.installer), unit: 'apps' },
+    { title: t('websites.services.services'), items: serviceLinks.value.filter((item) => !item.installer), unit: 'tools' },
+    { title: t('websites.services.installers'), items: serviceLinks.value.filter((item) => item.installer), unit: 'apps' },
 ].filter((section) => section.items.length > 0));
 
 const serviceColorClasses = {
@@ -87,7 +87,7 @@ const serviceColorClasses = {
         <section v-for="(section, index) in sections" :key="section.title" :class="index > 0 ? 'mt-6 border-t border-slate-100 pt-5 dark:border-slate-800' : ''">
         <div class="flex items-center justify-between">
             <h2 class="text-sm font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">{{ section.title }}</h2>
-            <span class="rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-medium text-slate-500 dark:bg-slate-800 dark:text-slate-400">{{ section.items.length }} {{ section.unit }}</span>
+            <span class="rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-medium text-slate-500 dark:bg-slate-800 dark:text-slate-400">{{ section.unit === 'apps' ? t('websites.services.appsCount', { count: section.items.length }) : t('websites.services.toolsCount', { count: section.items.length }) }}</span>
         </div>
         <div class="mt-4 grid grid-cols-1 gap-2.5 sm:grid-cols-2 lg:grid-cols-3">
             <Link v-for="service in section.items" :key="service.label" :href="service.href"
