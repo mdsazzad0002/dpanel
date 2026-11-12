@@ -2,6 +2,7 @@
 
 namespace App\Services\Website;
 
+use App\Support\Platform\LocalCommand;
 use App\Models\Website;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
@@ -141,12 +142,10 @@ class WebsiteLifecycleService
         }
 
         try {
-            $output = [];
-            $exitCode = 0;
-            exec($command.' 2>&1', $output, $exitCode);
+            $result = app(LocalCommand::class)->run($command, timeout: 1800);
 
-            if ($exitCode !== 0) {
-                $message = trim(implode("\n", $output));
+            if (! $result->successful()) {
+                $message = trim($result->output()."\n".$result->errorOutput());
 
                 return $this->bootstrapFailure($request, $message !== ''
                     ? 'Website installer command failed: '.$message

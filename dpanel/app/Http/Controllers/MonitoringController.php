@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Support\Platform\LocalCommand;
 use App\Models\AppProject;
 use App\Models\CronJob;
 use App\Models\DatabaseRequest;
@@ -145,7 +146,7 @@ class MonitoringController extends Controller
      */
     private function systemSnapshot(): array
     {
-        if (str_starts_with(strtoupper(PHP_OS_FAMILY), 'WINDOWS')) {
+        if (! app(LocalCommand::class)->supports(LocalCommand::LINUX_TOOLS)) {
             return [
                 'cpu_load_percent' => 0.0,
                 'cpu_model' => null,
@@ -342,16 +343,16 @@ class MonitoringController extends Controller
      */
     private function topProcesses(): array
     {
-        if (str_starts_with(strtoupper(PHP_OS_FAMILY), 'WINDOWS')) {
+        if (! app(LocalCommand::class)->supports(LocalCommand::LINUX_TOOLS)) {
             return [];
         }
 
-        $out = @shell_exec("ps -eo pid,comm,%cpu,%mem --sort=-%cpu | head -n 6 2>/dev/null");
+        $out = app(LocalCommand::class)->output(['ps', '-eo', 'pid,comm,%cpu,%mem', '--sort=-%cpu']);
         if (! is_string($out) || trim($out) === '') {
             return [];
         }
 
-        $lines = preg_split('/\r\n|\r|\n/', trim($out)) ?: [];
+        $lines = array_slice(preg_split('/\r\n|\r|\n/', trim($out)) ?: [], 0, 6);
         array_shift($lines);
 
         return collect($lines)->map(function (string $line): ?array {
@@ -374,11 +375,11 @@ class MonitoringController extends Controller
      */
     private function cpuFrequencyInfo(): array
     {
-        if (str_starts_with(strtoupper(PHP_OS_FAMILY), 'WINDOWS')) {
+        if (! app(LocalCommand::class)->supports(LocalCommand::LINUX_TOOLS)) {
             return [null, null];
         }
 
-        $out = @shell_exec('lscpu 2>/dev/null');
+        $out = app(LocalCommand::class)->output(['lscpu']);
         if (! is_string($out) || trim($out) === '') {
             return [null, null];
         }
@@ -402,7 +403,7 @@ class MonitoringController extends Controller
      */
     private function memorySpeedInfo(): array
     {
-        if (str_starts_with(strtoupper(PHP_OS_FAMILY), 'WINDOWS')) {
+        if (! app(LocalCommand::class)->supports(LocalCommand::LINUX_TOOLS)) {
             return [null, null];
         }
 
@@ -430,7 +431,7 @@ class MonitoringController extends Controller
      */
     private function dmiBusSpeedMhz(): ?float
     {
-        if (str_starts_with(strtoupper(PHP_OS_FAMILY), 'WINDOWS')) {
+        if (! app(LocalCommand::class)->supports(LocalCommand::LINUX_TOOLS)) {
             return null;
         }
 
@@ -447,7 +448,7 @@ class MonitoringController extends Controller
      */
     private function dmidecode(string $type): ?string
     {
-        $out = @shell_exec('sudo -n /usr/sbin/dmidecode --type '.escapeshellarg($type).' 2>/dev/null');
+        $out = app(LocalCommand::class)->output(['sudo', '-n', '/usr/sbin/dmidecode', '--type', $type]);
 
         return is_string($out) && trim($out) !== '' ? $out : null;
     }
@@ -499,7 +500,7 @@ class MonitoringController extends Controller
             'connection_breakdown' => [],
         ];
 
-        if (str_starts_with(strtoupper(PHP_OS_FAMILY), 'WINDOWS')) {
+        if (! app(LocalCommand::class)->supports(LocalCommand::LINUX_TOOLS)) {
             return $telemetry;
         }
 

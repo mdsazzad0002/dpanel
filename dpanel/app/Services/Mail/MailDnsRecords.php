@@ -2,6 +2,7 @@
 
 namespace App\Services\Mail;
 
+use App\Support\Platform\LocalCommand;
 use App\Models\MailDomain;
 use App\Services\Dns\PublicDnsLookup;
 
@@ -88,7 +89,7 @@ class MailDnsRecords
             return $configured;
         }
 
-        $local = trim((string) @shell_exec("ip -4 route get 1.1.1.1 2>/dev/null | awk '{for(i=1;i<=NF;i++) if (\$i==\"src\") {print \$(i+1); exit}}'"));
+        $local = app(LocalCommand::class)->routeSource('1.1.1.1');
 
         return filter_var($local, FILTER_VALIDATE_IP, FILTER_FLAG_NO_PRIV_RANGE | FILTER_FLAG_NO_RES_RANGE) ? $local : '';
     }

@@ -4,6 +4,7 @@ namespace Tests\Feature;
 
 use App\Models\CronJob;
 use App\Models\Website;
+use App\Support\Platform\LocalCommand;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\Http;
@@ -54,5 +55,31 @@ class InstallSchedulerCronCommandTest extends TestCase
         $job = CronJob::query()->findOrFail('panel-scheduler');
         $this->assertSame('disabled', $job->status);
         $this->assertSame('*/5 * * * *', $job->expression);
+    }
+
+    public function test_the_linux_command_is_unchanged(): void
+    {
+        $this->app->instance(LocalCommand::class, new LocalCommand('Linux'));
+
+        $this->artisan('serverpanel:install-scheduler-cron')->assertSuccessful();
+
+        $this->assertSame(
+            (new LocalCommand('Linux'))->shellLine([PHP_BINARY, 'artisan', 'schedule:run'], base_path(), true),
+            CronJob::query()->findOrFail('panel-scheduler')->command,
+        );
+        $this->assertStringEndsWith(' artisan schedule:run >> /dev/null 2>&1', CronJob::query()->findOrFail('panel-scheduler')->command);
+    }
+
+    public function test_on_windows_the_command_runs_under_cmd(): void
+    {
+        $this->app->instance(LocalCommand::class, new LocalCommand('Windows'));
+
+        $this->artisan('serverpanel:install-scheduler-cron')->assertSuccessful();
+
+        $command = CronJob::query()->findOrFail('panel-scheduler')->command;
+        $this->assertStringStartsWith('cd /d ', $command);
+        $this->assertStringEndsWith(' artisan schedule:run >> NUL 2>&1', $command);
+        $this->assertStringNotContainsString('/dev/null', $command);
+        Http::assertSent(fn (Request $request): bool => $request['command'] === $command);
     }
 }

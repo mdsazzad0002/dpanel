@@ -2,6 +2,7 @@
 
 namespace App\Services\Mail;
 
+use App\Support\Platform\LocalCommand;
 use App\Models\MailDomain;
 use App\Services\ScriptExecutionGateway;
 use App\Services\ScriptPathResolver;
@@ -22,7 +23,7 @@ class MailDomainProvisioner
      */
     public function ensureReady(string $domain): array
     {
-        if (str_starts_with(strtoupper(PHP_OS_FAMILY), 'WINDOWS')) {
+        if (! app(LocalCommand::class)->supports(LocalCommand::POSTFIX)) {
             return ['ok' => true, 'messages' => []];
         }
 

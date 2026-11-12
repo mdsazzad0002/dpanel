@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Support\Platform\LocalCommand;
 use App\Support\Platform\ProcessIdentity;
 use App\Support\SecuritySettings;
 use Illuminate\Http\JsonResponse;
@@ -468,7 +469,7 @@ class SecurityController extends Controller
      */
     private function detectFirewallFromServer(): array
     {
-        $output = $this->runCommand('ufw status');
+        $output = $this->runCommand(['ufw', 'status']);
         if ($output === '') {
             return [];
         }
@@ -484,7 +485,7 @@ class SecurityController extends Controller
             }
         }
 
-        $verbose = $this->runCommand('ufw status verbose');
+        $verbose = $this->runCommand(['ufw', 'status', 'verbose']);
         $defaultIncoming = 'deny';
         $defaultOutgoing = 'allow';
         if (preg_match('/Default:\s+([a-z]+)\s+\(incoming\),\s+([a-z]+)\s+\(outgoing\)/i', $verbose, $matches) === 1) {
@@ -548,24 +549,24 @@ class SecurityController extends Controller
     /** @return array<string, mixed> */
     private function liveSecurityState(): array
     {
-        $effective = $this->runCommand('sshd -T');
+        $effective = $this->runCommand(['sshd', '-T']);
         $config = $this->detectSshFromServer();
         $config['port'] = (int) $this->parseSshConfigValue($effective, 'port', (string) ($config['port'] ?? 22));
         $config['password_authentication'] = $this->normalizeOnOff($this->parseSshConfigValue($effective, 'passwordauthentication', (string) ($config['password_authentication'] ?? 'Off')));
         $config['permit_root_login'] = $this->parseSshConfigValue($effective, 'permitrootlogin', (string) ($config['permit_root_login'] ?? 'no'));
         $config['pubkey_authentication'] = $this->normalizeOnOff($this->parseSshConfigValue($effective, 'pubkeyauthentication', (string) ($config['pubkey_authentication'] ?? 'On')));
 
-        $serviceActive = trim($this->runCommand('systemctl is-active ssh')) === 'active';
-        $serviceEnabled = trim($this->runCommand('systemctl is-enabled ssh')) === 'enabled';
+        $serviceActive = trim($this->runCommand(['systemctl', 'is-active', 'ssh'])) === 'active';
+        $serviceEnabled = trim($this->runCommand(['systemctl', 'is-enabled', 'ssh'])) === 'enabled';
         $listeners = [];
-        foreach (preg_split('/\r\n|\r|\n/', $this->runCommand('ss -ltnH')) ?: [] as $line) {
+        foreach (preg_split('/\r\n|\r|\n/', $this->runCommand(['ss', '-ltnH'])) ?: [] as $line) {
             if (preg_match('/\s(\[[^]]+\]|[^\s:]+):(\d+)\s/', $line.' ', $matches) === 1 && (int) $matches[2] === (int) $config['port']) {
                 $listeners[] = trim($matches[1], '[]');
             }
         }
 
         $allowedIps = [];
-        $ufw = $this->runCommand('ufw status');
+        $ufw = $this->runCommand(['ufw', 'status']);
         foreach (preg_split('/\r\n|\r|\n/', $ufw) ?: [] as $line) {
             if (preg_match('/^\s*'.preg_quote((string) $config['port'], '/').'(?:\/tcp)?\s+ALLOW\s+(.+)$/i', $line, $matches) === 1) {
                 $source = trim((string) $matches[1]);
@@ -582,7 +583,10 @@ class SecurityController extends Controller
                 'service_enabled' => $serviceEnabled,
                 'listening' => count($listeners) > 0,
                 'listen_addresses' => array_values(array_unique($listeners)),
-                'config_valid' => $this->runCommand('sshd -t; echo $?') === "0\n",
+                // Was `sshd -t; echo $?` === "0\n": silent and exit code 0.
+                'config_valid' => app(LocalCommand::class)->supports(LocalCommand::LINUX_TOOLS)
+                    && ($check = app(LocalCommand::class)->run(['sshd', '-t'], timeout: 30))->successful()
+                    && $check->output().$check->errorOutput() === '',
             ]),
             'firewall' => [
                 'enabled' => str_contains(strtolower($ufw), 'status: active'),
@@ -644,14 +648,16 @@ class SecurityController extends Controller
         return $error !== '' ? $error : $fallback;
     }
 
-    private function runCommand(string $command): string
+    /**
+     * stdout and stderr of a Linux tool (ufw, sshd, ss, systemctl); '' on
+     * systems without them.
+     *
+     * @param  list<string>  $argv
+     */
+    private function runCommand(array $argv): string
     {
-        try {
-            $output = shell_exec($command.' 2>&1');
+        $local = app(LocalCommand::class);
 
-            return is_string($output) ? $output : '';
-        } catch (\Throwable $e) {
-            return '';
-        }
+        return $local->supports(LocalCommand::LINUX_TOOLS) ? $local->combinedOutput($argv) : '';
     }
 }

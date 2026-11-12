@@ -5,6 +5,7 @@ namespace App\Console\Commands;
 use App\Models\CronJob;
 use App\Models\Website;
 use App\Services\Cron\CronSystemService;
+use App\Support\Platform\LocalCommand;
 use Illuminate\Console\Command;
 
 /**
@@ -32,7 +33,7 @@ class InstallSchedulerCronCommand extends Command
             'website_id' => '1',
             'domain' => (string) $panelWebsite->domain,
             'name' => 'Panel Scheduler',
-            'command' => 'cd '.base_path().' && '.PHP_BINARY.' artisan schedule:run >> /dev/null 2>&1',
+            'command' => app(LocalCommand::class)->artisanCronLine(['schedule:run']),
             'description' => 'Runs dPanel scheduled tasks: SSL renew check, backups, mail and DNS checks. Disabling it stops all of them.',
         ]);
         if (! $job->exists) {

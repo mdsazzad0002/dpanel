@@ -9,6 +9,7 @@ use App\Models\Server;
 use App\Models\SslCertificate;
 use App\Models\Website;
 use App\Services\Mcp\Contracts\McpTool;
+use App\Support\Platform\LocalCommand;
 
 class PanelOverviewTool implements McpTool
 {
@@ -123,11 +124,12 @@ class PanelOverviewTool implements McpTool
      */
     private function failedUnits(): array
     {
-        if (PHP_OS_FAMILY !== 'Linux' || ! function_exists('shell_exec')) {
+        $local = app(LocalCommand::class);
+        if (! $local->supports(LocalCommand::SYSTEMD)) {
             return [];
         }
 
-        $output = (string) @shell_exec('systemctl list-units --state=failed --plain --no-legend --no-pager 2>/dev/null');
+        $output = (string) $local->output(['systemctl', 'list-units', '--state=failed', '--plain', '--no-legend', '--no-pager']);
 
         return array_slice(array_values(array_filter(array_map(
             fn (string $line) => strtok(trim($line), ' ') ?: '',
@@ -140,12 +142,13 @@ class PanelOverviewTool implements McpTool
      */
     private function serviceStates(): array
     {
-        if (PHP_OS_FAMILY !== 'Linux' || ! function_exists('shell_exec')) {
+        $local = app(LocalCommand::class);
+        if (! $local->supports(LocalCommand::SYSTEMD)) {
             return array_fill_keys(self::SERVICES, 'unknown');
         }
 
-        $units = array_map(fn (string $unit) => escapeshellarg($unit.'.service'), self::SERVICES);
-        $output = @shell_exec('systemctl show --property=Id,LoadState,ActiveState,MemoryCurrent '.implode(' ', $units).' 2>/dev/null');
+        $units = array_map(fn (string $unit) => $unit.'.service', self::SERVICES);
+        $output = $local->output(['systemctl', 'show', '--property=Id,LoadState,ActiveState,MemoryCurrent', ...$units]);
 
         if (! is_string($output) || trim($output) === '') {
             return array_fill_keys(self::SERVICES, 'unknown');
@@ -178,14 +181,16 @@ class PanelOverviewTool implements McpTool
      */
     private function topProcesses(string $sort): array
     {
-        if (PHP_OS_FAMILY !== 'Linux' || ! function_exists('shell_exec')) {
+        $local = app(LocalCommand::class);
+        if (! $local->supports(LocalCommand::LINUX_TOOLS)) {
             return [];
         }
 
-        $output = @shell_exec("ps -eo pid=,user=,rss=,pmem=,pcpu=,comm= --sort=-{$sort} 2>/dev/null | head -n ".($sort === 'rss' ? 10 : 6));
+        $output = $local->output(['ps', '-eo', 'pid=,user=,rss=,pmem=,pcpu=,comm=', '--sort=-'.$sort]);
+        $lines = array_slice(preg_split('/\R/', trim((string) $output)) ?: [], 0, $sort === 'rss' ? 10 : 6);
 
         $processes = [];
-        foreach (preg_split('/\R/', trim((string) $output)) ?: [] as $line) {
+        foreach ($lines as $line) {
             if (preg_match('/^\s*(\d+)\s+(\S+)\s+(\d+)\s+([\d.]+)\s+([\d.]+)\s+(.+)$/', $line, $m) === 1) {
                 $processes[] = [
                     'pid' => (int) $m[1],

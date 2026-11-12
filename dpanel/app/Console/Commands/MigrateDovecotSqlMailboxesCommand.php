@@ -2,6 +2,7 @@
 
 namespace App\Console\Commands;
 
+use App\Support\Platform\LocalCommand;
 use App\Models\Mailbox;
 use App\Models\Website;
 use App\Services\PathService;
@@ -88,14 +89,12 @@ class MigrateDovecotSqlMailboxesCommand extends Command
         }
 
         if (! $dryRun && $skipped === 0) {
-            $validation = [];
-            @exec('doveconf -n 2>&1', $validation, $code);
-            if ($code !== 0) {
+            $local = app(LocalCommand::class);
+            if (! $local->supports(LocalCommand::POSTFIX) || ! $local->succeeds(['doveconf', '-n'])) {
                 $this->error('Dovecot validation failed; legacy users file backup is /etc/dovecot/serverpanel-users.pre-sql.bak.');
                 return self::FAILURE;
             }
-            @exec('systemctl restart dovecot.service 2>&1', $restart, $restartCode);
-            if ($restartCode !== 0) {
+            if (! $local->succeeds(['systemctl', 'restart', 'dovecot.service'], 120)) {
                 $this->error('Dovecot restart failed; legacy users file backup is /etc/dovecot/serverpanel-users.pre-sql.bak.');
                 return self::FAILURE;
             }

@@ -2,6 +2,7 @@
 
 namespace App\Services\Mail;
 
+use App\Support\Platform\LocalCommand;
 use App\Services\ScriptExecutionGateway;
 use App\Services\ScriptPathResolver;
 
@@ -295,7 +296,10 @@ class MailDeliveryDiagnosticsService
             return $viaRoot;
         }
 
-        $journal = @shell_exec('journalctl -u postfix -u rspamd -u spamassassin --no-pager -n '.$maxLines.' 2>/dev/null');
+        $local = app(LocalCommand::class);
+        $journal = $local->supports(LocalCommand::SYSTEMD)
+            ? $local->output(['journalctl', '-u', 'postfix', '-u', 'rspamd', '-u', 'spamassassin', '--no-pager', '-n', (string) $maxLines])
+            : null;
         if (is_string($journal) && trim($journal) !== '' && ! str_contains($journal, 'No journal files were found')) {
             return [array_slice($this->normalizeLines($journal), -$maxLines), 'systemd journal'];
         }
@@ -352,8 +356,9 @@ class MailDeliveryDiagnosticsService
     /** @return array<string, mixed> */
     private function queueSnapshot(): array
     {
-        $output = @shell_exec('postqueue -p 2>&1');
-        if (! is_string($output) || trim($output) === '' || str_contains(strtolower($output), 'command not found')) {
+        $local = app(LocalCommand::class);
+        $output = $local->supports(LocalCommand::POSTFIX) ? $local->combinedOutput(['postqueue', '-p']) : '';
+        if (! is_string($output) || trim($output) === '' || str_contains(strtolower($output), 'not found')) {
             return ['available' => false, 'count' => 0, 'size_bytes' => 0, 'messages' => [], 'error' => 'Postfix queue command is unavailable.'];
         }
         if (str_contains(strtolower($output), 'fatal:') || str_contains(strtolower($output), 'permission denied')) {

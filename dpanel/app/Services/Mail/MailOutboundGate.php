@@ -2,6 +2,7 @@
 
 namespace App\Services\Mail;
 
+use App\Support\Platform\LocalCommand;
 use App\Services\Dns\PublicDnsLookup;
 use App\Services\ScriptExecutionGateway;
 use App\Services\ScriptPathResolver;
@@ -46,7 +47,7 @@ class MailOutboundGate
         $ipv6 = $this->publicIpv6();
 
         return [
-            'relayhost' => trim((string) @shell_exec('postconf -h relayhost 2>/dev/null')),
+            'relayhost' => $this->postconf('relayhost'),
             'gate_enabled' => $this->settings->read()['outbound_gate'],
             'ipv4' => $ipv4 !== '' ? $this->reverseCheck($ipv4) : null,
             'ipv6' => $ipv6 !== '' ? $this->reverseCheck($ipv6) : null,
@@ -225,10 +226,17 @@ class MailOutboundGate
         return $result;
     }
 
+    private function postconf(string $key): string
+    {
+        $local = app(LocalCommand::class);
+
+        return $local->supports(LocalCommand::POSTFIX) ? trim((string) $local->output(['postconf', '-h', $key])) : '';
+    }
+
     /** The global IPv6 address outbound connections leave from, or ''. */
     private function publicIpv6(): string
     {
-        $src = trim((string) @shell_exec("ip -6 route get 2001:4860:4860::8888 2>/dev/null | awk '{for(i=1;i<=NF;i++) if (\$i==\"src\") {print \$(i+1); exit}}'"));
+        $src = app(LocalCommand::class)->routeSource('2001:4860:4860::8888');
 
         return filter_var($src, FILTER_VALIDATE_IP, FILTER_FLAG_IPV6 | FILTER_FLAG_NO_PRIV_RANGE | FILTER_FLAG_NO_RES_RANGE) ? $src : '';
     }

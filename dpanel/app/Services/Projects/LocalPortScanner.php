@@ -2,6 +2,7 @@
 
 namespace App\Services\Projects;
 
+use App\Support\Platform\LocalCommand;
 use App\Support\Platform\ProcessIdentity;
 
 /**
@@ -15,6 +16,11 @@ class LocalPortScanner
     /** @return array<int, string> port => owner user name ('' when unknown) */
     public function listening(): array
     {
+        // /proc/net is Linux's; other systems list no ports yet.
+        if (! app(LocalCommand::class)->supports(LocalCommand::LINUX_TOOLS)) {
+            return [];
+        }
+
         $ports = [];
         foreach (['/proc/net/tcp', '/proc/net/tcp6'] as $file) {
             $lines = @file($file, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);

@@ -2,6 +2,7 @@
 
 namespace App\Services\Mail;
 
+use App\Support\Platform\LocalCommand;
 use App\Services\Dns\PublicDnsLookup;
 use App\Services\ScriptExecutionGateway;
 use App\Services\ScriptPathResolver;
@@ -29,7 +30,10 @@ class MailHostnameDetector
     /** The machine's own name; the hostname script keeps it equal to the mail hostname. */
     public function systemHostname(): string
     {
-        return strtolower(trim((string) (@shell_exec('hostname -f 2>/dev/null') ?: gethostname())));
+        $local = app(LocalCommand::class);
+        $fqdn = $local->supports(LocalCommand::UNIX_TOOLS) ? $local->output(['hostname', '-f']) : null;
+
+        return strtolower(trim((string) ($fqdn ?: gethostname())));
     }
 
     /**

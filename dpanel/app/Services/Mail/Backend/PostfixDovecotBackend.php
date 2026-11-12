@@ -2,6 +2,7 @@
 
 namespace App\Services\Mail\Backend;
 
+use App\Support\Platform\LocalCommand;
 use App\Models\MailDomain;
 use App\Models\Mailbox;
 use App\Models\MailForwarder;
@@ -205,7 +206,7 @@ class PostfixDovecotBackend implements MailBackend
 
     private function windows(): bool
     {
-        return PHP_OS_FAMILY === 'Windows';
+        return ! app(LocalCommand::class)->supports(LocalCommand::UNIX_TOOLS);
     }
 
     /** @param  array<string, mixed>  $extra */

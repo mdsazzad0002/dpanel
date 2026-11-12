@@ -16,6 +16,7 @@ use Illuminate\Support\Facades\DB;
 use Inertia\Inertia;
 use Inertia\Response;
 use Symfony\Component\HttpFoundation\BinaryFileResponse;
+use App\Support\Platform\LocalCommand;
 
 class WebsiteTrashBackupController extends Controller
 {
@@ -93,6 +94,8 @@ class WebsiteTrashBackupController extends Controller
         [$hour, $minute] = array_map('intval', explode(':', (string) $settings['trash_retention_time']));
         $days = max(1, (int) $settings['trash_retention_days']);
 
+        $command = app(LocalCommand::class)->artisanCronLine(['serverpanel:trash-backups-prune', '--days='.$days]);
+
         $response = Http::acceptJson()
             ->asJson()
             ->timeout((int) config('serverpanel.execution_api_timeout', 60))
@@ -102,7 +105,7 @@ class WebsiteTrashBackupController extends Controller
                 'id' => 'trash-backups-prune',
                 'user' => 'root',
                 'expression' => "{$minute} {$hour} * * *",
-                'command' => 'cd '.base_path().' && '.PHP_BINARY.' artisan serverpanel:trash-backups-prune --days='.$days.' >> /dev/null 2>&1',
+                'command' => $command,
                 'enabled' => (bool) $settings['trash_retention_enabled'],
             ]);
         $json = $response->json();
@@ -117,7 +120,7 @@ class WebsiteTrashBackupController extends Controller
                 'domain' => 'dpanel.localhost',
                 'name' => 'Trash Backup Cleanup',
                 'expression' => "{$minute} {$hour} * * *",
-                'command' => 'cd '.base_path().' && '.PHP_BINARY.' artisan serverpanel:trash-backups-prune --days='.$days.' >> /dev/null 2>&1',
+                'command' => $command,
                 'status' => (bool) $settings['trash_retention_enabled'] ? 'active' : 'disabled',
                 'description' => 'Automatically removes expired website trash backups.',
             ],

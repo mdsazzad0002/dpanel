@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Support\Platform\LocalCommand;
 use App\Models\PackagePlan;
 use App\Models\MailDomain;
 use App\Models\Mailbox;
@@ -712,7 +713,7 @@ class EmailController extends Controller
      */
     private function buildMailSetupCheck(): array
     {
-        $isWindows = str_starts_with(strtoupper(PHP_OS_FAMILY), 'WINDOWS');
+        $isWindows = ! app(LocalCommand::class)->supports(LocalCommand::POSTFIX);
         $configuredWebmailEnv = trim((string) config('app.webmail_url', ''));
         $webmailConfigured = true;
         $shouldProbeWebmail = $configuredWebmailEnv !== ''
@@ -891,11 +892,12 @@ class EmailController extends Controller
 
     private function serviceStatus(string $service): string
     {
-        if (str_starts_with(strtoupper(PHP_OS_FAMILY), 'WINDOWS')) {
+        $local = app(LocalCommand::class);
+        if (! $local->supports(LocalCommand::SYSTEMD)) {
             return 'unknown';
         }
 
-        $out = @shell_exec('systemctl is-active '.escapeshellarg($service).' 2>/dev/null');
+        $out = $local->output(['systemctl', 'is-active', $service]);
         if (! is_string($out)) {
             return 'unknown';
         }
@@ -970,7 +972,7 @@ class EmailController extends Controller
 
     private function isDovecotStorageBackendReady(): bool
     {
-        if (str_starts_with(strtoupper(PHP_OS_FAMILY), 'WINDOWS')) {
+        if (! app(LocalCommand::class)->supports(LocalCommand::POSTFIX)) {
             return true;
         }
 
@@ -981,7 +983,8 @@ class EmailController extends Controller
 
     private function isDovecotMysqlDriverAvailable(): bool
     {
-        if (str_starts_with(strtoupper(PHP_OS_FAMILY), 'WINDOWS')) {
+        $local = app(LocalCommand::class);
+        if (! $local->supports(LocalCommand::POSTFIX)) {
             return true;
         }
 
@@ -995,12 +998,7 @@ class EmailController extends Controller
             }
         }
 
-        $dpkgOutput = trim((string) @shell_exec("dpkg -l 2>/dev/null | grep -E '^ii\\s+dovecot-mysql\\s'"));
-        if ($dpkgOutput !== '') {
-            return true;
-        }
-
-        return false;
+        return preg_match('/^ii\s+dovecot-mysql\s/m', (string) $local->output(['dpkg', '-l'])) === 1;
     }
 
     /**
@@ -1008,7 +1006,7 @@ class EmailController extends Controller
      */
     private function checkMailboxStorageSync(string $email): array
     {
-        if (str_starts_with(strtoupper(PHP_OS_FAMILY), 'WINDOWS')) {
+        if (! app(LocalCommand::class)->supports(LocalCommand::POSTFIX)) {
             return ['ok' => true, 'message' => ''];
         }
 
@@ -1075,7 +1073,8 @@ class EmailController extends Controller
 
     private function resolveSystemId(string $mode, string $account, int $fallback): int
     {
-        $value = trim((string) @shell_exec('id -'.$mode.' '.escapeshellarg($account).' 2>/dev/null'));
+        $local = app(LocalCommand::class);
+        $value = $local->supports(LocalCommand::UNIX_TOOLS) ? trim((string) $local->output(['id', '-'.$mode, $account])) : '';
         if ($value !== '' && ctype_digit($value)) {
             return (int) $value;
         }

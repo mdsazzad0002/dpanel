@@ -7,6 +7,7 @@ use App\Models\DatabaseRequest;
 use App\Models\User;
 use App\Services\Backup\QuickExportJobStatus;
 use App\Services\Database\DatabaseDumper;
+use App\Support\Platform\LocalCommand;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Process\PendingProcess;
 use Illuminate\Support\Facades\Process;
@@ -28,6 +29,7 @@ class DatabaseExportTest extends TestCase
     protected function setUp(): void
     {
         parent::setUp();
+        $this->installed(null);
         $this->token = str_repeat('e', 64);
         URL::defaults(['token' => $this->token]);
         $this->admin = User::factory()->create();
@@ -109,12 +111,10 @@ class DatabaseExportTest extends TestCase
     public function test_mariadb_dump_is_gzipped_and_keeps_the_password_off_the_command_line(): void
     {
         $commands = [];
+        // Only mariadb-dump is "installed".
+        $this->installed(['mariadb-dump']);
         Process::fake(function (PendingProcess $process) use (&$commands) {
             $command = (array) $process->command;
-            if (($command[0] ?? '') === 'sh') {
-                // Only mariadb-dump is "installed".
-                return Process::result(exitCode: str_contains($command[2], 'mariadb-dump') ? 0 : 1);
-            }
             $commands[] = $command;
             $options = substr((string) $command[1], strlen('--defaults-extra-file='));
             $this->assertStringContainsString('password="p@ss\\"word"', (string) file_get_contents($options));
@@ -143,9 +143,6 @@ class DatabaseExportTest extends TestCase
     {
         Process::fake(function (PendingProcess $process) {
             $command = (array) $process->command;
-            if (($command[0] ?? '') === 'sh') {
-                return Process::result();
-            }
             $this->assertSame('pg_dump', $command[0]);
             $this->assertSame('p@ss"word', $process->environment['PGPASSWORD'] ?? null);
             foreach ($command as $argument) {
@@ -166,9 +163,6 @@ class DatabaseExportTest extends TestCase
     {
         Process::fake(function (PendingProcess $process) {
             $command = (array) $process->command;
-            if (($command[0] ?? '') === 'sh') {
-                return Process::result();
-            }
             $this->assertSame('mongodump', $command[0]);
             $this->assertContains('--authenticationDatabase=shop_db', $command);
             $this->assertContains('--gzip', $command);
@@ -192,9 +186,7 @@ class DatabaseExportTest extends TestCase
 
     public function test_a_failed_dump_reports_the_error_and_leaves_nothing_behind(): void
     {
-        Process::fake(fn (PendingProcess $process) => ((array) $process->command)[0] === 'sh'
-            ? Process::result()
-            : Process::result(errorOutput: 'Access denied for user', exitCode: 2));
+        Process::fake(fn (PendingProcess $process) => Process::result(errorOutput: 'Access denied for user', exitCode: 2));
         $database = $this->database();
 
         (new DatabaseExportJob('job-1', $database->id, $this->admin->id))->handle(
@@ -231,5 +223,22 @@ class DatabaseExportTest extends TestCase
         $this->assertSame(2, $status['size']);
         $this->get(parse_url($status['download_url'], PHP_URL_PATH))->assertOk()->assertDownload('shop_db.sql.gz');
         @unlink($path);
+    }
+
+    /** @param  list<string>|null  $programs  null: every program is on PATH */
+    private function installed(?array $programs): void
+    {
+        $this->app->instance(LocalCommand::class, new class($programs) extends LocalCommand
+        {
+            public function __construct(private ?array $programs)
+            {
+                parent::__construct();
+            }
+
+            public function find(string $program): ?string
+            {
+                return $this->programs === null || in_array($program, $this->programs, true) ? '/usr/bin/'.$program : null;
+            }
+        });
     }
 }

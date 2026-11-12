@@ -14,6 +14,7 @@ use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Str;
+use App\Support\Platform\LocalCommand;
 
 /**
  * One-click installers for Joomla, Drupal, CodeIgniter 4 and WHMCS. Like the Laravel
@@ -597,7 +598,8 @@ class AppInstallService
      */
     private function addWhmcsCron(Website $website, string $rootPath, string $phpVersion): string
     {
-        $command = "/usr/bin/php{$phpVersion} -q {$rootPath}/crons/cron.php";
+        $local = app(LocalCommand::class);
+        $command = $local->shellLine([$local->phpCli($phpVersion), '-q', $rootPath.'/crons/cron.php']);
         $job = CronJob::query()->create([
             'id' => (string) Str::uuid(),
             'website_id' => $website->id,

@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Support\Platform\LocalCommand;
 use App\Services\ScriptExecutionGateway;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
@@ -575,7 +576,7 @@ class PhpManagementController extends Controller
         ];
 
         foreach ($commandCandidates as $command) {
-            $output = $this->runCommand($command.' -v');
+            $output = $this->runCommand([$command, '-v']);
             $version = $this->extractVersionFromText($output);
             if ($version !== '') {
                 $versions[] = $version;
@@ -610,7 +611,7 @@ class PhpManagementController extends Controller
             }
 
             if (is_file($path) && is_executable($path)) {
-                $output = $this->runCommand('"'.$path.'" -v');
+                $output = $this->runCommand([$path, '-v']);
                 $parsed = $this->extractVersionFromText($output);
                 if ($parsed !== '') {
                     $versions[] = $parsed;
@@ -633,13 +634,13 @@ class PhpManagementController extends Controller
     {
         $versions = [];
 
-        $alternatives = $this->runCommand('update-alternatives --list php');
+        $alternatives = $this->runCommand(['update-alternatives', '--list', 'php']);
         $versions = array_merge($versions, $this->extractVersionsFromText($alternatives));
 
-        $binList = $this->runCommand('ls /usr/bin/php* 2>/dev/null');
+        $binList = implode("\n", glob('/usr/bin/php*') ?: []);
         $versions = array_merge($versions, $this->extractVersionsFromText($binList));
 
-        $dpkgList = $this->runCommand("dpkg -l | grep -E 'php[0-9]+\\.[0-9]+-(cli|fpm|common)'");
+        $dpkgList = implode("\n", preg_grep('/php[0-9]+\.[0-9]+-(cli|fpm|common)/', preg_split('/\R/', $this->runCommand(['dpkg', '-l'])) ?: []) ?: []);
         $versions = array_merge($versions, $this->extractVersionsFromText($dpkgList));
 
         return collect($versions)
@@ -664,7 +665,7 @@ class PhpManagementController extends Controller
             return [];
         }
 
-        $output = $this->runCommand($binary.' -m');
+        $output = $this->runCommand([$binary, '-m']);
         if ($output === '') {
             return [];
         }
@@ -727,7 +728,7 @@ class PhpManagementController extends Controller
     /**
      * @return array<string, string>
      */
-    private function detectConfigForVersion(string $token, string $version): array
+    private function detectConfigForVersion(string $version): array
     {
         $scriptConfig = $this->detectConfigForVersionViaScript($version);
         if (count($scriptConfig) > 0) {
@@ -739,7 +740,7 @@ class PhpManagementController extends Controller
             return [];
         }
 
-        $output = $this->runCommand($binary.' -i');
+        $output = $this->runCommand([$binary, '-i']);
         if ($output === '') {
             return [];
         }
@@ -756,7 +757,7 @@ class PhpManagementController extends Controller
         ];
     }
 
-    private function resolvePhpBinaryForVersion(string $token, string $version): string
+    private function resolvePhpBinaryForVersion(string $version): string
     {
         $digits = str_replace('.', '', $version);
 
@@ -777,7 +778,7 @@ class PhpManagementController extends Controller
                 }
 
                 if (is_file($match)) {
-                    return '"'.$match.'"';
+                    return $match;
                 }
             }
         }
@@ -791,7 +792,7 @@ class PhpManagementController extends Controller
         ];
 
         foreach ($commandCandidates as $command) {
-            $output = $this->runCommand($command.' -v');
+            $output = $this->runCommand([$command, '-v']);
             $detected = $this->extractVersionFromText($output);
             if ($detected === $version) {
                 return $command;
@@ -808,15 +809,14 @@ class PhpManagementController extends Controller
         return preg_match('/^\d+\.\d+$/', $version) === 1 ? $version : '';
     }
 
-    private function runCommand(string $command): string
+    /**
+     * stdout and stderr of a program, '' when it could not run.
+     *
+     * @param  list<string>  $argv
+     */
+    private function runCommand(array $argv): string
     {
-        try {
-            $output = shell_exec($command.' 2>&1');
-
-            return is_string($output) ? $output : '';
-        } catch (\Throwable $e) {
-            return '';
-        }
+        return app(LocalCommand::class)->combinedOutput($argv);
     }
 
     /**
@@ -965,7 +965,8 @@ class PhpManagementController extends Controller
 
     private function isWindowsEnvironment(): bool
     {
-        return str_starts_with(strtoupper(PHP_OS_FAMILY), 'WINDOWS');
+        // The detect and apply scripts need a Unix shell.
+        return ! app(LocalCommand::class)->supports(LocalCommand::UNIX_TOOLS);
     }
 
     /**
@@ -973,7 +974,7 @@ class PhpManagementController extends Controller
      */
     private function applyConfigToServer(string $version, array $configValues): array
     {
-        if (str_starts_with(strtoupper(PHP_OS_FAMILY), 'WINDOWS')) {
+        if ($this->isWindowsEnvironment()) {
             return [
                 'applied' => false,
                 'message' => 'Server apply is not supported on Windows environment.',

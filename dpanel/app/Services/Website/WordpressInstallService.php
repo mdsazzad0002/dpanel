@@ -932,25 +932,7 @@ class WordpressInstallService
             $rootPath = $publicRoot;
         }
 
-        $this->runSystemCommand("getent group ".escapeshellarg($siteOwner)." >/dev/null 2>&1 || groupadd ".escapeshellarg($siteOwner));
-        $this->runSystemCommand("id -u ".escapeshellarg($siteOwner)." >/dev/null 2>&1 || useradd -m -d ".escapeshellarg($homePath)." -s /usr/sbin/nologin -g ".escapeshellarg($siteOwner)." ".escapeshellarg($siteOwner));
-        $this->runSystemCommand("mkdir -p ".escapeshellarg($homePath));
-        $this->runSystemCommand("chown root:root ".escapeshellarg($homePath));
-        $this->runSystemCommand("chmod 711 ".escapeshellarg($homePath));
-        $this->runSystemCommand("mkdir -p ".escapeshellarg($projectRoot));
-        $this->runSystemCommand("chown -R ".escapeshellarg($siteOwner).":www-data ".escapeshellarg($projectRoot));
-        $this->runSystemCommand("find ".escapeshellarg($projectRoot)." -type d -exec chmod 750 {} \\;");
-        $this->runSystemCommand("find ".escapeshellarg($projectRoot)." -type f -exec chmod 640 {} \\;");
-        $this->runSystemCommand("mkdir -p ".escapeshellarg($publicRoot));
-        $this->runSystemCommand("mkdir -p ".escapeshellarg($rootPath));
-    }
-
-    private function runSystemCommand(string $command): void
-    {
-        try {
-            @shell_exec($command.' 2>&1');
-        } catch (\Throwable $e) {
-        }
+        app(SiteOwnerIsolation::class)->apply($siteOwner, $homePath, $projectRoot, $publicRoot, $rootPath);
     }
 
     /**

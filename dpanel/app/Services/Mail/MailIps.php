@@ -2,6 +2,7 @@
 
 namespace App\Services\Mail;
 
+use App\Support\Platform\LocalCommand;
 use App\Models\MailDomain;
 use App\Models\MailIp;
 use App\Services\Dns\PublicDnsLookup;
@@ -52,9 +53,12 @@ class MailIps
     /** Public IPv4 addresses on this machine's interfaces: the only ones Postfix can bind to. */
     public function localAddresses(): array
     {
-        $output = (string) @shell_exec("ip -4 -o addr show scope global 2>/dev/null | awk '{split(\$4,a,\"/\"); print a[1]}'");
+        $local = app(LocalCommand::class);
+        $output = $local->supports(LocalCommand::LINUX_TOOLS) ? (string) $local->output(['ip', '-4', '-o', 'addr', 'show', 'scope', 'global']) : '';
+        // Field 4 is "address/prefix", as awk '{split($4,a,"/"); print a[1]}' read it.
+        $addresses = array_map(fn (string $line) => explode('/', preg_split('/\s+/', trim($line))[3] ?? '')[0], explode("\n", $output));
 
-        return array_values(array_filter(array_map('trim', explode("\n", $output)), fn ($ip) => filter_var($ip, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4 | FILTER_FLAG_NO_PRIV_RANGE | FILTER_FLAG_NO_RES_RANGE)));
+        return array_values(array_filter(array_map('trim', $addresses), fn ($ip) => filter_var($ip, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4 | FILTER_FLAG_NO_PRIV_RANGE | FILTER_FLAG_NO_RES_RANGE)));
     }
 
     /** @return array{ok: bool, message: string} */

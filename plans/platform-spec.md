@@ -497,6 +497,7 @@ pub trait Scheduler {
 - Timer প্রতি মিনিটের শুরুতে local time-এ due job চালায়। drust বন্ধ থাকার মিনিট পরে চালানো হয় না, cron-এর মতো।
 - Expression পাঁচটা সংখ্যার field: `*`, `n`, `a-b`, `a/n`, `a-b/n`, `,` তালিকা। Weekday-তে 0 ও 7 রবিবার। দুটো day field-ই সীমিত হলে যেকোনো একটা মিললেই চলে। নাম (`mon`) ও `@daily` timer-এ নেই; `upsert` তখনই refuse করে।
 - Command shell-এ চলে: Unix-এ `/bin/sh -c`, Windows-এ `cmd /C`, `IsolatedRunner` দিয়ে, stdin/stdout/stderr বন্ধ। আগের run শেষ না হলে সেই job-এর নতুন run বাদ যায়।
+- Panel-এর বানানো command (`schedule:run`, trash prune, WHMCS cron) `LocalCommand::shellLine`/`artisanCronLine` দিয়ে বানানো (§6.15): Linux-এ আগের string হুবহু (`cd … && php artisan … >> /dev/null 2>&1`), Windows-এ `cd /d "…" && "php.exe" artisan … >> NUL 2>&1`।
 
 ### 6.14 AddressSource (U5)
 
@@ -512,6 +513,28 @@ pub fn usable(found: Vec<InterfaceAddress>) -> Vec<ServerAddress>; // interface,
 Unix (Linux ও macOS): `unix/net.rs`-এ `getifaddrs`। Windows: এখনও `Unsupported { capability: IpAddresses }` (`GetAdaptersAddresses` পরে)। `usable` loopback, link-local, multicast ও unspecified বাদ দেয়, একই ঠিকানা একবার, IPv4 আগে; `public` false হয় RFC 1918, ULA, CGNAT `100.64/10` ও documentation range-এ। Panel কখনো `ip addr` চালিয়ে pool বানায় না (mail-এর পুরোনো `MailIps::localAddresses` এখনও চালায়)।
 
 **Gateway-র সিদ্ধান্ত (U5):** gateway আগের মতো সব ঠিকানায় একটা listener-এ শোনে (`0.0.0.0`/`[::]`, dual-stack), প্রতি ঠিকানায় আলাদা bind নয়: নতুন ঠিকানা restart ছাড়াই চলে, আর site সরালে শুধু reload লাগে। প্রতিটা connection-এর local address (`LocalAddr`, `::ffff:a.b.c.d` IPv4 হিসেবে; HTTP/3-এ quinn-এর `local_ip()`) request-এ যায়, আর `select_site` ঠিক করে: ঠিকানা pool-এ না থাকলে (loopback ইত্যাদি) শুধু Host; **dedicated** ঠিকানায় শুধু সেই ঠিকানার site, অন্য Host "Site not found"; **shared** ঠিকানায় সব site (dedicated ঠিকানায় সরানো site-ও, যাতে DNS বদলানোর সময় পুরোনো ঠিকানায় চলে); bare IP (বা Host নেই) হলে ঠিকানার `default_website_id`-এর site, কিন্তু অচেনা hostname কখনো default site পায় না। Rule-গুলো `RuntimeSnapshot.ip_bindings`-এ (`IpBindings { addresses: ঠিকানা → {dedicated, default_site}, site_ips: site id → ঠিকানা }`), প্রতি full ও per-domain reload-এ `ip_addresses` ও `websites.ip_address_id` থেকে পড়া; alias তার main site-এর ঠিকানা পায়। Table না থাকলে rule খালি, অর্থাৎ আগের আচরণ। SNI ছাড়া bare IP-র HTTPS এখনও fallback certificate পায়।
+
+### 6.15 LocalCommand (Laravel, D4)
+
+Panel যে machine-এ চলে সেখানে program চালানোর একমাত্র পথ: `App\Support\Platform\LocalCommand`।
+
+```php
+public function run(array $argv, ?string $cwd = null, ?int $timeout = 60, array $env = [], ?string $input = null): ProcessResult;
+public function output(array $argv, int $timeout = 15): ?string;   // shell_exec(... 2>/dev/null)-এর মতো: stdout, কিছু না থাকলে null
+public function combinedOutput(array $argv, int $timeout = 15): string; // stdout ও stderr (আগের "2>&1")
+public function succeeds(array $argv, int $timeout = 15): bool;
+public function find(string $program): ?string;                     // PATH খোঁজা, Windows-এ PATHEXT; `command -v`-এর বদলে
+public function supports(string $tools): bool;                      // UNIX_TOOLS, LINUX_TOOLS, SYSTEMD, POSTFIX
+public function shellLine(array $argv, ?string $cwd = null, bool $discardOutput = false): string;
+public function artisanCronLine(array $arguments): string;
+public function phpCli(string $version): string;                    // Linux-এ /usr/bin/phpX.Y, অন্য OS-এ PHP_BINARY
+public function routeSource(string $destination): string;           // Linux-এ `ip route get`-এর src
+```
+
+- Command সবসময় argv list; shell নেই, pipe ও `grep`/`head`/`awk`-এর কাজ PHP-তে। Laravel-এর `Process` দিয়ে চলে, তাই test-এ `Process::fake`।
+- `supports()` host-এর tool জানায়, যে OS-এ PHP চলে সেখান থেকে (drust-এর `/capabilities` নয়): `UNIX_TOOLS` Linux ও macOS (`sh`, `ps`, `id`, `hostname`, `sudo`); `LINUX_TOOLS` (`/proc`, `ip`, `ss`, `nproc`, `lscpu`, `dpkg`, `dmidecode`, `ufw`, `sshd`, `useradd`), `SYSTEMD` ও `POSTFIX` শুধু Linux। না থাকলে caller কিছু না চালিয়ে খালি বা `unknown` উত্তর দেয়।
+- `shellLine` শুধু এমন string-এর জন্য যা অন্য program পরে shell-এ চালায় (cron, §6.13)। Unix-এ সাধারণ শব্দ quote ছাড়া (তাই Linux-এর পুরোনো line বদলায় না), বাকি single quote; Windows-এ double quote, আর `"`, `%`, `!` বা newline থাকলে refuse।
+- Test-এ অন্য OS: `new LocalCommand('Windows')` container-এ bind করা।
 
 ## 7. Data model
 

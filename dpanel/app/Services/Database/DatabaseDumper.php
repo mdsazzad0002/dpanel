@@ -3,6 +3,7 @@
 namespace App\Services\Database;
 
 use App\Models\DatabaseRequest;
+use App\Support\Platform\LocalCommand;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Process;
 use Illuminate\Support\Str;
@@ -134,7 +135,7 @@ class DatabaseDumper
     private function binary(array $candidates): string
     {
         foreach ($candidates as $candidate) {
-            if (Process::run(['sh', '-c', 'command -v '.escapeshellarg($candidate)])->successful()) {
+            if (app(LocalCommand::class)->find($candidate) !== null) {
                 return $candidate;
             }
         }

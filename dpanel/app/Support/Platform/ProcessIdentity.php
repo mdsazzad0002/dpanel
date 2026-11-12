@@ -60,6 +60,6 @@ class ProcessIdentity
 
     protected function hasSudo(): bool
     {
-        return PHP_OS_FAMILY !== 'Windows';
+        return app(LocalCommand::class)->supports(LocalCommand::UNIX_TOOLS);
     }
 }

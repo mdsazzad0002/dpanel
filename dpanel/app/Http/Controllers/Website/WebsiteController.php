@@ -2,6 +2,8 @@
 
 namespace App\Http\Controllers\Website;
 
+use App\Services\Website\SiteOwnerIsolation;
+use App\Support\Platform\LocalCommand;
 use App\Http\Controllers\Controller;
 use App\Models\CronJob;
 use App\Models\DatabaseRequest;
@@ -1394,7 +1396,7 @@ class WebsiteController extends Controller
     protected function websiteMutationDeps(Request $request): array
     {
         return [
-            'buildCommand' => fn (array $payload): string => $this->buildCommand($payload),
+            'buildCommand' => fn (array $payload): array => $this->buildCommand($payload),
             'applyWebsiteFilesystemIsolation' => function (string $siteOwner, string $projectRoot, string $rootPath): void {
                 $this->applyWebsiteFilesystemIsolation($siteOwner, $projectRoot, $rootPath);
             },
@@ -2178,19 +2180,21 @@ class WebsiteController extends Controller
     }
 
     /**
-     * Build execution command from payload.
+     * The site installer's argv for a payload.
      *
      * @param  array<string, mixed>  $payload
+     * @return list<string>
      */
-    protected function buildCommand(array $payload): string
+    protected function buildCommand(array $payload): array
     {
-        return sprintf(
-            '/usr/local/bin/serverinstaller-site create --domain=%s --root=%s --php=%s%s',
-            escapeshellarg((string) $payload['domain']),
-            escapeshellarg((string) $payload['root_path']),
-            escapeshellarg((string) $payload['php_version']),
-            ! empty($payload['enable_ssl']) ? ' --ssl' : '',
-        );
+        return [
+            '/usr/local/bin/serverinstaller-site',
+            'create',
+            '--domain='.$payload['domain'],
+            '--root='.$payload['root_path'],
+            '--php='.$payload['php_version'],
+            ...(! empty($payload['enable_ssl']) ? ['--ssl'] : []),
+        ];
     }
 
     protected function normalizeStartDirectoryAlias(string $value): string
@@ -2229,33 +2233,14 @@ class WebsiteController extends Controller
             $rootPath = $publicRoot;
         }
 
-        $this->runSystemCommand('getent group '.escapeshellarg($siteOwner).' >/dev/null 2>&1 || groupadd '.escapeshellarg($siteOwner));
-        $this->runSystemCommand('id -u '.escapeshellarg($siteOwner).' >/dev/null 2>&1 || useradd -m -d '.escapeshellarg($homePath).' -s /usr/sbin/nologin -g '.escapeshellarg($siteOwner).' '.escapeshellarg($siteOwner));
-        $this->runSystemCommand('mkdir -p '.escapeshellarg($homePath));
-        $this->runSystemCommand('chown root:root '.escapeshellarg($homePath));
-        $this->runSystemCommand('chmod 711 '.escapeshellarg($homePath));
-        $this->runSystemCommand('mkdir -p '.escapeshellarg($projectRoot));
-        $this->runSystemCommand('chown -R '.escapeshellarg($siteOwner).':www-data '.escapeshellarg($projectRoot));
-        $this->runSystemCommand('find '.escapeshellarg($projectRoot).' -type d -exec chmod 750 {} \\;');
-        $this->runSystemCommand('find '.escapeshellarg($projectRoot).' -type f -exec chmod 640 {} \\;');
-        $this->runSystemCommand('mkdir -p '.escapeshellarg($publicRoot));
-        $this->runSystemCommand('mkdir -p '.escapeshellarg($rootPath));
+        $isolation = app(SiteOwnerIsolation::class);
+        $isolation->apply($siteOwner, $homePath, $projectRoot, $publicRoot, $rootPath);
 
         // The recursive chown/chmod above targets $projectRoot, which for
         // some sites equals $homePath itself, clobbering the root:root 711
-        // set at line 1590-1591 that bwrap's capability-stripped setup phase
-        // needs to traverse into the home directory (e.g. to create .ssh).
-        $this->runSystemCommand('chown root:root '.escapeshellarg($homePath));
-        $this->runSystemCommand('chmod 711 '.escapeshellarg($homePath));
-    }
-
-    protected function runSystemCommand(string $command): void
-    {
-        try {
-            @shell_exec($command.' 2>&1');
-        } catch (\Throwable $e) {
-            // Ignore to keep website flow non-blocking.
-        }
+        // that bwrap's capability-stripped setup phase needs to traverse
+        // into the home directory (e.g. to create .ssh).
+        $isolation->lockHome($homePath);
     }
 
     protected function resolveProjectArtisanPath(string $rootPath): ?string
@@ -3754,15 +3739,15 @@ class WebsiteController extends Controller
             return 0;
         }
 
-        $escapedDomain = escapeshellarg($domain);
-        $output = @shell_exec("ss -Htanp 2>/dev/null | grep -c {$escapedDomain}");
-        if ($output === null) {
+        $local = app(LocalCommand::class);
+        if (! $local->supports(LocalCommand::LINUX_TOOLS)) {
             return 0;
         }
 
-        $count = (int) trim($output);
+        // `ss -Htanp | grep -c <domain>`: lines naming the domain.
+        $lines = preg_split('/\R/', (string) $local->output(['ss', '-Htanp'])) ?: [];
 
-        return max(0, $count);
+        return count(array_filter($lines, fn (string $line) => str_contains($line, $domain)));
     }
 
     protected function currentCpuUsagePercent(): float
@@ -3776,7 +3761,8 @@ class WebsiteController extends Controller
             return 0.0;
         }
 
-        $cores = (int) trim((string) @shell_exec('nproc 2>/dev/null'));
+        $local = app(LocalCommand::class);
+        $cores = $local->supports(LocalCommand::LINUX_TOOLS) ? (int) trim((string) $local->output(['nproc'])) : 0;
         $cores = $cores > 0 ? $cores : 1;
 
         return round(min(100, max(0, ((float) $load[0] / $cores) * 100)), 2);
