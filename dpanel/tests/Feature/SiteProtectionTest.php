@@ -144,6 +144,39 @@ class SiteProtectionTest extends TestCase
         $this->as($admin)->put($url, [...$base, 'denied_paths' => ['/']])->assertSessionHasErrors('denied_paths.0');
     }
 
+    public function test_blocked_file_types_are_normalized_and_kept_unless_sent(): void
+    {
+        $admin = $this->admin();
+        $site = $this->website($admin);
+        WebsiteGuardSetting::query()->create(['website_id' => $site->id, 'denied_extensions' => 'tpl,/modules/*.yml']);
+        $url = "/cpsess{$this->token}/rules/site-protection/{$site->id}/settings";
+        $base = ['no_php_paths' => [], 'hotlink_protection' => false, 'hotlink_allowed_hosts' => []];
+
+        $this->as($admin)->put($url, $base)->assertSessionHasNoErrors();
+        $this->assertSame('tpl,/modules/*.yml', WebsiteGuardSetting::query()->findOrFail($site->id)->denied_extensions);
+
+        $this->as($admin)->put($url, [...$base, 'denied_extensions' => ['.LOG', '*.Twig', 'ini', '/Themes/Classic/*.TPL', '/*.sql', 'log']])->assertSessionHasNoErrors();
+        $setting = WebsiteGuardSetting::query()->findOrFail($site->id);
+        $this->assertSame(['log', 'twig', 'ini', '/themes/classic/*.tpl', 'sql'], $setting->deniedExtensions());
+
+        $this->as($admin)->put($url, [...$base, 'denied_extensions' => []])->assertSessionHasNoErrors();
+        $this->assertNull(WebsiteGuardSetting::query()->findOrFail($site->id)->denied_extensions);
+
+        foreach (['', 'a b', 'x/y', '/var/*.', '../*.log', 'abcdefghijklmnopq'] as $bad) {
+            $this->as($admin)->put($url, [...$base, 'denied_extensions' => [$bad]])->assertSessionHasErrors('denied_extensions.0');
+        }
+    }
+
+    public function test_the_page_lists_blocked_file_types(): void
+    {
+        $admin = $this->admin();
+        $site = $this->website($admin);
+        WebsiteGuardSetting::query()->create(['website_id' => $site->id, 'denied_extensions' => 'tpl,/modules/*.yml']);
+
+        $this->as($admin)->get("/cpsess{$this->token}/rules/site-protection")
+            ->assertInertia(fn ($page) => $page->where('websites.0.denied_extensions', ['tpl', '/modules/*.yml']));
+    }
+
     public function test_someone_elses_website_is_not_found(): void
     {
         $owner = User::factory()->create();

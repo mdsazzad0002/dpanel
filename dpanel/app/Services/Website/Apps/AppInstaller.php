@@ -80,4 +80,12 @@ interface AppInstaller
      * @return list<string>
      */
     public function noPhpPaths(): array;
+
+    /**
+     * File types the gateway refuses, from the app's `<FilesMatch>` denies:
+     * `tpl` for the whole site or `/modules/*.yml` under one folder.
+     *
+     * @return list<string>
+     */
+    public function deniedExtensions(): array;
 }

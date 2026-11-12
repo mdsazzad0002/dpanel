@@ -228,6 +228,10 @@ fn load_sites(
         Ok(rows) => apply_denied_paths(&mut guards, &rows),
         Err(error) => tracing::warn!(%error, "denied folders unavailable; none applied"),
     }
+    match run_mysql(env, &format!("{DENIED_EXTENSIONS_SQL}{}", site_filter("WHERE"))) {
+        Ok(rows) => apply_denied_extensions(&mut guards, &rows),
+        Err(error) => tracing::warn!(%error, "denied file types unavailable; none applied"),
+    }
 
     let mut sites = Vec::new();
     let mut tls = Vec::new();
@@ -534,6 +538,19 @@ fn apply_denied_paths(guards: &mut HashMap<String, super::SiteGuards>, rows: &st
             .collect();
         if !paths.is_empty() {
             guards.entry(site.trim().to_string()).or_default().denied_paths = paths.into();
+        }
+    }
+}
+
+const DENIED_EXTENSIONS_SQL: &str = "SELECT w.id,COALESCE(g.denied_extensions,'') FROM websites w JOIN website_guard_settings g ON g.website_id=COALESCE(w.parent_id,w.id)";
+
+/// `tpl`, `/modules/*.yml`; an entry that does not parse is skipped.
+fn apply_denied_extensions(guards: &mut HashMap<String, super::SiteGuards>, rows: &str) {
+    for line in rows.lines() {
+        let Some((site, entries)) = line.split_once('\t') else { continue };
+        let entries: Vec<_> = comma_list(entries).filter_map(super::DeniedExtension::parse).collect();
+        if !entries.is_empty() {
+            guards.entry(site.trim().to_string()).or_default().denied_extensions = entries.into();
         }
     }
 }
@@ -1076,6 +1093,12 @@ mod tests {
         assert!(guards["b"].denied_paths.is_empty());
         assert_eq!(&*guards["f"].denied_paths, ["/cache".to_string()]);
         assert!(guards["a"].cloudflare_only && guards["a"].waf == super::super::WafMode::Block, "denied folders keep the other guards");
+        apply_denied_extensions(&mut guards, "a\tTPL, /Modules/*.yml,bad entry\nb\tNULL\ng\t.log\n");
+        let ext = |folder: &str, extension: &str| super::super::DeniedExtension { folder: folder.into(), extension: extension.into() };
+        assert_eq!(&*guards["a"].denied_extensions, [ext("", "tpl"), ext("/modules", "yml")]);
+        assert!(guards["b"].denied_extensions.is_empty());
+        assert_eq!(&*guards["g"].denied_extensions, [ext("", "log")]);
+        assert_eq!(&*guards["a"].denied_paths, ["/var".to_string(), "/app".to_string()], "file types keep the denied folders");
     }
 
     #[test]

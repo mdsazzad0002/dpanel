@@ -1120,5 +1120,12 @@
             "configuring": "Running maintenance/install.php…",
             "note": "The download is verified with the MediaWiki release keys (needs gpg on the server). Settings are written to LocalSettings.php."
         }
+    },
+    "siteProtection": {
+        "blockedFolders": "Blocked folders",
+        "blockedFoldersHelp": "Every request under these folders is refused with 403, like an app's \"deny from all\" .htaccess. Installing an app fills this in. One folder per line.",
+        "blockedTypes": "Blocked file types",
+        "blockedTypesHelp": "Files with these extensions are refused with 403, like an app's <FilesMatch> deny. Write \"log\" for the whole site or \"/modules/*.tpl\" for one folder. Installing an app fills this in. One per line.",
+        "hiddenFilesNote": "Hidden files and folders (.env, .git, .htaccess) are always refused; /.well-known/ stays public."
     }
 }

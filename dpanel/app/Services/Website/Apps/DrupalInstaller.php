@@ -20,6 +20,12 @@ class DrupalInstaller extends BaseAppInstaller
     }
 
     /** Drupal writes an .htaccess into the public files folder that stops PHP there. */
+    /** Root .htaccess <FilesMatch>: code, templates and SQL, plus editor backup suffixes. */
+    public function deniedExtensions(): array
+    {
+        return ['engine', 'inc', 'install', 'make', 'module', 'profile', 'po', 'sh', 'sql', 'mysql', 'pgsql', 'theme', 'twig', 'tpl', 'xtmpl', 'yml', 'bak', 'orig', 'save', 'swp', 'swo'];
+    }
+
     public function noPhpPaths(): array
     {
         return ['/sites/default/files'];

@@ -46,7 +46,7 @@ pub use php::{
     prewarm_site_pool,
 };
 pub use redirects::{RedirectRule, redirect_for};
-pub use site_guards::SiteGuards;
+pub use site_guards::{DeniedExtension, SiteGuards};
 pub use proxy::{
     ProxyConfig, build_client, health_check_upstream, proxy_request, proxy_request_with_timeout,
 };

@@ -32,6 +32,12 @@ class OpencartInstaller extends BaseAppInstaller
         return ['/system/storage'];
     }
 
+    /** upload/.htaccess.txt: <FilesMatch "(?i)((\.tpl|\.twig|\.ini|\.log|(?<!robots)\.txt))">; the gateway keeps robots.txt public. */
+    public function deniedExtensions(): array
+    {
+        return ['tpl', 'twig', 'ini', 'log', 'txt'];
+    }
+
     public function noPhpPaths(): array
     {
         return ['/image'];

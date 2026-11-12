@@ -7,8 +7,9 @@ use App\Models\WebsiteGuardSetting;
 
 /**
  * The edge gateway ignores .htaccess, so the folders an app's own .htaccess
- * files deny become guard rows. The deny list belongs to the installed app
- * and is replaced; no-PHP folders are added to the owner's own.
+ * files deny (folders and
+ * file types) become guard rows. The deny lists belong to the installed app
+ * and are replaced; no-PHP folders are added to the owner's own.
  */
 class AppPathGuards
 {
@@ -18,6 +19,7 @@ class AppPathGuards
         $noPhp = array_values(array_unique([...$setting->noPhpPaths(), ...$installer->noPhpPaths()]));
         $setting->fill([
             'denied_paths' => implode(',', $installer->deniedPaths()) ?: null,
+            'denied_extensions' => implode(',', $installer->deniedExtensions()) ?: null,
             'no_php_paths' => implode(',', $noPhp) ?: null,
         ])->save();
     }

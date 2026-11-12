@@ -942,30 +942,14 @@ fn is_php_path(path: &str) -> bool {
     })
 }
 
-fn is_oauth_metadata_path(path: &str) -> bool {
-    [
-        "oauth-authorization-server",
-        "oauth-protected-resource",
-        "openid-configuration",
-    ]
-    .iter()
-    .any(|name| {
-        path.strip_prefix("/.well-known/")
-            .and_then(|rest| rest.strip_prefix(name))
-            .is_some_and(|rest| rest.is_empty() || (rest.starts_with('/') && !rest.contains("/.")))
-    })
-}
-
 fn is_blocked_htaccess_path(path: &str) -> bool {
-    // Certbot's webroot authenticator must expose its temporary token through
-    // this standardized dot-directory. Keep every other hidden path blocked.
-    if path.starts_with("/.well-known/acme-challenge/") {
-        return false;
-    }
-    // OAuth discovery documents (RFC 8414 / RFC 9728) are public metadata the
-    // panel's MCP endpoint serves; remote AI clients need them to sign in.
-    if is_oauth_metadata_path(path) {
-        return false;
+    // `/.well-known/` (RFC 8615) is public by design: ACME tokens, OAuth and
+    // OpenID discovery, security.txt, app links. Only a hidden name inside it
+    // stays blocked.
+    if let Some(rest) = path.strip_prefix("/.well-known") {
+        if rest.is_empty() || rest.starts_with('/') {
+            return rest.split('/').any(|segment| segment.starts_with('.'));
+        }
     }
 
     if path
@@ -1146,17 +1130,18 @@ mod tests {
     }
 
     #[test]
-    fn permits_acme_challenges_without_exposing_other_hidden_paths() {
+    fn permits_well_known_without_exposing_other_hidden_paths() {
         assert!(!is_blocked_htaccess_path(
             "/.well-known/acme-challenge/example-token"
         ));
         assert!(is_blocked_htaccess_path("/.env"));
-        assert!(is_blocked_htaccess_path("/.well-known/private.txt"));
-        assert!(is_blocked_htaccess_path("/.well-known/acme-challenge"));
+        assert!(!is_blocked_htaccess_path("/.well-known/security.txt"));
+        assert!(!is_blocked_htaccess_path("/.well-known/assetlinks.json"));
+        assert!(!is_blocked_htaccess_path("/.well-known/acme-challenge"));
         assert!(!is_blocked_htaccess_path("/.well-known/oauth-authorization-server"));
         assert!(!is_blocked_htaccess_path("/.well-known/oauth-protected-resource/api/mcp"));
-        assert!(is_blocked_htaccess_path("/.well-known/oauth-protected-resourcex"));
         assert!(is_blocked_htaccess_path("/.well-known/oauth-protected-resource/.env"));
+        assert!(is_blocked_htaccess_path("/.well-knownx/a"));
     }
 
     #[test]

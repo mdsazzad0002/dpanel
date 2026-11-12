@@ -16,10 +16,19 @@ class AppPathGuardsTest extends TestCase
 {
     use RefreshDatabase;
 
+    private const PRESTASHOP_MODULES = ['/modules/*.log', '/modules/*.txt', '/modules/*.lock', '/modules/*.json', '/modules/*.yml', '/modules/*.yaml', '/modules/*.tpl', '/modules/*.twig'];
+
+    private const PRESTASHOP_THEMES = ['/themes/*.tpl', '/themes/*.twig', '/themes/*.yml', '/themes/*.yaml', '/themes/*.json', '/themes/*.xml', '/themes/*.txt', '/themes/*.log', '/themes/*.lock', '/themes/*.md', '/themes/*.html', '/themes/*.scss', '/themes/*.sh'];
+
     private const EXPECTED = [
         'prestashop' => [
             'denied' => ['/app', '/bin', '/cache', '/classes', '/config', '/controllers', '/docs', '/download', '/localization', '/mails', '/override', '/src', '/upload', '/var', '/vendor'],
             'no_php' => ['/img', '/js', '/modules', '/themes'],
+            'extensions' => [
+                'lock',
+                ...self::PRESTASHOP_MODULES,
+                ...self::PRESTASHOP_THEMES,
+            ],
         ],
         'mediawiki' => [
             'denied' => ['/cache', '/images/deleted', '/images/temp', '/includes', '/languages', '/maintenance', '/tests'],
@@ -29,8 +38,11 @@ class AppPathGuardsTest extends TestCase
             'denied' => ['/3rdparty', '/build', '/config', '/console.php', '/lib', '/occ', '/templates', '/tests'],
             'no_php' => [],
         ],
-        'opencart' => ['denied' => ['/system/storage'], 'no_php' => ['/image']],
-        'drupal' => ['denied' => [], 'no_php' => ['/sites/default/files']],
+        'opencart' => ['denied' => ['/system/storage'], 'no_php' => ['/image'], 'extensions' => ['tpl', 'twig', 'ini', 'log', 'txt']],
+        'drupal' => [
+            'denied' => [], 'no_php' => ['/sites/default/files'],
+            'extensions' => ['engine', 'inc', 'install', 'make', 'module', 'profile', 'po', 'sh', 'sql', 'mysql', 'pgsql', 'theme', 'twig', 'tpl', 'xtmpl', 'yml', 'bak', 'orig', 'save', 'swp', 'swo'],
+        ],
         'whmcs' => ['denied' => ['/attachments', '/downloads', '/templates_c'], 'no_php' => []],
         'joomla' => ['denied' => [], 'no_php' => []],
         'codeigniter' => ['denied' => [], 'no_php' => []],
@@ -53,6 +65,17 @@ class AppPathGuardsTest extends TestCase
         $this->assertEqualsCanonicalizing(AppInstallerRegistry::keys(), array_keys(self::EXPECTED));
     }
 
+    /** What the gateway parses: `ext` site-wide or `/folder/*.ext`, lower case. */
+    public function test_installer_file_types_are_in_the_stored_form(): void
+    {
+        $registry = app(AppInstallerRegistry::class);
+        foreach (AppInstallerRegistry::keys() as $app) {
+            foreach ($registry->get($app)->deniedExtensions() as $entry) {
+                $this->assertMatchesRegularExpression('#^(?:/[a-z0-9._~-]+(?:/[a-z0-9._~-]+)*/\*\.)?[a-z0-9_-]{1,16}$#', $entry, "{$app}: {$entry}");
+            }
+        }
+    }
+
     public function test_installing_each_app_sets_its_rules(): void
     {
         $registry = app(AppInstallerRegistry::class);
@@ -62,6 +85,7 @@ class AppPathGuardsTest extends TestCase
             $setting = WebsiteGuardSetting::query()->find($website->id);
             $this->assertEqualsCanonicalizing($expected['denied'], $setting?->deniedPaths() ?? [], "{$app} denied paths");
             $this->assertEqualsCanonicalizing($expected['no_php'], $setting?->noPhpPaths() ?? [], "{$app} no-PHP paths");
+            $this->assertEqualsCanonicalizing($expected['extensions'] ?? [], $setting?->deniedExtensions() ?? [], "{$app} denied file types");
             $website->delete();
         }
     }
@@ -70,7 +94,7 @@ class AppPathGuardsTest extends TestCase
     {
         $website = $this->website();
         WebsiteGuardSetting::query()->create([
-            'website_id' => $website->id, 'no_php_paths' => '/uploads', 'denied_paths' => '/old',
+            'website_id' => $website->id, 'no_php_paths' => '/uploads', 'denied_paths' => '/old', 'denied_extensions' => 'old',
             'hotlink_protection' => true, 'cloudflare_only' => true,
         ]);
         $registry = app(AppInstallerRegistry::class);
@@ -80,10 +104,16 @@ class AppPathGuardsTest extends TestCase
         $setting = WebsiteGuardSetting::query()->findOrFail($website->id);
         $this->assertNotContains('/old', $setting->deniedPaths());
         $this->assertContains('/maintenance', $setting->deniedPaths());
+        $this->assertSame([], $setting->deniedExtensions(), 'the old app\'s file types go with it');
         $this->assertSame(['/uploads', '/images'], $setting->noPhpPaths());
         $this->assertTrue($setting->hotlink_protection && $setting->cloudflare_only);
 
+        app(AppPathGuards::class)->apply($website, $registry->get('opencart'));
+        $this->assertContains('twig', WebsiteGuardSetting::query()->findOrFail($website->id)->deniedExtensions());
+
         app(AppPathGuards::class)->apply($website, $registry->get('joomla'));
-        $this->assertSame([], WebsiteGuardSetting::query()->findOrFail($website->id)->deniedPaths());
+        $setting = WebsiteGuardSetting::query()->findOrFail($website->id);
+        $this->assertSame([], $setting->deniedPaths());
+        $this->assertSame([], $setting->deniedExtensions());
     }
 }

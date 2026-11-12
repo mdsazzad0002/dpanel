@@ -1120,5 +1120,12 @@
             "configuring": "maintenance/install.php চলছে…",
             "note": "ডাউনলোড MediaWiki-র release key দিয়ে যাচাই হয় (সার্ভারে gpg লাগে)। সেটিংস LocalSettings.php-তে লেখা হয়।"
         }
+    },
+    "siteProtection": {
+        "blockedFolders": "বন্ধ folder",
+        "blockedFoldersHelp": "এই folder ও তার ভেতরের প্রতিটি request 403 দিয়ে ফেরানো হয়, app-এর \"deny from all\" .htaccess-এর মতো। App install করলে এটা ভরে যায়। প্রতি লাইনে একটি folder।",
+        "blockedTypes": "বন্ধ file type",
+        "blockedTypesHelp": "এই extension-এর file 403 দিয়ে ফেরানো হয়, app-এর <FilesMatch> deny-এর মতো। পুরো site-এর জন্য \"log\", একটি folder-এর জন্য \"/modules/*.tpl\" লিখুন। App install করলে এটা ভরে যায়। প্রতি লাইনে একটি।",
+        "hiddenFilesNote": "লুকানো file ও folder (.env, .git, .htaccess) সবসময় বন্ধ থাকে; /.well-known/ খোলা থাকে।"
     }
 }

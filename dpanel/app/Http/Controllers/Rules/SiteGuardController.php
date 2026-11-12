@@ -27,6 +27,9 @@ class SiteGuardController extends Controller
     /** A path prefix: `/`, or `/` and segments of letters, digits, `.`, `_`, `-`. */
     private const PATH = '/^\/(?:[A-Za-z0-9._~-]+(?:\/[A-Za-z0-9._~-]+)*)?\/?$/';
 
+    /** `tpl`, `.tpl`, `*.tpl`, or `/folder/*.tpl`. */
+    private const EXTENSION = '/^\s*(?:\/(?:[A-Za-z0-9._~-]+\/)*\*\.|\*?\.?)[A-Za-z0-9_-]{1,16}\s*$/';
+
     private const HOST = '/^(?=.{1,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$/i';
 
     public function index(Request $request, PlatformCapabilities $capabilities): Response
@@ -53,6 +56,7 @@ class SiteGuardController extends Controller
                         ])->values(),
                     'no_php_paths' => $setting?->noPhpPaths() ?? [],
                     'denied_paths' => $setting?->deniedPaths() ?? [],
+                    'denied_extensions' => $setting?->deniedExtensions() ?? [],
                     'hotlink_protection' => (bool) ($setting?->hotlink_protection ?? false),
                     'hotlink_allowed_hosts' => $setting?->hotlinkAllowedHosts() ?? [],
                     'cloudflare_only' => (bool) ($setting?->cloudflare_only ?? false),
@@ -106,6 +110,8 @@ class SiteGuardController extends Controller
             // Set by the app installer; optional so an older page keeps them.
             'denied_paths' => ['sometimes', 'array', 'max:40'],
             'denied_paths.*' => ['string', 'max:255', 'regex:'.self::PATH, Rule::notIn(['/'])],
+            'denied_extensions' => ['sometimes', 'array', 'max:60'],
+            'denied_extensions.*' => ['required', 'string', 'max:255', 'regex:'.self::EXTENSION],
             'hotlink_protection' => ['required', 'boolean'],
             'hotlink_allowed_hosts' => ['present', 'array', 'max:20'],
             'hotlink_allowed_hosts.*' => ['string', 'max:253', 'regex:'.self::HOST],
@@ -117,6 +123,9 @@ class SiteGuardController extends Controller
         $denied = array_key_exists('denied_paths', $validated)
             ? ['denied_paths' => collect($validated['denied_paths'])->map(fn (string $path) => $this->normalizePath($path))->unique()->implode(',') ?: null]
             : [];
+        if (array_key_exists('denied_extensions', $validated)) {
+            $denied['denied_extensions'] = collect($validated['denied_extensions'])->map(fn (string $entry) => $this->normalizeExtension($entry))->unique()->implode(',') ?: null;
+        }
 
         WebsiteGuardSetting::query()->updateOrCreate(['website_id' => $website->id], [
             ...$denied,
@@ -146,6 +155,20 @@ class SiteGuardController extends Controller
     }
 
     /** `/Admin/` and `/admin` are the same folder to the gateway. */
+    /** `.TPL` and `*.tpl` become `tpl`; `/Themes/*.TPL` becomes `/themes/*.tpl`. */
+    private function normalizeExtension(string $entry): string
+    {
+        $entry = strtolower(trim($entry));
+        $slash = strrpos($entry, '/*.');
+        if ($slash === false) {
+            return ltrim(ltrim($entry, '*'), '.');
+        }
+        $folder = $this->normalizePath(substr($entry, 0, $slash));
+        $extension = substr($entry, $slash + 3);
+
+        return $folder === '/' ? $extension : "{$folder}/*.{$extension}";
+    }
+
     private function normalizePath(string $path): string
     {
         $path = '/'.trim(strtolower($path), '/');

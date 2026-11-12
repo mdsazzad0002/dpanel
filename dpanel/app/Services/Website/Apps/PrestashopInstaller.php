@@ -32,6 +32,23 @@ class PrestashopInstaller extends BaseAppInstaller
         return ['/app', '/bin', '/cache', '/classes', '/config', '/controllers', '/docs', '/download', '/localization', '/mails', '/override', '/src', '/upload', '/var', '/vendor'];
     }
 
+    /**
+     * Root .htaccess denies composer.lock; modules/.htaccess denies these
+     * types (and .php, a no-PHP folder already); themes/.htaccess allows only
+     * assets, so its common non-asset types are denied.
+     */
+    public function deniedExtensions(): array
+    {
+        $modules = ['log', 'txt', 'lock', 'json', 'yml', 'yaml', 'tpl', 'twig'];
+        $themes = ['tpl', 'twig', 'yml', 'yaml', 'json', 'xml', 'txt', 'log', 'lock', 'md', 'html', 'scss', 'sh'];
+
+        return [
+            'lock',
+            ...array_map(fn (string $ext) => "/modules/*.{$ext}", $modules),
+            ...array_map(fn (string $ext) => "/themes/*.{$ext}", $themes),
+        ];
+    }
+
     public function noPhpPaths(): array
     {
         return ['/img', '/js', '/modules', '/themes'];

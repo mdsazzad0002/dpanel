@@ -25,6 +25,9 @@ pub struct SiteGuards {
     /// Normalized, lower case path prefixes refused outright: the folder
     /// itself and everything under it.
     pub denied_paths: Arc<[String]>,
+    /// File types refused site-wide or under one folder, as an app's
+    /// `<FilesMatch>` deny would on Apache.
+    pub denied_extensions: Arc<[DeniedExtension]>,
     /// `Some` turns hotlink protection on; the hosts besides the site's own
     /// whose pages may embed its media.
     pub hotlink_allowed_hosts: Option<Arc<[String]>>,
@@ -33,6 +36,29 @@ pub struct SiteGuards {
     pub cloudflare_only: bool,
     /// Whether PHP and app requests pass the firewall first (S2).
     pub waf: super::waf::WafMode,
+}
+
+/// A file extension refused under `folder` (empty: the whole site).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct DeniedExtension {
+    pub folder: String,
+    pub extension: String,
+}
+
+impl DeniedExtension {
+    /// `tpl`, `.tpl` and `*.tpl` refuse it site-wide; `/modules/*.tpl` only
+    /// under that folder. Anything else is not an entry.
+    pub fn parse(entry: &str) -> Option<Self> {
+        let entry = entry.trim().to_ascii_lowercase();
+        let (folder, extension) = match entry.rsplit_once("/*.") {
+            Some((folder, extension)) => (basic_auth::canonical_path(&format!("/{folder}")), extension.to_string()),
+            None => (String::new(), entry.trim_start_matches('*').trim_start_matches('.').to_string()),
+        };
+        let valid = !extension.is_empty()
+            && extension.len() <= 16
+            && extension.bytes().all(|byte| byte.is_ascii_alphanumeric() || byte == b'_' || byte == b'-');
+        valid.then(|| Self { folder: if folder == "/" { String::new() } else { folder }, extension })
+    }
 }
 
 /// Cloudflare's published ranges (cloudflare.com/ips), which change rarely.
@@ -86,18 +112,23 @@ const MEDIA_EXTENSIONS: [&str; 14] = [
 
 /// The guard's answer when one refuses the request; `None` lets it through.
 pub fn check(site: &super::SiteConfig, request: &Request<Body>) -> Option<Response> {
+    let path = basic_auth::canonical_path(request.uri().path());
+    // Every site and runtime: `.env`, `.git/`, `.htaccess`, `.user.ini` and the like.
+    if is_hidden(&path) {
+        return Some(forbidden("Hidden files are not served"));
+    }
     if let Some(response) = basic_auth::challenge_for(site, request) {
         return Some(response);
     }
     let guards = &site.guards;
     if guards.no_php_paths.is_empty()
         && guards.denied_paths.is_empty()
+        && guards.denied_extensions.is_empty()
         && guards.hotlink_allowed_hosts.is_none()
         && !guards.cloudflare_only
     {
         return None;
     }
-    let path = basic_auth::canonical_path(request.uri().path());
     // Certificate renewal always gets through.
     let acme = path.starts_with("/.well-known/acme-challenge/");
     if !acme && is_denied(guards, &path) {
@@ -110,10 +141,43 @@ pub fn check(site: &super::SiteConfig, request: &Request<Body>) -> Option<Respon
     if runs_php_in_blocked_folder(guards, &path) {
         return Some(forbidden("PHP is turned off in this folder"));
     }
+    if has_denied_extension(guards, &path) {
+        return Some(forbidden("This file type is not served"));
+    }
     if is_hotlinked(site, request, &path) {
         return Some(forbidden("Hotlinking is not allowed"));
     }
     None
+}
+
+/// A segment starting with a dot. `/.well-known/` is public by convention
+/// (ACME, security.txt, OAuth discovery, app links); a hidden name inside it is not.
+fn is_hidden(path: &str) -> bool {
+    let rest = match path.strip_prefix("/.well-known") {
+        Some(rest) if rest.is_empty() || rest.starts_with('/') => rest,
+        _ => path,
+    };
+    rest.split('/').any(|segment| segment.starts_with('.'))
+}
+
+/// The file name's extension, trailing dots and spaces ignored (`x.log.`).
+/// `robots.txt` and `/.well-known/` stay public, as upstream rules keep them.
+fn has_denied_extension(guards: &SiteGuards, path: &str) -> bool {
+    if guards.denied_extensions.is_empty() || path.starts_with("/.well-known/") {
+        return false;
+    }
+    let name = path.rsplit('/').find(|segment| !segment.is_empty()).unwrap_or("");
+    let name = name.trim_end_matches(['.', ' ']);
+    if name == "robots.txt" {
+        return false;
+    }
+    let Some((stem, extension)) = name.rsplit_once('.') else { return false };
+    !stem.is_empty()
+        && guards.denied_extensions.iter().any(|denied| {
+            denied.extension == extension
+                && (denied.folder.is_empty()
+                    || path.strip_prefix(denied.folder.as_str()).is_some_and(|rest| rest.starts_with('/')))
+        })
 }
 
 /// The prefix itself or anything under it; `/var` never matches `/various`.
@@ -293,6 +357,108 @@ mod tests {
         assert!(!from_cloudflare("173.245.64.0".parse().unwrap()));
         assert!(from_cloudflare("2a06:98c7:ffff::1".parse().unwrap()));
         assert!(!from_cloudflare("2a06:98c8::1".parse().unwrap()));
+    }
+
+    #[test]
+    fn hidden_files_are_refused_on_every_site_however_spelled() {
+        let site = site(SiteGuards::default());
+        for path in [
+            "/.env",
+            "/.ENV",
+            "/.git/config",
+            "/app/.htaccess",
+            "/.user.ini",
+            "/%2eenv",
+            "/%2Egit/HEAD",
+            "/x/%2e%2e/.env",
+            "/img/../.git/config",
+            "/.env.",
+            "/...",
+            "/.well-known/x/.env",
+            "/.well-known/../.env",
+            "/.well-knownx/a",
+        ] {
+            let response = check(&site, &request(path, None)).unwrap_or_else(|| panic!("{path} got through"));
+            assert_eq!(response.status(), StatusCode::FORBIDDEN, "{path}");
+        }
+    }
+
+    #[test]
+    fn well_known_and_ordinary_dotted_names_are_served() {
+        let site = site(SiteGuards::default());
+        for path in [
+            "/",
+            "/.well-known/acme-challenge/t",
+            "/.well-known/security.txt",
+            "/.well-known/assetlinks.json",
+            "/.WELL-KNOWN/openid-configuration",
+            "/.well-known",
+            "/index.php",
+            "/a.b/c.d",
+            "/file.",
+        ] {
+            assert!(check(&site, &request(path, None)).is_none(), "{path} was refused");
+        }
+    }
+
+    fn extensions(entries: &[&str]) -> SiteGuards {
+        let list: Vec<_> = entries.iter().filter_map(|entry| DeniedExtension::parse(entry)).collect();
+        assert_eq!(list.len(), entries.len(), "an entry did not parse");
+        SiteGuards { denied_extensions: list.into(), ..Default::default() }
+    }
+
+    #[test]
+    fn a_denied_file_type_is_refused_however_spelled() {
+        let site = site(extensions(&["log", ".TPL", "*.txt", "/modules/*.yml", "/themes/*.twig"]));
+        for path in [
+            "/var/logs/x.log",
+            "/X.LOG",
+            "/x.Tpl",
+            "/x%2elog",
+            "/x.log.",
+            "/x.log%20",
+            "/x.log...",
+            "/a/../x.log",
+            "/x.log/",
+            "/notes.txt",
+            "/modules/a/config.yml",
+            "/Modules/A/B.YML",
+            "/%6dodules/a.yml",
+            "/x/..%2fmodules/a.yml",
+            "/themes/classic/templates/page.twig",
+        ] {
+            let response = check(&site, &request(path, None)).unwrap_or_else(|| panic!("{path} got through"));
+            assert_eq!(response.status(), StatusCode::FORBIDDEN, "{path}");
+        }
+    }
+
+    #[test]
+    fn other_types_folders_and_public_files_get_through() {
+        let site = site(extensions(&["log", "txt", "/modules/*.yml"]));
+        for path in [
+            "/x.logs",
+            "/log",
+            "/catalog",
+            "/x.log.php",
+            "/robots.txt",
+            "/.well-known/security.txt",
+            "/config.yml",
+            "/modulesx/a.yml",
+            "/modules.yml",
+        ] {
+            assert!(check(&site, &request(path, None)).is_none(), "{path} was refused");
+        }
+    }
+
+    #[test]
+    fn extension_entries_parse_and_reject_junk() {
+        let parsed = DeniedExtension::parse(" /Modules/Sub/*.YML ").unwrap();
+        assert_eq!(parsed, DeniedExtension { folder: "/modules/sub".into(), extension: "yml".into() });
+        assert_eq!(DeniedExtension::parse("/*.tpl").unwrap().folder, "");
+        assert_eq!(DeniedExtension::parse("*.tpl").unwrap(), DeniedExtension { folder: String::new(), extension: "tpl".into() });
+        for junk in ["", ".", "*.", "/a/*.", "a b", "x/y", "*.t/pl", "abcdefghijklmnopq"] {
+            assert!(DeniedExtension::parse(junk).is_none(), "{junk:?} parsed");
+        }
     }
 
     #[test]

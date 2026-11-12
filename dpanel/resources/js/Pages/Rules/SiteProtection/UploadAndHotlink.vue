@@ -3,11 +3,13 @@
 import InputError from '@/Components/InputError.vue';
 import { useForm, usePage } from '@inertiajs/vue3';
 import { computed } from 'vue';
+import { useI18n } from 'vue-i18n';
 
 const props = defineProps({
     website: { type: Object, required: true },
 });
 
+const { t } = useI18n();
 const page = usePage();
 const panelToken = page.props.panel?.token;
 const panelRoute = (name, params = {}) => (
@@ -20,6 +22,7 @@ const split = (text) => text.split(/[\n,]+/).map((v) => v.trim()).filter(Boolean
 const form = useForm({
     no_php_paths: lines(props.website.no_php_paths),
     denied_paths: lines(props.website.denied_paths ?? []),
+    denied_extensions: lines(props.website.denied_extensions ?? []),
     hotlink_protection: props.website.hotlink_protection,
     hotlink_allowed_hosts: lines(props.website.hotlink_allowed_hosts),
     cloudflare_only: props.website.cloudflare_only,
@@ -28,6 +31,7 @@ const form = useForm({
 const fieldError = (name) => computed(() => Object.entries(form.errors).find(([key]) => key === name || key.startsWith(`${name}.`))?.[1]);
 const pathsError = fieldError('no_php_paths');
 const deniedError = fieldError('denied_paths');
+const typesError = fieldError('denied_extensions');
 const hostsError = fieldError('hotlink_allowed_hosts');
 
 const addWordpressUploads = () => {
@@ -40,6 +44,7 @@ const save = () => {
     form.transform((data) => ({
         no_php_paths: split(data.no_php_paths),
         denied_paths: split(data.denied_paths),
+        denied_extensions: split(data.denied_extensions),
         hotlink_protection: data.hotlink_protection,
         hotlink_allowed_hosts: split(data.hotlink_allowed_hosts),
         cloudflare_only: data.cloudflare_only,
@@ -59,10 +64,18 @@ const save = () => {
             </div>
 
             <div>
-                <h2 class="text-lg font-semibold">Blocked folders</h2>
-                <p class="mt-1 text-sm text-slate-500">Every request under these folders is refused with 403, like an app's "deny from all" .htaccess. Installing an app fills this in. One folder per line.</p>
+                <h2 class="text-lg font-semibold">{{ t('siteProtection.blockedFolders') }}</h2>
+                <p class="mt-1 text-sm text-slate-500">{{ t('siteProtection.blockedFoldersHelp') }}</p>
                 <textarea v-model="form.denied_paths" rows="3" placeholder="/var" class="mt-2 w-full rounded-md border border-slate-300 px-3 py-2 font-mono text-sm dark:border-slate-700 dark:bg-slate-800"></textarea>
                 <InputError :message="deniedError" class="mt-1" />
+            </div>
+
+            <div>
+                <h2 class="text-lg font-semibold">{{ t('siteProtection.blockedTypes') }}</h2>
+                <p class="mt-1 text-sm text-slate-500">{{ t('siteProtection.blockedTypesHelp') }}</p>
+                <textarea v-model="form.denied_extensions" rows="3" placeholder="log&#10;/modules/*.tpl" class="mt-2 w-full rounded-md border border-slate-300 px-3 py-2 font-mono text-sm dark:border-slate-700 dark:bg-slate-800"></textarea>
+                <p class="mt-1 text-xs text-slate-500">{{ t('siteProtection.hiddenFilesNote') }}</p>
+                <InputError :message="typesError" class="mt-1" />
             </div>
 
             <div>
