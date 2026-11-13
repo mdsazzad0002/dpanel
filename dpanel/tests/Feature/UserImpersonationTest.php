@@ -38,14 +38,14 @@ class UserImpersonationTest extends TestCase
 
         $response = $this->actingAs($admin)
             ->withSession(['panel_session_token' => $token])
-            ->post("/cpsess{$token}/users/manage/{$target->id}/impersonate");
+            ->post("/dpt{$token}/users/manage/{$target->id}/impersonate");
 
         $response->assertRedirect(route('dashboard', ['token' => $token]));
         $this->assertAuthenticatedAs($target);
         $this->assertSame($admin->id, session('impersonation.admin_id'));
         $this->assertSame($target->id, $panelSession->fresh()->user_id);
 
-        $response = $this->post("/cpsess{$token}/impersonation/stop");
+        $response = $this->post("/dpt{$token}/impersonation/stop");
 
         $response->assertRedirect(route('users.manage', ['token' => $token]));
         $this->assertAuthenticatedAs($admin);
@@ -64,7 +64,7 @@ class UserImpersonationTest extends TestCase
 
         $this->actingAs($actor)
             ->withSession(['panel_session_token' => $token])
-            ->post("/cpsess{$token}/users/manage/{$target->id}/impersonate")
+            ->post("/dpt{$token}/users/manage/{$target->id}/impersonate")
             ->assertForbidden();
 
         $this->assertAuthenticatedAs($actor);
@@ -81,9 +81,9 @@ class UserImpersonationTest extends TestCase
 
         $this->actingAs($admin)
             ->withSession(['panel_session_token' => $token])
-            ->from("/cpsess{$token}/users/manage")
-            ->post("/cpsess{$token}/users/manage/{$target->id}/impersonate")
-            ->assertRedirect("/cpsess{$token}/users/manage")
+            ->from("/dpt{$token}/users/manage")
+            ->post("/dpt{$token}/users/manage/{$target->id}/impersonate")
+            ->assertRedirect("/dpt{$token}/users/manage")
             ->assertSessionHas('error');
 
         $this->assertAuthenticatedAs($admin);

@@ -10,7 +10,7 @@ class ScriptExecutionGateway
 
     /**
      * A copy of this gateway whose execute() waits up to $seconds for the
-     * execution API instead of serverpanel.execution_api_timeout.
+     * execution API instead of dpanel.execution_api_timeout.
      */
     public function withTimeout(int $seconds): static
     {
@@ -29,11 +29,11 @@ class ScriptExecutionGateway
      */
     public function execute(string $scriptPath, array $arguments = [], array $environment = [], bool $asRoot = false): array
     {
-        $apiUrl = trim((string) config('serverpanel.execution_api_url', ''));
+        $apiUrl = trim((string) config('dpanel.execution_api_url', ''));
         if ($apiUrl === '') {
             return [
                 'success' => false,
-                'output' => 'Execution API is not configured. Set SERVERPANEL_EXECUTION_API_URL to delegate .sh execution.',
+                'output' => 'Execution API is not configured. Set dPanel_EXECUTION_API_URL to delegate .sh execution.',
                 'exit_code' => 1,
                 'ran' => false,
                 'api_url' => '',
@@ -54,9 +54,9 @@ class ScriptExecutionGateway
 
         $request = Http::acceptJson()
             ->asJson()
-            ->timeout($this->timeoutOverride ?? (int) config('serverpanel.execution_api_timeout', 60));
+            ->timeout($this->timeoutOverride ?? (int) config('dpanel.execution_api_timeout', 60));
 
-        $token = trim((string) config('serverpanel.execution_api_token', ''));
+        $token = trim((string) config('dpanel.execution_api_token', ''));
         if ($token !== '') {
             $request = $request->withToken($token);
         }

@@ -50,7 +50,7 @@ class AccountSuspensionTest extends TestCase
         $this->withoutMiddleware(EnsurePanelSessionIsValid::class)
             ->actingAs($this->admin())
             ->withSession(['panel_session_token' => $this->token])
-            ->patch("/cpsess{$this->token}/users/manage/{$user->id}/suspension", ['suspend' => true])
+            ->patch("/dpt{$this->token}/users/manage/{$user->id}/suspension", ['suspend' => true])
             ->assertRedirect();
     }
 
@@ -61,7 +61,7 @@ class AccountSuspensionTest extends TestCase
         $this->withoutMiddleware(EnsurePanelSessionIsValid::class)
             ->actingAs($user)
             ->withSession(['panel_session_token' => $this->token])
-            ->get("/cpsess{$this->token}/dashboard")
+            ->get("/dpt{$this->token}/dashboard")
             ->assertRedirect(route('login'));
         $this->assertGuest();
     }
@@ -200,7 +200,7 @@ class AccountSuspensionTest extends TestCase
 
     public function test_suspension_stops_their_queue_workers_and_unsuspension_brings_back_the_enabled_ones(): void
     {
-        config(['serverpanel.execution_api_base_url' => 'http://drust.test']);
+        config(['dpanel.execution_api_base_url' => 'http://drust.test']);
         $user = User::factory()->create();
         $site = $this->website($user);
         $this->website($user); // no workers, so drust is not asked about it
@@ -225,7 +225,7 @@ class AccountSuspensionTest extends TestCase
 
     public function test_suspension_blocks_each_system_account_once_but_never_the_panels_own(): void
     {
-        config(['serverpanel.execution_api_base_url' => 'http://drust.test']);
+        config(['dpanel.execution_api_base_url' => 'http://drust.test']);
         $user = User::factory()->create();
         $this->website($user);
         $this->website($user); // the same `shop` account
@@ -243,7 +243,7 @@ class AccountSuspensionTest extends TestCase
 
     public function test_drust_refusing_still_leaves_the_account_suspended(): void
     {
-        config(['serverpanel.execution_api_base_url' => 'http://drust.test']);
+        config(['dpanel.execution_api_base_url' => 'http://drust.test']);
         $user = User::factory()->create();
         $site = $this->website($user);
         \Illuminate\Support\Facades\Http::fake(['drust.test/*' => \Illuminate\Support\Facades\Http::response(['success' => false, 'message' => 'no'], 500)]);
@@ -288,7 +288,7 @@ class AccountSuspensionTest extends TestCase
 
     public function test_suspension_blocks_their_ftp_accounts_and_unsuspension_reopens_only_those(): void
     {
-        config(['serverpanel.execution_api_base_url' => 'http://drust.test']);
+        config(['dpanel.execution_api_base_url' => 'http://drust.test']);
         $user = User::factory()->create();
         $site = $this->website($user);
         $site->update(['site_owner' => 'www-data']); // only the FTP accounts reach drust

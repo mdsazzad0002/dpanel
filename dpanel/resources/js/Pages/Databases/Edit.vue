@@ -152,7 +152,7 @@ const generatePassword = () => {
                         class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm disabled:bg-slate-100 disabled:text-slate-500 dark:border-slate-700 dark:bg-slate-800 dark:disabled:bg-slate-900 dark:disabled:text-slate-500"
                     />
                     <p v-if="useRemoteHost" class="mt-1 text-xs text-amber-600 dark:text-amber-400">
-                        The remote server must accept connections from this panel's IP, and a database API (SERVERPANEL_DATABASE_API_URL) must be configured to actually create the database there.
+                        The remote server must accept connections from this panel's IP, and a database API (dPanel_DATABASE_API_URL) must be configured to actually create the database there.
                     </p>
                     <p v-if="form.errors.database_host" class="mt-1 text-xs text-red-600">{{ form.errors.database_host }}</p>
                 </div>

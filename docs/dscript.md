@@ -295,7 +295,7 @@ Every maintained shell file has a stable CLI name:
 `create-admin-user`, `disable-root-login`, `fix-web-stack`,
 `fix-panel-web-stack` and `sync-vhost` call the protected local drust API. They
 load `DRUST_API_TOKEN` from `/etc/drust/drust.env`, then fall back to
-`SERVERPANEL_EXECUTION_API_TOKEN` in the panel `.env`.
+`dPanel_EXECUTION_API_TOKEN` in the panel `.env`.
 
 Supported client variables:
 
@@ -447,7 +447,7 @@ systemctl status edge-gateway --no-pager
 | `PHP_VERSION` | detected/8.3 | Preferred PHP version |
 | `PANEL_DOMAIN` | `dpanel.dengrweb.com` | Panel hostname |
 | `PANEL_PORT` | `80` | Panel port |
-| `PANEL_MAIL_SERVER_IP` | prompted/empty | Public IPv4 written to `SERVERPANEL_MAIL_SERVER_IP` for mail DNS exports |
+| `PANEL_MAIL_SERVER_IP` | prompted/empty | Public IPv4 written to `dPanel_MAIL_SERVER_IP` for mail DNS exports |
 
 ### Database
 
@@ -560,8 +560,8 @@ Use this flow when installing dPanel on a fresh device/server.
    URL and derive execution, database, and filemanager endpoints automatically:
 
    ```env
-   SERVERPANEL_EXECUTION_API_BASE_URL=http://127.0.0.1:9500
-   SERVERPANEL_EXECUTION_API_TOKEN=change-this-token
+   dPanel_EXECUTION_API_BASE_URL=http://127.0.0.1:9500
+   dPanel_EXECUTION_API_TOKEN=change-this-token
    PHPMYADMIN_URL=http://installer.localhost/phpmyadmin/
    ```
 

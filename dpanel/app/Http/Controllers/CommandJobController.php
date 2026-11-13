@@ -162,7 +162,7 @@ class CommandJobController extends Controller
             $commandRunner->markStarted($job->fresh());
 
             // Long upgrades must not be cut off by PHP before the job is marked finished.
-            set_time_limit((int) config('serverpanel.command_timeout', 300) + 60);
+            set_time_limit((int) config('dpanel.command_timeout', 300) + 60);
 
             try {
                 $result = $sshClient->executeOnServerStreaming(
@@ -547,7 +547,7 @@ class CommandJobController extends Controller
 
     private function sessionMarkdownPath(CommandJob $job): string
     {
-        return 'serverpanel/chat_sessions/command-'.$job->id.'.md';
+        return 'dpanel/chat_sessions/command-'.$job->id.'.md';
     }
 
     private function startSessionMarkdown(CommandJob $job, string $rawInput, string $resolvedCommand): void
@@ -589,7 +589,7 @@ class CommandJobController extends Controller
         }
 
         $stamp = now()->format('Ymd_His');
-        $target = 'serverpanel/history/server-'.$job->server_id.'/command-'.$job->id.'-'.$stamp.'.md';
+        $target = 'dpanel/history/server-'.$job->server_id.'/command-'.$job->id.'-'.$stamp.'.md';
         Storage::disk('local')->copy($source, $target);
     }
 
@@ -598,7 +598,7 @@ class CommandJobController extends Controller
      */
     private function listMarkdownHistory(int $serverId = 0): array
     {
-        $base = 'serverpanel/history';
+        $base = 'dpanel/history';
         $files = Storage::disk('local')->allFiles($base);
         rsort($files);
 
@@ -814,7 +814,7 @@ class CommandJobController extends Controller
      */
     private function logDecision(array $payload): void
     {
-        $dir = 'serverpanel/decision_logs';
+        $dir = 'dpanel/decision_logs';
         $date = now()->format('Y-m-d');
         $path = $dir.'/decision-'.$date.'.md';
 

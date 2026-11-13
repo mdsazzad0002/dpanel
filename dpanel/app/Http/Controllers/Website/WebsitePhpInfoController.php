@@ -35,14 +35,14 @@ class WebsitePhpInfoController extends Controller
         }
 
         $client = Http::acceptJson()->asJson()->timeout(45);
-        $apiToken = trim((string) config('serverpanel.execution_api_token', ''));
+        $apiToken = trim((string) config('dpanel.execution_api_token', ''));
         if ($apiToken !== '') {
             $client = $client->withToken($apiToken);
         }
 
         try {
             $response = $client->post(
-                rtrim((string) config('serverpanel.execution_api_base_url'), '/').'/api/v1/php/info',
+                rtrim((string) config('dpanel.execution_api_base_url'), '/').'/api/v1/php/info',
                 [
                     'php_version' => trim((string) $website->php_version) ?: null,
                     'site_owner' => trim((string) $website->site_owner) ?: null,

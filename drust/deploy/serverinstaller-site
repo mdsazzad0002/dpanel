@@ -39,11 +39,11 @@ env_value() {
   awk -F= -v key="$1" '$1 == key {print substr($0, index($0, "=") + 1); exit}' "$APP_ENV"
 }
 
-api_url="$(env_value SERVERPANEL_EXECUTION_API_BASE_URL)"
-api_token="$(env_value SERVERPANEL_EXECUTION_API_TOKEN)"
+api_url="$(env_value dPanel_EXECUTION_API_BASE_URL)"
+api_token="$(env_value dPanel_EXECUTION_API_TOKEN)"
 api_url="${api_url:-http://127.0.0.1:9500}"
 [[ -n "$api_token" ]] || {
-  printf 'SERVERPANEL_EXECUTION_API_TOKEN is missing.\n' >&2
+  printf 'dPanel_EXECUTION_API_TOKEN is missing.\n' >&2
   exit 1
 }
 

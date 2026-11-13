@@ -26,7 +26,7 @@ class PhpService extends Controller
      */
     static function getPhpVersions(): array
     {
-        $versions = (array) config('serverpanel.php_versions', []);
+        $versions = (array) config('dpanel.php_versions', []);
 
         return array_values(array_filter(array_map(
             static fn (mixed $version): string => trim((string) $version),

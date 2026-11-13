@@ -15,8 +15,8 @@ class SecurityScanProgressTest extends TestCase
 
         (require database_path('migrations/2026_09_28_100000_create_security_center_tables.php'))->up();
         config([
-            'serverpanel.execution_api_base_url' => 'http://drust.test',
-            'serverpanel.execution_api_token' => 'secret',
+            'dpanel.execution_api_base_url' => 'http://drust.test',
+            'dpanel.execution_api_token' => 'secret',
         ]);
     }
 

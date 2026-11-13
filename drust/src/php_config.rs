@@ -49,7 +49,7 @@ pub fn apply(values: PhpConfigValues<'_>) -> Result<Vec<String>, String> {
         if !Path::new(&directory).is_dir() {
             continue;
         }
-        let path = format!("{directory}/99-serverpanel.ini");
+        let path = format!("{directory}/99-dpanel.ini");
         fs::write(&path, &content).map_err(|e| format!("failed to write {path}: {e}"))?;
         written.push(path);
     }

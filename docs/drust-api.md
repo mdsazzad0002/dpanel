@@ -39,7 +39,7 @@ Accept: application/json
 Use the same token value in both places:
 
 - `drust` runtime token: `DRUST_API_TOKEN`
-- Laravel client token: `serverpanel.execution_api_token`
+- Laravel client token: `dpanel.execution_api_token`
 
 If the values do not match, the request will fail with `Unauthorized`.
 
@@ -411,7 +411,7 @@ The files go to `/etc/drust/tls/custom/<domain>.crt` and `<domain>.key`, and the
 POST /api/v1/ssl/renew
 ```
 
-Renews every certificate the built-in client issued that expires within 30 days, and answers with one result per certificate that was due. With `certbot` as the engine it does nothing. The panel's daily `serverpanel:ssl-reconcile` already renews website certificates through `ssl/ensure`, so this endpoint is only needed without the panel.
+Renews every certificate the built-in client issued that expires within 30 days, and answers with one result per certificate that was due. With `certbot` as the engine it does nothing. The panel's daily `dpanel:ssl-reconcile` already renews website certificates through `ssl/ensure`, so this endpoint is only needed without the panel.
 
 ### DNSSEC
 

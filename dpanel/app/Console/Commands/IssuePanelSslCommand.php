@@ -8,7 +8,7 @@ use Illuminate\Console\Command;
 
 class IssuePanelSslCommand extends Command
 {
-    protected $signature = 'serverpanel:panel-ssl';
+    protected $signature = 'dpanel:panel-ssl';
     protected $description = 'Issue or verify the certificate for the panel domain (website id 1) and its aliases';
 
     public function handle(SslLifecycleService $ssl): int

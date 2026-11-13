@@ -26,8 +26,8 @@ class ClonePackageBuilder
      */
     public function build(User $user, Website $website, string $packagePath, ?Closure $onStage = null): array
     {
-        $baseUrl = trim((string) config('serverpanel.execution_api_base_url', ''));
-        $apiToken = trim((string) config('serverpanel.execution_api_token', ''));
+        $baseUrl = trim((string) config('dpanel.execution_api_base_url', ''));
+        $apiToken = trim((string) config('dpanel.execution_api_token', ''));
         if ($baseUrl === '' || $apiToken === '') {
             throw new RuntimeException('dRust backup API is not configured.');
         }

@@ -134,7 +134,7 @@ class AuthenticatedSessionController extends Controller
 
         $cookieToken = bin2hex(random_bytes(32));
         $lifetime = PanelSession::inactivityMinutes();
-        $cookieName = (string) config('serverpanel.panel_cookie_name', 'panel_session_proof');
+        $cookieName = (string) config('dpanel.panel_cookie_name', 'panel_session_proof');
 
         PanelSession::syncSingleSession(
             userId: (int) $request->user()->id,
@@ -169,7 +169,7 @@ class AuthenticatedSessionController extends Controller
      */
     public function destroy(Request $request): RedirectResponse
     {
-        $cookieName = (string) config('serverpanel.panel_cookie_name', 'panel_session_proof');
+        $cookieName = (string) config('dpanel.panel_cookie_name', 'panel_session_proof');
         $token = (string) $request->session()->get('panel_session_token', '');
         $userId = $request->user()?->id;
 

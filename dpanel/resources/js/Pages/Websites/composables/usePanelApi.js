@@ -3,7 +3,7 @@ import { usePage } from '@inertiajs/vue3';
 
 /**
  * Shared by the Manage page and its section components: builds routes that
- * carry the current cpsess token, and wraps fetch() with the JSON headers
+ * carry the current dpt token, and wraps fetch() with the JSON headers
  * every action endpoint on this page expects.
  */
 export function usePanelApi() {

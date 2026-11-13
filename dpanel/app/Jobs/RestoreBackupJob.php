@@ -38,8 +38,8 @@ class RestoreBackupJob implements ShouldQueue
     {
         BackupRestoreStatus::set($this->restoreId, ['stage' => 'running', 'step' => 'validating', 'percent' => 1, 'message' => 'Starting restore']);
 
-        $baseUrl = trim((string) config('serverpanel.execution_api_base_url', ''));
-        $apiToken = trim((string) config('serverpanel.execution_api_token', ''));
+        $baseUrl = trim((string) config('dpanel.execution_api_base_url', ''));
+        $apiToken = trim((string) config('dpanel.execution_api_token', ''));
         if ($baseUrl === '' || $apiToken === '') {
             $this->markFailed('validating', 'dRust backup API is not configured.');
 
@@ -50,7 +50,7 @@ class RestoreBackupJob implements ShouldQueue
 
         try {
             $response = Http::acceptJson()->asJson()->withToken($apiToken)
-                ->timeout((int) config('serverpanel.execution_api_upload_timeout', 3600))
+                ->timeout((int) config('dpanel.execution_api_upload_timeout', 3600))
                 ->post(rtrim($baseUrl, '/').'/api/v1/website/archive/restore', [
                     'zip_path' => $this->archive,
                     'progress_path' => BackupRestoreStatus::progressPath($this->restoreId),

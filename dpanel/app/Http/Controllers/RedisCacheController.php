@@ -174,7 +174,7 @@ class RedisCacheController extends Controller
     /** @return array<string,mixed> */
     private function drustRedisRequest(array $payload): array
     {
-        $url = rtrim((string)config('serverpanel.execution_api_base_url'), '/'); $token = (string)config('serverpanel.execution_api_token');
+        $url = rtrim((string)config('dpanel.execution_api_base_url'), '/'); $token = (string)config('dpanel.execution_api_token');
         if ($url === '' || $token === '') throw new \RuntimeException('drust API is not configured.');
         $response = Http::acceptJson()->asJson()->timeout(30)->withToken($token)->post($url.'/api/v1/website/redis-config', $payload);
         if (! $response->ok() || ! $response->json('success')) throw new \RuntimeException((string)($response->json('message') ?: 'drust Redis configuration failed.'));

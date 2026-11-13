@@ -45,13 +45,13 @@ class PanelUpdateClient
     private function request(): PendingRequest
     {
         return Http::acceptJson()->asJson()
-            ->timeout(max(30, (int) config('serverpanel.execution_api_timeout', 60)))
-            ->withToken(trim((string) config('serverpanel.execution_api_token', '')));
+            ->timeout(max(30, (int) config('dpanel.execution_api_timeout', 60)))
+            ->withToken(trim((string) config('dpanel.execution_api_token', '')));
     }
 
     private function url(string $suffix = ''): string
     {
-        $baseUrl = trim((string) config('serverpanel.execution_api_base_url', ''));
+        $baseUrl = trim((string) config('dpanel.execution_api_base_url', ''));
         if ($baseUrl === '') {
             throw new PanelUpdateRefused('drust execution API is not configured.', 503);
         }

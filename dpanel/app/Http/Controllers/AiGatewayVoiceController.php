@@ -179,7 +179,7 @@ class AiGatewayVoiceController extends Controller
 
     private function baseUrl(): string
     {
-        return rtrim(trim((string) config('serverpanel.execution_api_base_url', '')), '/');
+        return rtrim(trim((string) config('dpanel.execution_api_base_url', '')), '/');
     }
 
     private function url(string $path): string
@@ -189,7 +189,7 @@ class AiGatewayVoiceController extends Controller
 
     private function drust(int $timeout): PendingRequest
     {
-        $token = trim((string) config('serverpanel.execution_api_token', ''));
+        $token = trim((string) config('dpanel.execution_api_token', ''));
 
         return Http::acceptJson()->asJson()->timeout($timeout)
             ->when($token !== '', fn (PendingRequest $request) => $request->withToken($token));

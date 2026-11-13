@@ -128,7 +128,7 @@ fn run_backup(only: &str) -> Result<String, String> {
     let output = Command::new(&php_cli)
         .current_dir(&panel_root)
         .arg(&artisan)
-        .arg("serverpanel:backup")
+        .arg("dpanel:backup")
         .arg(format!("--only={only}"))
         .output()
         .map_err(|error| format!("cannot execute {php_cli}: {error}"))?;

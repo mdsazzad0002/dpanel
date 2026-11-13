@@ -21,7 +21,7 @@ class FirewallRuleControllerTest extends TestCase
         parent::setUp();
         $this->token = str_repeat('f', 64);
         URL::defaults(['token' => $this->token]);
-        config(['serverpanel.execution_api_base_url' => 'http://drust.test', 'serverpanel.execution_api_token' => 'secret']);
+        config(['dpanel.execution_api_base_url' => 'http://drust.test', 'dpanel.execution_api_token' => 'secret']);
         $this->admin = User::factory()->create();
         $this->admin->assignRole('admin');
     }
@@ -39,7 +39,7 @@ class FirewallRuleControllerTest extends TestCase
             'rules' => [['id' => 'aaaaaaaaaaaa', 'action' => 'allow', 'port' => ['from' => 443, 'to' => null, 'protocol' => 'tcp'], 'source' => null]],
         ])]);
 
-        $this->asAdmin()->getJson("/cpsess{$this->token}/security/firewall/rules/list")
+        $this->asAdmin()->getJson("/dpt{$this->token}/security/firewall/rules/list")
             ->assertOk()
             ->assertJsonPath('status.backend', 'ufw')
             ->assertJsonPath('rules.0.port.from', 443);
@@ -52,7 +52,7 @@ class FirewallRuleControllerTest extends TestCase
             'confirm_token' => str_repeat('c', 24), 'confirm_within_seconds' => 60,
         ])]);
 
-        $this->asAdmin()->postJson("/cpsess{$this->token}/security/firewall/rules", [
+        $this->asAdmin()->postJson("/dpt{$this->token}/security/firewall/rules", [
             'action' => 'deny', 'port_from' => 22, 'protocol' => 'tcp', 'source' => '198.51.100.0/24',
         ])->assertOk()->assertJsonPath('confirm_token', str_repeat('c', 24))->assertJsonPath('confirm_within_seconds', 60);
 
@@ -66,13 +66,13 @@ class FirewallRuleControllerTest extends TestCase
     {
         Http::fake();
 
-        $this->asAdmin()->postJson("/cpsess{$this->token}/security/firewall/rules", ['action' => 'deny'])
+        $this->asAdmin()->postJson("/dpt{$this->token}/security/firewall/rules", ['action' => 'deny'])
             ->assertJsonValidationErrors(['port_from', 'source']);
-        $this->asAdmin()->postJson("/cpsess{$this->token}/security/firewall/rules", ['action' => 'deny', 'source' => '1.2.3.4; rm -rf /'])
+        $this->asAdmin()->postJson("/dpt{$this->token}/security/firewall/rules", ['action' => 'deny', 'source' => '1.2.3.4; rm -rf /'])
             ->assertJsonValidationErrors(['source']);
-        $this->asAdmin()->postJson("/cpsess{$this->token}/security/firewall/rules", ['action' => 'deny', 'source' => '10.0.0.0/33'])
+        $this->asAdmin()->postJson("/dpt{$this->token}/security/firewall/rules", ['action' => 'deny', 'source' => '10.0.0.0/33'])
             ->assertJsonValidationErrors(['source']);
-        $this->asAdmin()->postJson("/cpsess{$this->token}/security/firewall/rules", ['action' => 'allow', 'port_from' => 9000, 'port_to' => 8000])
+        $this->asAdmin()->postJson("/dpt{$this->token}/security/firewall/rules", ['action' => 'allow', 'port_from' => 9000, 'port_to' => 8000])
             ->assertJsonValidationErrors(['port_to']);
 
         Http::assertNothingSent();
@@ -82,9 +82,9 @@ class FirewallRuleControllerTest extends TestCase
     {
         Http::fake(['drust.test/firewall/rules/*' => Http::response(['success' => true, 'message' => 'Firewall rule removed.', 'id' => 'abcdef012345', 'confirm_token' => str_repeat('d', 24), 'confirm_within_seconds' => 60])]);
 
-        $this->asAdmin()->deleteJson("/cpsess{$this->token}/security/firewall/rules/abcdef012345")
+        $this->asAdmin()->deleteJson("/dpt{$this->token}/security/firewall/rules/abcdef012345")
             ->assertOk()->assertJsonPath('confirm_token', str_repeat('d', 24));
-        $this->asAdmin()->deleteJson("/cpsess{$this->token}/security/firewall/rules/..%2Fetc")->assertNotFound();
+        $this->asAdmin()->deleteJson("/dpt{$this->token}/security/firewall/rules/..%2Fetc")->assertNotFound();
 
         Http::assertSentCount(1);
     }
@@ -93,7 +93,7 @@ class FirewallRuleControllerTest extends TestCase
     {
         Http::fake(['drust.test/firewall/confirm' => Http::response(['success' => false, 'message' => 'Nothing waits'], 404)]);
 
-        $this->asAdmin()->postJson("/cpsess{$this->token}/security/firewall/confirm", ['token' => str_repeat('e', 24)])
+        $this->asAdmin()->postJson("/dpt{$this->token}/security/firewall/confirm", ['token' => str_repeat('e', 24)])
             ->assertStatus(409)->assertJson(['ok' => false]);
     }
 
@@ -101,7 +101,7 @@ class FirewallRuleControllerTest extends TestCase
     {
         Http::fake(['drust.test/firewall/confirm' => Http::response(['success' => true, 'message' => 'Firewall change confirmed.'])]);
 
-        $this->asAdmin()->postJson("/cpsess{$this->token}/security/firewall/confirm", ['token' => str_repeat('e', 24)])
+        $this->asAdmin()->postJson("/dpt{$this->token}/security/firewall/confirm", ['token' => str_repeat('e', 24)])
             ->assertOk()->assertJson(['ok' => true]);
 
         Http::assertSent(fn ($request) => $request['token'] === str_repeat('e', 24));

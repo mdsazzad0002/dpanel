@@ -33,7 +33,7 @@ class IpPoolTest extends TestCase
     protected function setUp(): void
     {
         parent::setUp();
-        config(['serverpanel.execution_api_base_url' => 'http://drust.test', 'serverpanel.execution_api_token' => 'secret']);
+        config(['dpanel.execution_api_base_url' => 'http://drust.test', 'dpanel.execution_api_token' => 'secret']);
         $this->session = str_repeat('d', 64);
         $this->withoutMiddleware(EnsurePanelSessionIsValid::class)->withSession(['panel_session_token' => $this->session]);
         $test = $this;

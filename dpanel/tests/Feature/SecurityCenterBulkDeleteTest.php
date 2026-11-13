@@ -50,7 +50,7 @@ class SecurityCenterBulkDeleteTest extends TestCase
         $kept = $this->finding('site-1');
 
         $this->as($admin)
-            ->deleteJson("/cpsess{$this->token}/security/center/findings", ['ids' => [$server->id, $site->id]])
+            ->deleteJson("/dpt{$this->token}/security/center/findings", ['ids' => [$server->id, $site->id]])
             ->assertOk()
             ->assertJsonPath('deleted', 2)
             ->assertJsonPath('message', '2 findings deleted.');
@@ -71,7 +71,7 @@ class SecurityCenterBulkDeleteTest extends TestCase
         $server = $this->finding(null);
 
         $this->as($user)
-            ->deleteJson("/cpsess{$this->token}/security/center/findings", ['ids' => [$own->id, $other->id, $server->id]])
+            ->deleteJson("/dpt{$this->token}/security/center/findings", ['ids' => [$own->id, $other->id, $server->id]])
             ->assertOk()
             ->assertJsonPath('deleted', 1);
 
@@ -88,7 +88,7 @@ class SecurityCenterBulkDeleteTest extends TestCase
         $finding = $this->finding('site-1', $old);
 
         $this->as($admin)
-            ->deleteJson("/cpsess{$this->token}/security/center/scans", ['ids' => [$old->id, $latest->id, $running->id]])
+            ->deleteJson("/dpt{$this->token}/security/center/scans", ['ids' => [$old->id, $latest->id, $running->id]])
             ->assertOk()
             ->assertJsonPath('deleted', 1)
             ->assertJsonPath('message', '1 scan deleted. Kept 1: the latest scan of each type is needed for the security score and findings. Skipped 1 still running.');

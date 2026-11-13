@@ -39,7 +39,7 @@ use RuntimeException;
 
 class EmailController extends Controller
 {
-    private const DOVECOT_AUTH_FILE = '/etc/dovecot/conf.d/auth-serverpanel.conf.ext';
+    private const DOVECOT_AUTH_FILE = '/etc/dovecot/conf.d/auth-dpanel.conf.ext';
     private const DOVECOT_AUTH_INCLUDE_FILE = '/etc/dovecot/conf.d/10-auth.conf';
 
     public function __construct(
@@ -251,9 +251,9 @@ class EmailController extends Controller
         $requestedDomain = strtolower(trim((string) $request->query('domain', '')));
         $domain = $domains->contains($requestedDomain) ? $requestedDomain : (string) ($domains->first() ?? '');
         $mailDomain = $domain !== '' ? MailDomain::query()->where('domain', $domain)->first() : null;
-        $selector = trim((string) ($mailDomain?->dkim_selector ?: config('serverpanel.mail.dkim_selector', 'default'))) ?: 'default';
-        $dkimDomain = trim((string) config('serverpanel.mail.dkim_domain', ''));
-        $dkimPublicKey = preg_replace('/\s+/', '', trim((string) ($mailDomain?->dkim_public_key ?: config('serverpanel.mail.dkim_public_key', '')))) ?: '';
+        $selector = trim((string) ($mailDomain?->dkim_selector ?: config('dpanel.mail.dkim_selector', 'default'))) ?: 'default';
+        $dkimDomain = trim((string) config('dpanel.mail.dkim_domain', ''));
+        $dkimPublicKey = preg_replace('/\s+/', '', trim((string) ($mailDomain?->dkim_public_key ?: config('dpanel.mail.dkim_public_key', '')))) ?: '';
         $mailDns = $domain !== '' ? app(MailDnsRecords::class)->forDomain($domain) : app(MailDnsRecords::class);
         $serverIp = $mailDns->serverIp();
         $mailHost = $domain !== '' ? ($mailDns->mailHost() ?: 'mail.'.$domain) : '';
@@ -296,9 +296,9 @@ class EmailController extends Controller
         }
 
         $mailDomain = MailDomain::query()->where('domain', $domain)->first();
-        $selector = trim((string) ($mailDomain?->dkim_selector ?: config('serverpanel.mail.dkim_selector', 'default'))) ?: 'default';
-        $configuredDkimDomain = trim((string) config('serverpanel.mail.dkim_domain', ''));
-        $publicKey = preg_replace('/\s+/', '', trim((string) ($mailDomain?->dkim_public_key ?: config('serverpanel.mail.dkim_public_key', '')))) ?: '';
+        $selector = trim((string) ($mailDomain?->dkim_selector ?: config('dpanel.mail.dkim_selector', 'default'))) ?: 'default';
+        $configuredDkimDomain = trim((string) config('dpanel.mail.dkim_domain', ''));
+        $publicKey = preg_replace('/\s+/', '', trim((string) ($mailDomain?->dkim_public_key ?: config('dpanel.mail.dkim_public_key', '')))) ?: '';
         $dkimReady = ($configuredDkimDomain === '' || $configuredDkimDomain === $domain) && $publicKey !== '';
         $records = app(MailDnsRecords::class)->records($domain, $selector, $dkimReady ? $publicKey : '');
 
@@ -338,8 +338,8 @@ class EmailController extends Controller
         );
 
         $mailDomain = MailDomain::query()->where('domain', $domain)->first();
-        $selector = trim((string) ($mailDomain?->dkim_selector ?: config('serverpanel.mail.dkim_selector', 'default'))) ?: 'default';
-        $publicKey = preg_replace('/\s+/', '', trim((string) ($mailDomain?->dkim_public_key ?: config('serverpanel.mail.dkim_public_key', '')))) ?: '';
+        $selector = trim((string) ($mailDomain?->dkim_selector ?: config('dpanel.mail.dkim_selector', 'default'))) ?: 'default';
+        $publicKey = preg_replace('/\s+/', '', trim((string) ($mailDomain?->dkim_public_key ?: config('dpanel.mail.dkim_public_key', '')))) ?: '';
 
         try {
             $checks = app(MailDnsVerifier::class)->verify($domain, $selector, $publicKey);
@@ -361,9 +361,9 @@ class EmailController extends Controller
         );
 
         $mailDomain = MailDomain::query()->where('domain', $domain)->first();
-        $selector = trim((string) ($mailDomain?->dkim_selector ?: config('serverpanel.mail.dkim_selector', 'default'))) ?: 'default';
-        $configuredDkimDomain = trim((string) config('serverpanel.mail.dkim_domain', ''));
-        $publicKey = preg_replace('/\s+/', '', trim((string) ($mailDomain?->dkim_public_key ?: config('serverpanel.mail.dkim_public_key', '')))) ?: '';
+        $selector = trim((string) ($mailDomain?->dkim_selector ?: config('dpanel.mail.dkim_selector', 'default'))) ?: 'default';
+        $configuredDkimDomain = trim((string) config('dpanel.mail.dkim_domain', ''));
+        $publicKey = preg_replace('/\s+/', '', trim((string) ($mailDomain?->dkim_public_key ?: config('dpanel.mail.dkim_public_key', '')))) ?: '';
         $dkimReady = ($configuredDkimDomain === '' || $configuredDkimDomain === $domain) && $publicKey !== '';
         $records = app(MailDnsRecords::class)->records($domain, $selector, $dkimReady ? $publicKey : '');
         $lines = [
@@ -378,7 +378,7 @@ class EmailController extends Controller
         foreach ($records as $record) {
             if ($record['value'] === '') {
                 $lines[] = $record['type'] === 'A'
-                    ? '; '.$record['name'].' A record omitted: the server IP could not be determined; set SERVERPANEL_MAIL_SERVER_IP.'
+                    ? '; '.$record['name'].' A record omitted: the server IP could not be determined; set dPanel_MAIL_SERVER_IP.'
                     : '; DKIM record omitted: generate a DKIM key in the Mail DNS Guide first.';
                 continue;
             }
@@ -729,7 +729,7 @@ class EmailController extends Controller
         $storageBackendReady = $isWindows || $this->isDovecotStorageBackendReady();
         $dovecotMysqlReady = $isWindows || $this->isDovecotMysqlDriverAvailable();
         $servicesReady = $isWindows || $dovecot === 'running';
-        $dkimPublicKey = trim((string) config('serverpanel.mail.dkim_public_key', ''));
+        $dkimPublicKey = trim((string) config('dpanel.mail.dkim_public_key', ''));
         $dkimServiceReady = $isWindows || $opendkim === 'running' || $rspamd === 'running';
         $dkimReady = $dkimServiceReady || $dkimPublicKey !== '';
         $webmailReachable = $shouldProbeWebmail && $webmailUrlValid ? $this->isUrlReachable($webmailUrl) : null;
@@ -808,7 +808,7 @@ class EmailController extends Controller
 
         $pathPrefix = '';
         $firstSegment = $request->segment(1);
-        if ($firstSegment !== null && str_starts_with($firstSegment, 'cpsess') && preg_match('/^cpsess[0-9a-fA-F]{64}$/', $firstSegment)) {
+        if ($firstSegment !== null && str_starts_with($firstSegment, 'dpt') && preg_match('/^dpt[0-9a-fA-F]{64}$/', $firstSegment)) {
             $pathPrefix = '/'.$firstSegment;
         }
 
@@ -882,7 +882,7 @@ class EmailController extends Controller
 
     private function webmailSsoCacheKey(string $token): string
     {
-        return 'serverpanel:webmail_sso:'.$token;
+        return 'dpanel:webmail_sso:'.$token;
     }
 
     private function normalizePort(int $value, int $fallback): int

@@ -58,7 +58,7 @@ class SitePushTest extends TestCase
         $controller = app(SitePushController::class);
 
         $this->assertSame('https://panel.example.com', $normalize->invoke($controller, 'panel.example.com'));
-        $this->assertSame('https://panel.example.com:2083', $normalize->invoke($controller, 'https://Panel.Example.com:2083/cpsess'.str_repeat('a', 64).'/websites/x'));
+        $this->assertSame('https://panel.example.com:2083', $normalize->invoke($controller, 'https://Panel.Example.com:2083/dpt'.str_repeat('a', 64).'/websites/x'));
         $this->assertSame('http://203.0.113.5:8080', $normalize->invoke($controller, 'http://203.0.113.5:8080/'));
         $this->assertNull($normalize->invoke($controller, 'https://bad host'));
     }
@@ -93,7 +93,7 @@ class SitePushTest extends TestCase
         Http::fake(['https://live.example.com/api/site-push/v1/handshake' => Http::response([
             'ok' => true, 'domain' => 'shop.example.com', 'server' => 'live-1', 'token_name' => 'Laptop', 'chunk_size' => 5242880, 'max_chunks' => 10000,
         ])]);
-        $request = Request::create('/', 'POST', ['host_url' => 'live.example.com/cpsess'.str_repeat('a', 64), 'push_token' => 'dp-push-abc']);
+        $request = Request::create('/', 'POST', ['host_url' => 'live.example.com/dpt'.str_repeat('a', 64), 'push_token' => 'dp-push-abc']);
         $request->setUserResolver(fn () => $user);
 
         $data = app(SitePushController::class)->connect($request, 'token', (string) $source->id)->getData(true);
@@ -350,7 +350,7 @@ class SitePushTest extends TestCase
 
     public function test_package_is_built_by_drust_in_one_call(): void
     {
-        config(['serverpanel.execution_api_base_url' => 'http://drust.test', 'serverpanel.execution_api_token' => 't']);
+        config(['dpanel.execution_api_base_url' => 'http://drust.test', 'dpanel.execution_api_token' => 't']);
         $user = User::factory()->create();
         $user->assignRole('admin');
         $website = $this->website(['assigned_user_id' => $user->id]);
@@ -407,7 +407,7 @@ class SitePushTest extends TestCase
 
     public function test_file_manifest_endpoint_lists_the_token_website(): void
     {
-        config(['serverpanel.execution_api_base_url' => 'http://drust.test']);
+        config(['dpanel.execution_api_base_url' => 'http://drust.test']);
         $website = $this->website();
         [, $plain] = WebsitePushToken::issue($website, null, 'Laptop', now()->addDay());
         Http::fake(['http://drust.test/api/v1/file-sync' => Http::response(['success' => true, 'data' => ['git' => true, 'files' => [['path' => 'a.php', 'size' => 1, 'sha256' => 'x']]]])]);
@@ -418,7 +418,7 @@ class SitePushTest extends TestCase
 
     public function test_files_mode_job_sends_only_the_changed_files(): void
     {
-        config(['serverpanel.execution_api_base_url' => 'http://drust.test']);
+        config(['dpanel.execution_api_base_url' => 'http://drust.test']);
         $user = User::factory()->create();
         $user->assignRole('admin');
         $website = $this->website(['assigned_user_id' => $user->id]);
@@ -472,7 +472,7 @@ class SitePushTest extends TestCase
 
     public function test_files_mode_with_nothing_changed_uploads_nothing(): void
     {
-        config(['serverpanel.execution_api_base_url' => 'http://drust.test']);
+        config(['dpanel.execution_api_base_url' => 'http://drust.test']);
         $user = User::factory()->create();
         $user->assignRole('admin');
         $website = $this->website(['assigned_user_id' => $user->id]);
@@ -493,7 +493,7 @@ class SitePushTest extends TestCase
 
     public function test_apply_job_backs_replaced_files_up_into_the_trash(): void
     {
-        config(['serverpanel.execution_api_base_url' => 'http://drust.test']);
+        config(['dpanel.execution_api_base_url' => 'http://drust.test']);
         $user = User::factory()->create();
         $website = $this->website(['assigned_user_id' => $user->id]);
         [$token] = WebsitePushToken::issue($website, $user, 'Laptop', now()->addDay());

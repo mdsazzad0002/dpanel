@@ -21,7 +21,7 @@ class ResourceLimitTest extends TestCase
     protected function setUp(): void
     {
         parent::setUp();
-        config(['serverpanel.execution_api_base_url' => 'http://drust.test', 'serverpanel.execution_api_token' => 'secret']);
+        config(['dpanel.execution_api_base_url' => 'http://drust.test', 'dpanel.execution_api_token' => 'secret']);
         Http::fake([
             'drust.test/resource-limits/*/usage' => Http::response(['success' => true, 'cpu_percent' => 42.5, 'memory_mb' => 300, 'processes' => 7]),
             'drust.test/resource-limits/*' => Http::response(['success' => true, 'message' => 'ok']),
@@ -135,7 +135,7 @@ class ResourceLimitTest extends TestCase
         \Illuminate\Support\Facades\URL::defaults(['token' => $token]);
 
         $this->withoutMiddleware()->actingAs($admin)->withSession(['panel_session_token' => $token])
-            ->patch("/cpsess{$token}/packages/{$plan->id}", [
+            ->patch("/dpt{$token}/packages/{$plan->id}", [
                 'name' => 'Q', 'max_storage_mb' => 100, 'max_mailboxes' => 1, 'max_websites' => 1, 'max_databases' => 1,
                 'max_bandwidth_gb' => 0, 'max_cpu_percent' => 200, 'max_memory_mb' => 2048, 'max_processes' => 300,
             ])->assertRedirect();

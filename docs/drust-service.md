@@ -42,9 +42,9 @@ The daemon listens only on `127.0.0.1:9500` by default. Privileged filemanager o
 Use the same token in Laravel's `.env`:
 
 ```dotenv
-SERVERPANEL_EXECUTION_API_URL=http://127.0.0.1:9500/api/v1/script/run
-SERVERPANEL_FILEMANAGER_API_URL=http://127.0.0.1:9500/api/v1/filemanager
-SERVERPANEL_EXECUTION_API_TOKEN=the_same_value_as_DRUST_API_TOKEN
+dPanel_EXECUTION_API_URL=http://127.0.0.1:9500/api/v1/script/run
+dPanel_FILEMANAGER_API_URL=http://127.0.0.1:9500/api/v1/filemanager
+dPanel_EXECUTION_API_TOKEN=the_same_value_as_DRUST_API_TOKEN
 ```
 
 After changing Laravel environment values:

@@ -22,7 +22,7 @@ class EnsurePanelSessionIsValid
             return redirect()->route('login');
         }
 
-        $cookieName = (string) config('serverpanel.panel_cookie_name', 'panel_session_proof');
+        $cookieName = (string) config('dpanel.panel_cookie_name', 'panel_session_proof');
         $cookieToken = (string) $request->cookie($cookieName, '');
         $missingProofCookie = $cookieToken === '';
         if ($missingProofCookie) {
@@ -45,7 +45,7 @@ class EnsurePanelSessionIsValid
             'all_cookie_names' => array_keys($request->cookies->all()),
         ]);
 
-        // A previously-open tab can keep making requests with an older cpsess
+        // A previously-open tab can keep making requests with an older dpt
         // token after a fresh login rotates it. Show the login screen for that
         // stale URL, but never overwrite/revoke the current valid session.
         if ($routeToken !== '' && $sessionToken !== '' && ! hash_equals($sessionToken, $routeToken)) {

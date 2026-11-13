@@ -90,13 +90,13 @@ class BackupVisibilityTest extends TestCase
         $reseller = $this->user('reseller');
         $this->seedArchives($reseller);
 
-        $this->assertSame(['mine.tar.gz'], $this->fileNames($this->as($reseller)->getJson("/cpsess{$this->token}/backups/data")));
-        $this->as($reseller)->get("/cpsess{$this->token}/backups")
+        $this->assertSame(['mine.tar.gz'], $this->fileNames($this->as($reseller)->getJson("/dpt{$this->token}/backups/data")));
+        $this->as($reseller)->get("/dpt{$this->token}/backups")
             ->assertInertia(fn (AssertableInertia $page) => $page->where('isAdmin', false)->where('remoteUpload', null)->where('backupRoot', ''));
 
         $this->assertSame(
             ['backup-dpanel.tar.gz', 'mine.tar.gz', 'panel.tar.gz', 'theirs.tar.gz'],
-            $this->fileNames($this->as($this->user('admin'))->getJson("/cpsess{$this->token}/backups/data")),
+            $this->fileNames($this->as($this->user('admin'))->getJson("/dpt{$this->token}/backups/data")),
         );
     }
 
@@ -108,12 +108,12 @@ class BackupVisibilityTest extends TestCase
         $run = self::RUN;
         $encode = fn (string $file) => rtrim(strtr(base64_encode($file), '+/', '-_'), '=');
 
-        $this->as($reseller)->get("/cpsess{$this->token}/backups/{$run}/fetch/{$encode('mine.tar.gz')}")->assertOk();
+        $this->as($reseller)->get("/dpt{$this->token}/backups/{$run}/fetch/{$encode('mine.tar.gz')}")->assertOk();
         foreach (['theirs.tar.gz', 'panel.tar.gz', 'backup-dpanel.tar.gz'] as $file) {
-            $this->as($reseller)->get("/cpsess{$this->token}/backups/{$run}/fetch/{$encode($file)}")->assertNotFound();
-            $this->as($reseller)->postJson("/cpsess{$this->token}/backups/{$run}/restore/{$encode($file)}")->assertNotFound();
+            $this->as($reseller)->get("/dpt{$this->token}/backups/{$run}/fetch/{$encode($file)}")->assertNotFound();
+            $this->as($reseller)->postJson("/dpt{$this->token}/backups/{$run}/restore/{$encode($file)}")->assertNotFound();
         }
-        $this->as($reseller)->deleteJson("/cpsess{$this->token}/backups/{$run}")->assertForbidden();
+        $this->as($reseller)->deleteJson("/dpt{$this->token}/backups/{$run}")->assertForbidden();
 
         Http::assertNothingSent();
     }
@@ -122,9 +122,9 @@ class BackupVisibilityTest extends TestCase
     {
         $reseller = $this->user('reseller');
 
-        $this->as($reseller)->patch("/cpsess{$this->token}/backups/settings", ['retention_days' => 3])->assertForbidden();
-        $this->as($reseller)->get("/cpsess{$this->token}/backups/storage")->assertForbidden();
-        $this->as($reseller)->patch("/cpsess{$this->token}/trash-backups/retention", ['enabled' => true, 'days' => 3, 'time' => '01:00'])->assertForbidden();
+        $this->as($reseller)->patch("/dpt{$this->token}/backups/settings", ['retention_days' => 3])->assertForbidden();
+        $this->as($reseller)->get("/dpt{$this->token}/backups/storage")->assertForbidden();
+        $this->as($reseller)->patch("/dpt{$this->token}/trash-backups/retention", ['enabled' => true, 'days' => 3, 'time' => '01:00'])->assertForbidden();
     }
 
     public function test_system_trash_backups_are_hidden_from_resellers(): void
@@ -138,7 +138,7 @@ class BackupVisibilityTest extends TestCase
             ]);
         }
 
-        $this->as($reseller)->get("/cpsess{$this->token}/trash-backups")
+        $this->as($reseller)->get("/dpt{$this->token}/trash-backups")
             ->assertInertia(fn (AssertableInertia $page) => $page->has('backups', 1)->where('backups.0.domain', 'shop.test')->where('canManageRetention', false));
     }
 }

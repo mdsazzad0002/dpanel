@@ -273,7 +273,7 @@ class PanelLinkTest extends PublicApiTestCase
     public function test_addresses_are_normalized(): void
     {
         $this->assertSame('https://panel.example.com', PanelLinkClient::normalizeUrl('panel.example.com'));
-        $this->assertSame('https://panel.example.com:2083', PanelLinkClient::normalizeUrl('https://Panel.Example.com:2083/cpsess'.str_repeat('a', 64).'/migrations'));
+        $this->assertSame('https://panel.example.com:2083', PanelLinkClient::normalizeUrl('https://Panel.Example.com:2083/dpt'.str_repeat('a', 64).'/migrations'));
         $this->assertSame('http://10.0.0.5', PanelLinkClient::normalizeUrl('http://10.0.0.5/'));
     }
 }

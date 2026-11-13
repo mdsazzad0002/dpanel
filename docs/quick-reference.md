@@ -60,7 +60,7 @@ the installer when you want a fix that was just released or merged.
 | I want to… | Run |
 | --- | --- |
 | Change the panel domain | `sudo dpanel script run set-panel-domain panel.example.com` |
-| Request SSL for the panel | `cd /var/www/dpanel && sudo php artisan serverpanel:panel-ssl` |
+| Request SSL for the panel | `cd /var/www/dpanel && sudo php artisan dpanel:panel-ssl` |
 | Clear Laravel caches after a config change | `cd /var/www/dpanel && sudo -u www-data php artisan optimize:clear` |
 | Run new migrations | `cd /var/www/dpanel && sudo -u www-data php artisan migrate --force` |
 | Rebuild the panel UI | `cd /var/www/dpanel && npm run build` |

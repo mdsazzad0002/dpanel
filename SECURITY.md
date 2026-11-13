@@ -46,7 +46,7 @@ database provisioning, SSL private keys, and permission repair.
 
 Before running dPanel on a public server:
 
-- [ ] Keep `DRUST_API_TOKEN` and `SERVERPANEL_EXECUTION_API_TOKEN` identical and secret.
+- [ ] Keep `DRUST_API_TOKEN` and `dPanel_EXECUTION_API_TOKEN` identical and secret.
 - [ ] Keep `/var/www/dpanel/.env` owned by `root:www-data` with mode `640`. It holds the drust token, which grants root-level control of the host.
 - [ ] Keep websites on their own PHP-FPM pools (`DRUST_SITE_POOLS=1`, the default) so one site cannot read another site's files.
 - [ ] Confirm drust is reachable only from `127.0.0.1`.

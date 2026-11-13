@@ -9,7 +9,7 @@ drust_api_load_config() {
 
   DRUST_API_URL="${DRUST_API_URL:-http://127.0.0.1:${DRUST_API_PORT:-9500}}"
   if [[ -z "${DRUST_API_TOKEN:-}" && -r "${PANEL_APP_DIR:-/var/www/dpanel}/.env" ]]; then
-    DRUST_API_TOKEN="$(awk -F= '$1 == "SERVERPANEL_EXECUTION_API_TOKEN" {print substr($0, index($0, "=") + 1); exit}' "${PANEL_APP_DIR:-/var/www/dpanel}/.env")"
+    DRUST_API_TOKEN="$(awk -F= '$1 == "dPanel_EXECUTION_API_TOKEN" {print substr($0, index($0, "=") + 1); exit}' "${PANEL_APP_DIR:-/var/www/dpanel}/.env")"
   fi
 }
 

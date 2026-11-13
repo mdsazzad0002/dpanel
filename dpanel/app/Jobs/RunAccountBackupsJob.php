@@ -46,8 +46,8 @@ class RunAccountBackupsJob implements ShouldQueue, ShouldBeUnique
             return;
         }
 
-        $baseUrl = trim((string) config('serverpanel.execution_api_base_url', ''));
-        $token = trim((string) config('serverpanel.execution_api_token', ''));
+        $baseUrl = trim((string) config('dpanel.execution_api_base_url', ''));
+        $token = trim((string) config('dpanel.execution_api_token', ''));
         $completed = 0;
         $total = count($this->websiteIds);
 

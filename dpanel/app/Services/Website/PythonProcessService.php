@@ -60,14 +60,14 @@ class PythonProcessService
     protected function request(int $timeout = 60)
     {
         $request = Http::acceptJson()->asJson()->timeout($timeout);
-        $token = trim((string) config('serverpanel.execution_api_token', ''));
+        $token = trim((string) config('dpanel.execution_api_token', ''));
 
         return $token !== '' ? $request->withToken($token) : $request;
     }
 
     protected function apiUrl(): string
     {
-        $baseUrl = trim((string) config('serverpanel.execution_api_base_url', ''));
+        $baseUrl = trim((string) config('dpanel.execution_api_base_url', ''));
         if ($baseUrl === '') {
             throw new \RuntimeException('drust execution API is not configured.');
         }

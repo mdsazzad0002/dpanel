@@ -18,14 +18,14 @@ class ServerAddressClient
      */
     public function list(): array
     {
-        $baseUrl = trim((string) config('serverpanel.execution_api_base_url', ''));
+        $baseUrl = trim((string) config('dpanel.execution_api_base_url', ''));
         if ($baseUrl === '') {
             return ['addresses' => null, 'error' => 'drust execution API is not configured.'];
         }
 
         try {
             $response = Http::acceptJson()->timeout(10)
-                ->withToken(trim((string) config('serverpanel.execution_api_token', '')))
+                ->withToken(trim((string) config('dpanel.execution_api_token', '')))
                 ->get(rtrim($baseUrl, '/').'/system/addresses');
         } catch (\Throwable) {
             return ['addresses' => null, 'error' => 'drust is not answering.'];

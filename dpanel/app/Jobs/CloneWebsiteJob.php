@@ -58,8 +58,8 @@ class CloneWebsiteJob implements ShouldQueue
             return;
         }
 
-        $baseUrl = trim((string) config('serverpanel.execution_api_base_url', ''));
-        $apiToken = trim((string) config('serverpanel.execution_api_token', ''));
+        $baseUrl = trim((string) config('dpanel.execution_api_base_url', ''));
+        $apiToken = trim((string) config('dpanel.execution_api_token', ''));
         if ($baseUrl === '' || $apiToken === '') {
             $this->fail($notifications, $user, $source, 'dRust backup API is not configured.');
 

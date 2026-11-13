@@ -157,8 +157,8 @@ class AiGatewayLocalLlmTest extends TestCase
     public function test_manager_toggles_drust_llm_through_drust(): void
     {
         config([
-            'serverpanel.execution_api_base_url' => 'http://drust.test',
-            'serverpanel.execution_api_token' => 'secret',
+            'dpanel.execution_api_base_url' => 'http://drust.test',
+            'dpanel.execution_api_token' => 'secret',
         ]);
         Http::fake([
             'drust.test/api/v1/llm/service' => Http::response(['success' => true, 'message' => 'ok']),

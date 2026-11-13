@@ -30,7 +30,7 @@
         <!-- A developer's .env must not change a test, or reach the drust running beside it. -->
         <env name="DPANEL_PROFILE" value="server"/>
         <env name="SERVER_BASE_DIR" value=""/>
-        <env name="SERVERPANEL_EXECUTION_API_BASE_URL" value=""/>
+        <env name="dPanel_EXECUTION_API_BASE_URL" value=""/>
         <env name="BCRYPT_ROUNDS" value="4"/>
         <env name="BROADCAST_CONNECTION" value="null"/>
         <env name="CACHE_STORE" value="array"/>

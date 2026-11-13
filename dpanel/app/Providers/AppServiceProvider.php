@@ -40,7 +40,7 @@ class AppServiceProvider extends ServiceProvider
         $this->app->scoped(\App\Services\Dns\PublicDnsLookup::class);
         $this->app->singleton(AiGatewayService::class);
         $this->app->bind(AiSuggestionProvider::class, function ($app) {
-            $provider = (string) config('serverpanel.ai.provider', 'heuristic');
+            $provider = (string) config('dpanel.ai.provider', 'heuristic');
             $openAiKey = (string) config('services.openai.api_key', '');
 
             if ($provider === 'openai' && $openAiKey !== '') {

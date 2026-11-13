@@ -54,7 +54,7 @@ it (Node.js, panel build, permissions) was skipped.
 - Permanent fix: update from `main` as shown
   [above](#an-update-ran-but-a-fix-merged-to-main-is-not-on-the-server).
 
-### `Command "serverpanel:vhost-resync" is not defined`
+### `Command "dpanel:vhost-resync" is not defined`
 
 Harmless. Older dscript still called a vhost command that was removed when
 nginx was replaced by the drust edge gateway. The update continues normally.
@@ -172,7 +172,7 @@ sudo -u <site-user> -H bash -c 'cd /home/<site-user>/public_html && npm run buil
 ### Panel actions fail with `Unauthorized`
 
 The panel and drust use different tokens. `DRUST_API_TOKEN` in
-`/etc/drust/drust.env` must equal `SERVERPANEL_EXECUTION_API_TOKEN` in
+`/etc/drust/drust.env` must equal `dPanel_EXECUTION_API_TOKEN` in
 `/var/www/dpanel/.env`. Re-running `sudo /var/www/drust/deploy/install-service.sh`
 aligns them.
 
@@ -322,7 +322,7 @@ hostname. Check it with `dig +short -x <server IP>`.
 
 The mail hostname itself is picked automatically on every update: the first
 candidate that resolves to this server wins, in this order: the PTR name,
-the current Postfix name, `SERVERPANEL_MAIL_HOSTNAME`, `mail.<panel domain>`,
+the current Postfix name, `dPanel_MAIL_HOSTNAME`, `mail.<panel domain>`,
 the panel domain. A working host stays until the PTR name works, so a host
 picked in the panel is not switched back by the next update. Every domain's MX
 must point to the current mail host; after changing the host, update the MX
@@ -355,10 +355,10 @@ it shows at the domain's DNS provider:
 | TXT (DMARC) | `_dmarc` | `v=DMARC1; p=none; ...` |
 
 All domains share one mail host, so no per-domain `mail.` A record is needed.
-The host is `SERVERPANEL_MAIL_HOSTNAME` in `/var/www/dpanel/.env` when set
+The host is `dPanel_MAIL_HOSTNAME` in `/var/www/dpanel/.env` when set
 (for example the panel domain), otherwise Postfix's current hostname. Setting
 it also makes Postfix announce that name. The server IP comes from
-`SERVERPANEL_MAIL_SERVER_IP`, or is detected when that is empty.
+`dPanel_MAIL_SERVER_IP`, or is detected when that is empty.
 
 Check the records after they propagate:
 

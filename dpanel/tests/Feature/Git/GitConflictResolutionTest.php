@@ -34,7 +34,7 @@ class GitConflictResolutionTest extends TestCase
         parent::setUp();
         $this->token = str_repeat('a', 64);
         URL::defaults(['token' => $this->token]);
-        config(['serverpanel.execution_api_base_url' => 'http://daemon.test']);
+        config(['dpanel.execution_api_base_url' => 'http://daemon.test']);
     }
 
     private function deployment(array $attributes = []): WebsiteGitDeployment
@@ -73,11 +73,11 @@ class GitConflictResolutionTest extends TestCase
     {
         $deployment = $this->deployment(['last_status' => 'failed', 'last_message' => 'Remote and local files both changed; sync stopped before conflict.']);
 
-        $this->as($this->admin())->get("/cpsess{$this->token}/websites/{$deployment->website_id}/git")
+        $this->as($this->admin())->get("/dpt{$this->token}/websites/{$deployment->website_id}/git")
             ->assertInertia(fn (AssertableInertia $page) => $page->where('needsResolution', true)->where('aiAvailable', false));
 
         $this->daemon(json_encode(['behind' => true, 'ahead' => true, 'dirty' => true, 'conflicts' => [self::CONFLICT]]));
-        $this->as($this->admin())->postJson("/cpsess{$this->token}/websites/{$deployment->website_id}/git/conflicts")
+        $this->as($this->admin())->postJson("/dpt{$this->token}/websites/{$deployment->website_id}/git/conflicts")
             ->assertOk()->assertJsonPath('conflicts.0.path', 'app/config.php')->assertJsonPath('ai_available', false);
         Http::assertSent(fn (HttpRequest $request) => $request['action'] === 'conflicts' && $request['target'] === '/home/shop/public_html');
     }
@@ -87,7 +87,7 @@ class GitConflictResolutionTest extends TestCase
         $deployment = $this->deployment();
         $this->daemon('Merged on the server; nothing was pushed yet.');
 
-        $this->as($this->admin())->postJson("/cpsess{$this->token}/websites/{$deployment->website_id}/git/resolve", [
+        $this->as($this->admin())->postJson("/dpt{$this->token}/websites/{$deployment->website_id}/git/resolve", [
             'strategy' => 'custom',
             'resolutions' => [
                 ['path' => 'app/config.php', 'content' => "a\nMERGED\n"],
@@ -104,9 +104,9 @@ class GitConflictResolutionTest extends TestCase
             ]);
         $this->assertDatabaseHas('website_git_logs', ['deployment_id' => $deployment->id, 'action' => 'resolve', 'status' => 'success']);
 
-        $this->as($this->admin())->postJson("/cpsess{$this->token}/websites/{$deployment->website_id}/git/resolve", ['strategy' => 'ours'])
+        $this->as($this->admin())->postJson("/dpt{$this->token}/websites/{$deployment->website_id}/git/resolve", ['strategy' => 'ours'])
             ->assertStatus(422);
-        $this->as($this->admin())->postJson("/cpsess{$this->token}/websites/{$deployment->website_id}/git/resolve", ['strategy' => 'custom'])
+        $this->as($this->admin())->postJson("/dpt{$this->token}/websites/{$deployment->website_id}/git/resolve", ['strategy' => 'custom'])
             ->assertStatus(422);
     }
 
@@ -169,21 +169,21 @@ class GitConflictResolutionTest extends TestCase
         $deployment = $this->deployment();
         $admin = $this->admin();
         \App\Models\WebsiteGitLog::create(['deployment_id' => $deployment->id, 'action' => 'resolve', 'status' => 'success', 'created_at' => now()->subMinute()]);
-        $this->as($admin)->get("/cpsess{$this->token}/websites/{$deployment->website_id}/git")
+        $this->as($admin)->get("/dpt{$this->token}/websites/{$deployment->website_id}/git")
             ->assertInertia(fn (AssertableInertia $page) => $page->where('resolutionPending', true));
 
         $this->daemon(json_encode(['pending' => true, 'commits' => ['abc1234 Merge'], 'files' => [['status' => 'M', 'path' => 'index.php']], 'summary' => '1 file changed']));
-        $this->as($admin)->postJson("/cpsess{$this->token}/websites/{$deployment->website_id}/git/resolve/pending")
+        $this->as($admin)->postJson("/dpt{$this->token}/websites/{$deployment->website_id}/git/resolve/pending")
             ->assertOk()->assertJsonPath('pending', true)->assertJsonPath('files.0.path', 'index.php');
 
         $this->daemon('Pushed the resolved merge to main.');
-        $this->as($admin)->postJson("/cpsess{$this->token}/websites/{$deployment->website_id}/git/resolve/finish", ['decision' => 'confirm'])
+        $this->as($admin)->postJson("/dpt{$this->token}/websites/{$deployment->website_id}/git/resolve/finish", ['decision' => 'confirm'])
             ->assertOk()->assertJsonPath('resolutionPending', false);
         Http::assertSent(fn (HttpRequest $request) => $request['action'] === 'confirm_push');
 
         $this->daemon('Undone.');
-        $this->as($admin)->postJson("/cpsess{$this->token}/websites/{$deployment->website_id}/git/resolve/finish", ['decision' => 'undo'])->assertOk();
+        $this->as($admin)->postJson("/dpt{$this->token}/websites/{$deployment->website_id}/git/resolve/finish", ['decision' => 'undo'])->assertOk();
         Http::assertSent(fn (HttpRequest $request) => $request['action'] === 'undo_resolve');
-        $this->as($admin)->postJson("/cpsess{$this->token}/websites/{$deployment->website_id}/git/resolve/finish", ['decision' => 'push'])->assertStatus(422);
+        $this->as($admin)->postJson("/dpt{$this->token}/websites/{$deployment->website_id}/git/resolve/finish", ['decision' => 'push'])->assertStatus(422);
     }
 }

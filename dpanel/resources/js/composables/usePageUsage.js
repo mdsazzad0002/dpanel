@@ -7,13 +7,13 @@ const MAX_ENTRIES = 100;
 
 const keyFor = (userId) => `${KEY_PREFIX}${userId ?? 'guest'}`;
 
-// Panel URLs carry a per-session /cpsess<token> prefix and query strings;
+// Panel URLs carry a per-session /dpt<token> prefix and query strings;
 // strip both so the same tool keeps one counter across logins.
 export const normalizeLink = (href) => {
     try {
         const url = new URL(href, window.location.origin);
         if (url.origin !== window.location.origin) return null;
-        const path = url.pathname.replace(/^\/cpsess[0-9a-fA-F]+(?=\/|$)/, '').replace(/\/+$/, '');
+        const path = url.pathname.replace(/^\/dpt[0-9a-fA-F]+(?=\/|$)/, '').replace(/\/+$/, '');
         return path || '/';
     } catch {
         return null;

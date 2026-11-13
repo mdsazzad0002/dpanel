@@ -22,7 +22,7 @@ class MailDnsRecordsTest extends TestCase
 
     public function test_every_domain_points_mx_at_the_one_mail_host(): void
     {
-        config(['serverpanel.mail.hostname' => 'panel.example.com', 'serverpanel.mail.server_ip' => '203.0.113.5']);
+        config(['dpanel.mail.hostname' => 'panel.example.com', 'dpanel.mail.server_ip' => '203.0.113.5']);
         $records = collect((new MailDnsRecords)->records('shop.test', 'default', 'KEY'))->keyBy(fn ($r) => $r['type'].' '.$r['name']);
 
         $this->assertSame('panel.example.com', $records['MX @']['value']);
@@ -34,7 +34,7 @@ class MailDnsRecordsTest extends TestCase
 
     public function test_a_domain_on_another_mail_ip_uses_that_ip_and_hostname(): void
     {
-        config(['serverpanel.mail.hostname' => 'panel.example.com', 'serverpanel.mail.server_ip' => '203.0.113.5']);
+        config(['dpanel.mail.hostname' => 'panel.example.com', 'dpanel.mail.server_ip' => '203.0.113.5']);
         $other = MailIp::query()->create(['ip' => '198.51.100.7', 'hostname' => 'mail2.example.com', 'is_default' => false]);
         MailDomain::query()->create(['domain' => 'shop.test', 'mail_ip_id' => $other->id]);
 
@@ -48,7 +48,7 @@ class MailDnsRecordsTest extends TestCase
 
     public function test_a_mail_host_inside_the_domain_gets_an_a_record(): void
     {
-        config(['serverpanel.mail.hostname' => 'mail.shop.test', 'serverpanel.mail.server_ip' => '203.0.113.5']);
+        config(['dpanel.mail.hostname' => 'mail.shop.test', 'dpanel.mail.server_ip' => '203.0.113.5']);
         $records = collect((new MailDnsRecords)->records('shop.test', 'default', ''))->keyBy(fn ($r) => $r['type'].' '.$r['name']);
 
         $this->assertSame('203.0.113.5', $records['A mail']['value']);
@@ -59,8 +59,8 @@ class MailDnsRecordsTest extends TestCase
     {
         // server1.example.net is set but resolves elsewhere; the panel domain resolves here.
         config([
-            'serverpanel.mail.hostname' => 'server1.example.net',
-            'serverpanel.mail.server_ip' => '203.0.113.5',
+            'dpanel.mail.hostname' => 'server1.example.net',
+            'dpanel.mail.server_ip' => '203.0.113.5',
             'app.url' => 'https://mail.panel.example.com',
         ]);
         $this->app->instance(PublicDnsLookup::class, new FakeDns([
@@ -73,7 +73,7 @@ class MailDnsRecordsTest extends TestCase
 
     public function test_a_subdomain_served_by_a_wildcard_gets_its_own_a_record(): void
     {
-        config(['serverpanel.mail.hostname' => 'mail.panel.example.com', 'serverpanel.mail.server_ip' => '203.0.113.5']);
+        config(['dpanel.mail.hostname' => 'mail.panel.example.com', 'dpanel.mail.server_ip' => '203.0.113.5']);
         $this->app->instance(PublicDnsLookup::class, new FakeDns([
             'A mail.panel.example.com' => ['203.0.113.5'],
             'A *.panel.example.com' => ['203.0.113.5'],
@@ -86,7 +86,7 @@ class MailDnsRecordsTest extends TestCase
 
     public function test_a_subdomain_with_its_own_address_gets_no_extra_a_record(): void
     {
-        config(['serverpanel.mail.hostname' => 'mail.panel.example.com', 'serverpanel.mail.server_ip' => '203.0.113.5']);
+        config(['dpanel.mail.hostname' => 'mail.panel.example.com', 'dpanel.mail.server_ip' => '203.0.113.5']);
         $this->app->instance(PublicDnsLookup::class, new FakeDns([
             'A mail.panel.example.com' => ['203.0.113.5'],
             'A *.panel.example.com' => ['203.0.113.5'],
@@ -99,7 +99,7 @@ class MailDnsRecordsTest extends TestCase
 
     public function test_ipv6_server_uses_ip6_in_spf(): void
     {
-        config(['serverpanel.mail.hostname' => 'panel.example.com', 'serverpanel.mail.server_ip' => '2001:db8::5']);
+        config(['dpanel.mail.hostname' => 'panel.example.com', 'dpanel.mail.server_ip' => '2001:db8::5']);
 
         $this->assertSame('v=spf1 ip6:2001:db8::5 mx ~all', (new MailDnsRecords)->spf());
     }

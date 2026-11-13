@@ -21,7 +21,7 @@ class WebsiteLogTest extends TestCase
         parent::setUp();
         $this->token = str_repeat('b', 64);
         URL::defaults(['token' => $this->token]);
-        config(['serverpanel.execution_api_base_url' => 'http://drust.test', 'serverpanel.execution_api_token' => 'secret']);
+        config(['dpanel.execution_api_base_url' => 'http://drust.test', 'dpanel.execution_api_token' => 'secret']);
     }
 
     private function website(User $owner, string $siteOwner = 'shop', string $domain = 'shop.test'): Website
@@ -52,7 +52,7 @@ class WebsiteLogTest extends TestCase
         Http::fake(['drust.test/sites/logs*' => Http::response(['success' => true, 'exists' => true, 'lines' => ['a', 'b']])]);
         $site = $this->website($this->admin());
 
-        $this->as(User::query()->first())->getJson("/cpsess{$this->token}/websites/{$site->id}/logs/lines?kind=access&lines=50")
+        $this->as(User::query()->first())->getJson("/dpt{$this->token}/websites/{$site->id}/logs/lines?kind=access&lines=50")
             ->assertOk()->assertJsonPath('lines', ['a', 'b']);
 
         Http::assertSent(fn ($request) => $request['kind'] === 'access' && $request['domain'] === 'shop.test' && (int) $request['lines'] === 50);
@@ -63,7 +63,7 @@ class WebsiteLogTest extends TestCase
         Http::fake(['drust.test/sites/logs*' => Http::response(['success' => true, 'exists' => true, 'lines' => ['x blocked 403 | 942100 SQLi']])]);
         $site = $this->website($this->admin());
 
-        $this->as(User::query()->first())->getJson("/cpsess{$this->token}/websites/{$site->id}/logs/lines?kind=waf")
+        $this->as(User::query()->first())->getJson("/dpt{$this->token}/websites/{$site->id}/logs/lines?kind=waf")
             ->assertOk()->assertJsonPath('lines.0', 'x blocked 403 | 942100 SQLi');
 
         Http::assertSent(fn ($request) => $request['kind'] === 'waf' && $request['domain'] === 'shop.test');
@@ -76,8 +76,8 @@ class WebsiteLogTest extends TestCase
         $site = $this->website($admin);
         $odd = $this->website($admin, '../root', 'odd.test');
 
-        $this->as($admin)->getJson("/cpsess{$this->token}/websites/{$site->id}/logs/lines?kind=php")->assertOk();
-        $this->as($admin)->getJson("/cpsess{$this->token}/websites/{$odd->id}/logs/lines?kind=php")
+        $this->as($admin)->getJson("/dpt{$this->token}/websites/{$site->id}/logs/lines?kind=php")->assertOk();
+        $this->as($admin)->getJson("/dpt{$this->token}/websites/{$odd->id}/logs/lines?kind=php")
             ->assertOk()->assertJsonPath('exists', false);
 
         Http::assertSentCount(1);
@@ -90,7 +90,7 @@ class WebsiteLogTest extends TestCase
         $admin = $this->admin();
         $site = $this->website($admin);
 
-        $this->as($admin)->getJson("/cpsess{$this->token}/websites/{$site->id}/logs/lines?kind=shadow")->assertJsonValidationErrors('kind');
+        $this->as($admin)->getJson("/dpt{$this->token}/websites/{$site->id}/logs/lines?kind=shadow")->assertJsonValidationErrors('kind');
         Http::assertNothingSent();
     }
 
@@ -101,7 +101,7 @@ class WebsiteLogTest extends TestCase
         $other = User::factory()->create();
         $other->assignRole('user');
 
-        $this->as($other)->getJson("/cpsess{$this->token}/websites/{$site->id}/logs/lines?kind=access")->assertNotFound();
+        $this->as($other)->getJson("/dpt{$this->token}/websites/{$site->id}/logs/lines?kind=access")->assertNotFound();
         Http::assertNothingSent();
     }
 }

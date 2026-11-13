@@ -47,7 +47,7 @@ class SshClientService
 
     public function connect(Server $server): SSH2
     {
-        if (! config('serverpanel.allow_root_setup_mode', true) && strtolower($server->username) === 'root') {
+        if (! config('dpanel.allow_root_setup_mode', true) && strtolower($server->username) === 'root') {
             throw new RuntimeException('Root login is disabled by configuration.');
         }
 
@@ -55,8 +55,8 @@ class SshClientService
             throw new RuntimeException('Root login is only allowed in setup mode.');
         }
 
-        $ssh = new SSH2($server->host, (int) $server->port, (int) config('serverpanel.ssh_timeout', 20));
-        $ssh->setTimeout((int) config('serverpanel.command_timeout', 300));
+        $ssh = new SSH2($server->host, (int) $server->port, (int) config('dpanel.ssh_timeout', 20));
+        $ssh->setTimeout((int) config('dpanel.command_timeout', 300));
         $ssh->enableQuietMode();
 
         $authenticated = match ($server->auth_type) {
@@ -128,7 +128,7 @@ class SshClientService
                 }
             }
 
-            $finished = preg_match('/__SERVERPANEL_EXIT__:\d+\r?\n/', $collectedOutput) === 1;
+            $finished = preg_match('/__dPanel_EXIT__:\d+\r?\n/', $collectedOutput) === 1;
 
             return $finished;
         });
@@ -140,26 +140,26 @@ class SshClientService
         $stderr = (string) $ssh->getStdError();
         $exitCode = null;
 
-        if (preg_match('/__SERVERPANEL_EXIT__:(\d+)/', $collectedOutput, $matches) === 1) {
+        if (preg_match('/__dPanel_EXIT__:(\d+)/', $collectedOutput, $matches) === 1) {
             $exitCode = (int) $matches[1];
         } elseif (is_int($ssh->getExitStatus())) {
             $exitCode = $ssh->getExitStatus();
         } elseif ($ssh->isTimeout()) {
             $stderr = trim($stderr.PHP_EOL.sprintf(
                 'Command did not finish within %d seconds and was stopped waiting. It may still be running on the server.',
-                (int) config('serverpanel.command_timeout', 300),
+                (int) config('dpanel.command_timeout', 300),
             ));
         } else {
             $stderr = trim($stderr.PHP_EOL.'SSH connection closed before the command reported an exit status.');
         }
 
         $rebootPackages = [];
-        $rebootRequired = preg_match('/__SERVERPANEL_REBOOT__:([^\r\n]*)/', $collectedOutput, $rebootMatches) === 1;
+        $rebootRequired = preg_match('/__dPanel_REBOOT__:([^\r\n]*)/', $collectedOutput, $rebootMatches) === 1;
         if ($rebootRequired) {
             $rebootPackages = array_values(array_unique(array_filter(preg_split('/\s+/', trim($rebootMatches[1])) ?: [])));
         }
 
-        $output = (string) preg_replace('/^.*__SERVERPANEL_(?:EXIT|REBOOT)__:.*$\R?/m', '', $collectedOutput);
+        $output = (string) preg_replace('/^.*__dPanel_(?:EXIT|REBOOT)__:.*$\R?/m', '', $collectedOutput);
 
         return [
             'output' => $this->truncateOutput($this->sanitizeControlMarkers($output)),
@@ -179,11 +179,11 @@ class SshClientService
             '(',
             $command,
             ') </dev/null',
-            '__serverpanel_status=$?',
+            '__dpanel_status=$?',
             'if [ -f /var/run/reboot-required ]; then',
-            '  printf "\n__SERVERPANEL_REBOOT__:%s\n" "$(tr \'\n\' \' \' < /var/run/reboot-required.pkgs 2>/dev/null)"',
+            '  printf "\n__dPanel_REBOOT__:%s\n" "$(tr \'\n\' \' \' < /var/run/reboot-required.pkgs 2>/dev/null)"',
             'fi',
-            'printf "\n__SERVERPANEL_EXIT__:%s\n" "$__serverpanel_status"',
+            'printf "\n__dPanel_EXIT__:%s\n" "$__dpanel_status"',
         ]);
 
         return 'bash -lc '.escapeshellarg($script);
@@ -191,7 +191,7 @@ class SshClientService
 
     private function isControlLine(string $line): bool
     {
-        return str_contains($line, '__SERVERPANEL_EXIT__:') || str_contains($line, '__SERVERPANEL_REBOOT__:');
+        return str_contains($line, '__dPanel_EXIT__:') || str_contains($line, '__dPanel_REBOOT__:');
     }
 
     private function loginWithPassword(SSH2 $ssh, Server $server): bool
@@ -223,7 +223,7 @@ class SshClientService
 
     private function truncateOutput(string $output): string
     {
-        $maxLength = (int) config('serverpanel.max_output_length', 120000);
+        $maxLength = (int) config('dpanel.max_output_length', 120000);
 
         if (mb_strlen($output) <= $maxLength) {
             return $output;
@@ -234,8 +234,8 @@ class SshClientService
 
     private function sanitizeControlMarkers(string $text): string
     {
-        $text = (string) preg_replace('/(?:^|\R)\s*n?__SERVERPANEL_EXIT__:\d*\s*(?=\R|$)/m', PHP_EOL, $text);
-        $text = (string) preg_replace('/n__SERVERPANEL_EXIT__:\d*/', '', $text);
+        $text = (string) preg_replace('/(?:^|\R)\s*n?__dPanel_EXIT__:\d*\s*(?=\R|$)/m', PHP_EOL, $text);
+        $text = (string) preg_replace('/n__dPanel_EXIT__:\d*/', '', $text);
 
         return trim($text);
     }

@@ -64,7 +64,7 @@ class SiteProtectionTest extends TestCase
         $site = $this->website($admin);
         $this->website($admin, 'brand.test', $site->id);
 
-        $this->as($admin)->post("/cpsess{$this->token}/rules/site-protection/{$site->id}/users", [
+        $this->as($admin)->post("/dpt{$this->token}/rules/site-protection/{$site->id}/users", [
             'path' => '/Admin/', 'realm' => 'Staff', 'username' => 'alice', 'password' => 'correct horse',
         ])->assertSessionHasNoErrors();
 
@@ -80,7 +80,7 @@ class SiteProtectionTest extends TestCase
         $admin = $this->admin();
         $site = $this->website($admin);
         foreach (['first password', 'second password'] as $password) {
-            $this->as($admin)->post("/cpsess{$this->token}/rules/site-protection/{$site->id}/users", [
+            $this->as($admin)->post("/dpt{$this->token}/rules/site-protection/{$site->id}/users", [
                 'path' => '/admin', 'username' => 'alice', 'password' => $password,
             ])->assertSessionHasNoErrors();
         }
@@ -93,7 +93,7 @@ class SiteProtectionTest extends TestCase
         $admin = $this->admin();
         $site = $this->website($admin);
 
-        $this->as($admin)->post("/cpsess{$this->token}/rules/site-protection/{$site->id}/users", [
+        $this->as($admin)->post("/dpt{$this->token}/rules/site-protection/{$site->id}/users", [
             'path' => '/a,b', 'realm' => 'x"y', 'username' => 'alice', 'password' => 'long enough',
         ])->assertSessionHasErrors(['path', 'realm']);
     }
@@ -103,7 +103,7 @@ class SiteProtectionTest extends TestCase
         $admin = $this->admin();
         $site = $this->website($admin);
 
-        $this->as($admin)->put("/cpsess{$this->token}/rules/site-protection/{$site->id}/settings", [
+        $this->as($admin)->put("/dpt{$this->token}/rules/site-protection/{$site->id}/settings", [
             'no_php_paths' => ['/wp-content/uploads/', '/files'],
             'hotlink_protection' => true,
             'hotlink_allowed_hosts' => ['CDN.example.com'],
@@ -122,7 +122,7 @@ class SiteProtectionTest extends TestCase
         $admin = $this->admin();
         $site = $this->website($admin);
 
-        $this->as($admin)->put("/cpsess{$this->token}/rules/site-protection/{$site->id}/settings", [
+        $this->as($admin)->put("/dpt{$this->token}/rules/site-protection/{$site->id}/settings", [
             'no_php_paths' => ['/'], 'hotlink_protection' => false, 'hotlink_allowed_hosts' => [],
         ])->assertSessionHasErrors('no_php_paths.0');
     }
@@ -132,7 +132,7 @@ class SiteProtectionTest extends TestCase
         $admin = $this->admin();
         $site = $this->website($admin);
         WebsiteGuardSetting::query()->create(['website_id' => $site->id, 'denied_paths' => '/var,/app']);
-        $url = "/cpsess{$this->token}/rules/site-protection/{$site->id}/settings";
+        $url = "/dpt{$this->token}/rules/site-protection/{$site->id}/settings";
         $base = ['no_php_paths' => [], 'hotlink_protection' => false, 'hotlink_allowed_hosts' => []];
 
         $this->as($admin)->put($url, $base)->assertSessionHasNoErrors();
@@ -149,7 +149,7 @@ class SiteProtectionTest extends TestCase
         $admin = $this->admin();
         $site = $this->website($admin);
         WebsiteGuardSetting::query()->create(['website_id' => $site->id, 'denied_extensions' => 'tpl,/modules/*.yml']);
-        $url = "/cpsess{$this->token}/rules/site-protection/{$site->id}/settings";
+        $url = "/dpt{$this->token}/rules/site-protection/{$site->id}/settings";
         $base = ['no_php_paths' => [], 'hotlink_protection' => false, 'hotlink_allowed_hosts' => []];
 
         $this->as($admin)->put($url, $base)->assertSessionHasNoErrors();
@@ -173,7 +173,7 @@ class SiteProtectionTest extends TestCase
         $site = $this->website($admin);
         WebsiteGuardSetting::query()->create(['website_id' => $site->id, 'denied_extensions' => 'tpl,/modules/*.yml']);
 
-        $this->as($admin)->get("/cpsess{$this->token}/rules/site-protection")
+        $this->as($admin)->get("/dpt{$this->token}/rules/site-protection")
             ->assertInertia(fn ($page) => $page->where('websites.0.denied_extensions', ['tpl', '/modules/*.yml']));
     }
 
@@ -184,7 +184,7 @@ class SiteProtectionTest extends TestCase
         $other = User::factory()->create();
         $other->assignRole('reseller');
 
-        $this->as($other)->put("/cpsess{$this->token}/rules/site-protection/{$site->id}/settings", [
+        $this->as($other)->put("/dpt{$this->token}/rules/site-protection/{$site->id}/settings", [
             'no_php_paths' => [], 'hotlink_protection' => true, 'hotlink_allowed_hosts' => [],
         ])->assertNotFound();
     }
@@ -195,7 +195,7 @@ class SiteProtectionTest extends TestCase
         $site = $this->website($admin);
         WebsiteProtectedDirectory::query()->create(['website_id' => $site->id, 'path' => '/admin', 'username' => 'alice', 'password_hash' => 's256i$1$00$00']);
 
-        $this->as($admin)->get("/cpsess{$this->token}/rules/site-protection")
+        $this->as($admin)->get("/dpt{$this->token}/rules/site-protection")
             ->assertOk()
             ->assertInertia(fn ($page) => $page->component('Rules/SiteProtection')
                 ->where('websites.0.directories.0.path', '/admin')
@@ -209,15 +209,15 @@ class SiteProtectionTest extends TestCase
         $site = $this->website($admin);
         $this->website($admin, 'brand.test', $site->id);
 
-        $this->as($admin)->get("/cpsess{$this->token}/rules/site-protection")
+        $this->as($admin)->get("/dpt{$this->token}/rules/site-protection")
             ->assertInertia(fn ($page) => $page->where('websites.0.waf_mode', 'detect')->where('wafAvailable', false));
 
-        $this->as($admin)->put("/cpsess{$this->token}/rules/site-protection/{$site->id}/waf", ['waf_mode' => 'block'])
+        $this->as($admin)->put("/dpt{$this->token}/rules/site-protection/{$site->id}/waf", ['waf_mode' => 'block'])
             ->assertSessionHasNoErrors()->assertSessionHas('success');
         $this->assertSame('block', WebsiteGuardSetting::query()->find($site->id)->waf_mode);
         $this->assertEqualsCanonicalizing(['shop.test', 'brand.test'], end($this->reloaded));
 
-        $this->as($admin)->put("/cpsess{$this->token}/rules/site-protection/{$site->id}/waf", ['waf_mode' => 'panic'])
+        $this->as($admin)->put("/dpt{$this->token}/rules/site-protection/{$site->id}/waf", ['waf_mode' => 'panic'])
             ->assertSessionHasErrors('waf_mode');
     }
 
@@ -225,9 +225,9 @@ class SiteProtectionTest extends TestCase
     {
         $admin = $this->admin();
         $site = $this->website($admin);
-        $this->as($admin)->put("/cpsess{$this->token}/rules/site-protection/{$site->id}/waf", ['waf_mode' => 'off']);
+        $this->as($admin)->put("/dpt{$this->token}/rules/site-protection/{$site->id}/waf", ['waf_mode' => 'off']);
 
-        $this->as($admin)->put("/cpsess{$this->token}/rules/site-protection/{$site->id}/settings", [
+        $this->as($admin)->put("/dpt{$this->token}/rules/site-protection/{$site->id}/settings", [
             'no_php_paths' => ['/uploads'], 'hotlink_protection' => false, 'hotlink_allowed_hosts' => [],
         ])->assertSessionHasNoErrors();
 
@@ -242,6 +242,6 @@ class SiteProtectionTest extends TestCase
         $other->assignRole('general');
         $site = $this->website($owner);
 
-        $this->as($other)->put("/cpsess{$this->token}/rules/site-protection/{$site->id}/waf", ['waf_mode' => 'off'])->assertNotFound();
+        $this->as($other)->put("/dpt{$this->token}/rules/site-protection/{$site->id}/waf", ['waf_mode' => 'off'])->assertNotFound();
     }
 }

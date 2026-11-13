@@ -72,7 +72,7 @@ Run these from the repository root in PowerShell.
    DB_DATABASE=database/database.sqlite
    QUEUE_CONNECTION=database
    CACHE_STORE=database
-   SERVERPANEL_EXECUTION_API_TOKEN=<token>
+   dPanel_EXECUTION_API_TOKEN=<token>
    ```
 
 5. Create the database.
@@ -93,7 +93,7 @@ WampServer's Apache first.
 From the repository root, in one PowerShell window:
 
 ```powershell
-$token = ((Get-Content dpanel\.env | Where-Object { $_ -like 'SERVERPANEL_EXECUTION_API_TOKEN=*' } | Select-Object -Last 1) -split '=', 2)[1]
+$token = ((Get-Content dpanel\.env | Where-Object { $_ -like 'dPanel_EXECUTION_API_TOKEN=*' } | Select-Object -Last 1) -split '=', 2)[1]
 $env:DPANEL_PROFILE = 'local'
 $env:DPANEL_PANEL_ROOT = "$PWD\dpanel"
 $env:DRUST_API_TOKEN = $token

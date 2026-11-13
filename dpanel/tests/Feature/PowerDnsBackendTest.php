@@ -110,7 +110,7 @@ class PowerDnsBackendTest extends TestCase
 
     public function test_dnssec_is_unsupported_where_drust_cannot_sign(): void
     {
-        config(['serverpanel.execution_api_base_url' => 'http://drust.test']);
+        config(['dpanel.execution_api_base_url' => 'http://drust.test']);
         Http::fake(['drust.test/*' => Http::response(['error' => 'unsupported', 'capability' => 'dns'], 501)]);
         $this->expectException(UnsupportedDnsFeature::class);
         $this->dns->enableDnssec('shop.test', true);

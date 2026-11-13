@@ -108,7 +108,7 @@ Route::get('/test-https', function (Request $request) {
 Route::get('/privacy-policy', [PageController::class, 'privacyPolicy'])->name('privacy-policy');
 Route::get('/terms-and-conditions', [PageController::class, 'termsAndConditions'])->name('terms-and-conditions');
 
-Route::get('/cpsess{token}/login', function () {
+Route::get('/dpt{token}/login', function () {
     // Viewing the login screen must not revoke the current token. Rotation
     // happens only after the user explicitly submits the login form.
     return redirect()->route('login');
@@ -134,14 +134,14 @@ Route::get('/bimi/{domain}.svg', [MailBimiController::class, 'show'])
 Route::post('/telegram/webhook', [TelegramWebhookController::class, 'store'])
     ->name('telegram.webhook');
 
-// Deliberately outside the cpsess{token}/auth group — a quick-export download link
+// Deliberately outside the dpt{token}/auth group — a quick-export download link
 // is meant to be shareable with someone who isn't logged into the panel at all.
 // The random, single-purpose downloadToken (see BackupController::quickExportDownload)
 // is the only credential; it's short-lived and tied to one file.
 Route::get('/quick-exports/download/{downloadToken}', [BackupController::class, 'quickExportDownload'])
     ->middleware('throttle:30,1')
     ->name('quick-exports.download');
-// Deliberately outside the cpsess{token}/auth group — a Clone & Share package is
+// Deliberately outside the dpt{token}/auth group — a Clone & Share package is
 // meant to be pulled by a *different* server that isn't logged into this panel at
 // all. Same single-purpose-token model as the quick-export download link above.
 Route::get('/clone-share/download/{downloadToken}', [CloneShareController::class, 'download'])
@@ -228,7 +228,7 @@ Route::get('/telegram/webhook-url', [TelegramWebhookController::class, 'url'])
     ->name('telegram.webhook-url');
 
 // GitHub OAuth redirect_uri must be a fixed URL registered on the admin's
-// GitHub app, so it can't carry the rotating cpsess token — it relies on the
+// GitHub app, so it can't carry the rotating dpt token — it relies on the
 // browser session and the state saved by GithubIntegrationController::connect().
 Route::get('/github/oauth/callback', [GithubIntegrationController::class, 'callback'])
     ->middleware('throttle:30,1')
@@ -239,7 +239,7 @@ Route::post('/webhooks/git/{deployment}', GitDeployWebhookController::class)
     ->middleware('throttle:60,1')
     ->name('webhooks.git.deploy');
 
-Route::prefix('cpsess{token}')
+Route::prefix('dpt{token}')
     ->where(['token' => '[0-9a-fA-F]{64}'])
     ->middleware(['panel.session', 'auth'])
     ->group(function (): void {
@@ -279,9 +279,9 @@ Route::prefix('cpsess{token}')
             ->name('notifications.clear');
 
         Route::middleware('auth')->group(function () {
-            Route::redirect('/serverpanel', '/servers')
+            Route::redirect('/dpanel', '/servers')
                 ->middleware('role:admin|reseller|general|general_user')
-                ->name('serverpanel.index');
+                ->name('dpanel.index');
 
             Route::get('/servers', [ServerController::class, 'index'])
                 ->middleware('role:admin|reseller')
@@ -1436,11 +1436,11 @@ Route::prefix('cpsess{token}')
         });
     });
 
-// The strict cpsess route group above only accepts a 64-character hex token.
+// The strict dpt route group above only accepts a 64-character hex token.
 // Catch malformed or mismatched tokenized URLs so they return to login instead
 // of exposing a generic 404. A valid current token with an unknown inner path
 // remains a genuine 404.
-Route::any('/cpsess{token}/{path?}', function (string $token, ?string $path = null) {
+Route::any('/dpt{token}/{path?}', function (string $token, ?string $path = null) {
     $sessionToken = (string) session('panel_session_token', '');
     $isValidCurrentToken = Auth::check()
         && preg_match('/\A[0-9a-f]{64}\z/i', $token) === 1

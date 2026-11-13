@@ -71,7 +71,7 @@ class DatabaseExportTest extends TestCase
 
         $ids = [];
         foreach ([$first, $second] as $database) {
-            $response = $this->as($this->admin)->postJson("/cpsess{$this->token}/databases/{$database->id}/export");
+            $response = $this->as($this->admin)->postJson("/dpt{$this->token}/databases/{$database->id}/export");
             $response->assertOk()->assertJson(['ok' => true]);
             $ids[] = $response->json('export_id');
         }
@@ -79,7 +79,7 @@ class DatabaseExportTest extends TestCase
         Queue::assertPushed(DatabaseExportJob::class, 2);
         Queue::assertPushedOn('heavy', DatabaseExportJob::class);
         $this->assertNotSame($ids[0], $ids[1]);
-        $this->as($this->admin)->getJson("/cpsess{$this->token}/databases/exports/{$ids[0]}")
+        $this->as($this->admin)->getJson("/dpt{$this->token}/databases/exports/{$ids[0]}")
             ->assertOk()->assertJson(['ok' => true, 'stage' => 'queued', 'database_id' => $first->id])
             ->assertJsonMissing(['user_id' => $this->admin->id]);
     }
@@ -88,12 +88,12 @@ class DatabaseExportTest extends TestCase
     {
         Queue::fake();
         $pending = $this->database(['status' => 'pending']);
-        $this->as($this->admin)->postJson("/cpsess{$this->token}/databases/{$pending->id}/export")->assertStatus(422);
+        $this->as($this->admin)->postJson("/dpt{$this->token}/databases/{$pending->id}/export")->assertStatus(422);
 
         $reseller = User::factory()->create();
         $reseller->assignRole('reseller');
         $other = $this->database(['assigned_user_id' => $this->admin->id]);
-        $this->as($reseller)->postJson("/cpsess{$this->token}/databases/{$other->id}/export")->assertNotFound();
+        $this->as($reseller)->postJson("/dpt{$this->token}/databases/{$other->id}/export")->assertNotFound();
 
         Queue::assertNothingPushed();
     }
@@ -104,8 +104,8 @@ class DatabaseExportTest extends TestCase
         $someone = User::factory()->create();
         $someone->assignRole('admin');
 
-        $this->as($someone)->getJson("/cpsess{$this->token}/databases/exports/abc")->assertNotFound();
-        $this->as($this->admin)->getJson("/cpsess{$this->token}/databases/exports/abc")->assertOk()->assertJson(['download_url' => 'https://x']);
+        $this->as($someone)->getJson("/dpt{$this->token}/databases/exports/abc")->assertNotFound();
+        $this->as($this->admin)->getJson("/dpt{$this->token}/databases/exports/abc")->assertOk()->assertJson(['download_url' => 'https://x']);
     }
 
     public function test_mariadb_dump_is_gzipped_and_keeps_the_password_off_the_command_line(): void

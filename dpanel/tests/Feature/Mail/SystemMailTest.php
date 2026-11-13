@@ -108,15 +108,15 @@ class SystemMailTest extends TestCase
         $sandbox = $this->mailbox('test@panel.test', ['delivery_mode' => 'sandbox']);
         $good = $this->mailbox('noreply@panel.test');
 
-        $this->as($admin)->put("/cpsess{$this->token}/emails/system-mail", ['mailbox_id' => $sandbox->id])->assertSessionHas('error');
+        $this->as($admin)->put("/dpt{$this->token}/emails/system-mail", ['mailbox_id' => $sandbox->id])->assertSessionHas('error');
         $this->assertNull(app(MailSettings::class)->read()['system_mailbox_id']);
 
-        $this->as($admin)->put("/cpsess{$this->token}/emails/system-mail", ['mailbox_id' => $good->id])->assertSessionHas('success');
+        $this->as($admin)->put("/dpt{$this->token}/emails/system-mail", ['mailbox_id' => $good->id])->assertSessionHas('success');
         $this->assertSame($good->id, app(MailSettings::class)->read()['system_mailbox_id']);
 
-        $this->as($admin)->postJson("/cpsess{$this->token}/emails/system-mail/test", ['to' => 'me@example.test'])->assertOk()->assertJson(['ok' => true]);
+        $this->as($admin)->postJson("/dpt{$this->token}/emails/system-mail/test", ['to' => 'me@example.test'])->assertOk()->assertJson(['ok' => true]);
 
-        $this->as($admin)->delete("/cpsess{$this->token}/emails/system-mail")->assertSessionHas('success');
+        $this->as($admin)->delete("/dpt{$this->token}/emails/system-mail")->assertSessionHas('success');
         $this->assertNull(app(MailSettings::class)->read()['system_mailbox_id']);
     }
 
@@ -124,14 +124,14 @@ class SystemMailTest extends TestCase
     {
         config(['mail.default' => 'log']);
 
-        $this->as($this->user('admin'))->get("/cpsess{$this->token}/dashboard")
+        $this->as($this->user('admin'))->get("/dpt{$this->token}/dashboard")
             ->assertInertia(fn (AssertableInertia $page) => $page->where('systemMailWarning.source', 'none'));
-        $this->as($this->user('reseller'))->get("/cpsess{$this->token}/dashboard")
+        $this->as($this->user('reseller'))->get("/dpt{$this->token}/dashboard")
             ->assertInertia(fn (AssertableInertia $page) => $page->where('systemMailWarning', null));
 
         $mailbox = $this->mailbox('noreply@panel.test');
         app(MailSettings::class)->write(['system_mailbox_id' => $mailbox->id]);
-        $this->as($this->user('admin'))->get("/cpsess{$this->token}/dashboard")
+        $this->as($this->user('admin'))->get("/dpt{$this->token}/dashboard")
             ->assertInertia(fn (AssertableInertia $page) => $page->where('systemMailWarning', null));
     }
 
@@ -141,7 +141,7 @@ class SystemMailTest extends TestCase
         $this->mailbox('test@panel.test', ['delivery_mode' => 'sandbox']);
         app(MailSettings::class)->write(['system_mailbox_id' => $good->id]);
 
-        $response = $this->as($this->user('admin'))->get("/cpsess{$this->token}/emails/list");
+        $response = $this->as($this->user('admin'))->get("/dpt{$this->token}/emails/list");
         $response->assertInertia(fn (AssertableInertia $page) => $page
             ->where('systemMailboxId', $good->id)
             ->where('canSetSystemMail', true)
@@ -150,7 +150,7 @@ class SystemMailTest extends TestCase
                 && str_contains((string) collect($rows)->firstWhere('email', 'test@panel.test')['system_mail_problem'], 'sandbox')));
         $this->assertStringNotContainsString('secret-pass', $response->getContent());
 
-        $this->as($this->user('reseller'))->get("/cpsess{$this->token}/emails/list")
+        $this->as($this->user('reseller'))->get("/dpt{$this->token}/emails/list")
             ->assertInertia(fn (AssertableInertia $page) => $page->where('canSetSystemMail', false)->where('systemMailboxId', null));
     }
 
@@ -158,7 +158,7 @@ class SystemMailTest extends TestCase
     {
         $mailbox = $this->mailbox('noreply@panel.test');
 
-        $response = $this->as($this->user('admin'))->get("/cpsess{$this->token}/emails/{$mailbox->id}/edit");
+        $response = $this->as($this->user('admin'))->get("/dpt{$this->token}/emails/{$mailbox->id}/edit");
         $response->assertOk();
         $this->assertStringNotContainsString('secret-pass', $response->getContent());
     }

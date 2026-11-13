@@ -67,7 +67,7 @@ class CommandSafetyService
             return true;
         }
 
-        foreach ((array) config('serverpanel.blocked_commands', []) as $pattern) {
+        foreach ((array) config('dpanel.blocked_commands', []) as $pattern) {
             if ($pattern !== '' && str_contains($normalized, mb_strtolower((string) $pattern))) {
                 return true;
             }
@@ -78,7 +78,7 @@ class CommandSafetyService
 
     private function needsApproval(string $normalized): bool
     {
-        foreach ((array) config('serverpanel.approval_required_patterns', []) as $pattern) {
+        foreach ((array) config('dpanel.approval_required_patterns', []) as $pattern) {
             if ($pattern !== '' && str_contains($normalized, mb_strtolower((string) $pattern))) {
                 return true;
             }
@@ -89,7 +89,7 @@ class CommandSafetyService
 
     private function isSafe(string $normalized): bool
     {
-        foreach ((array) config('serverpanel.safe_patterns', []) as $pattern) {
+        foreach ((array) config('dpanel.safe_patterns', []) as $pattern) {
             if ($pattern !== '' && str_starts_with($normalized, mb_strtolower((string) $pattern))) {
                 return true;
             }

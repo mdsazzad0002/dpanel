@@ -12,7 +12,7 @@ import { i18n } from './i18n';
 const currentPage = usePage();
 const appName = () => currentPage.props?.branding?.name || 'dPanel';
 const escapeRegExp = (text) => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-const THEME_KEY = 'serverpanel-theme';
+const THEME_KEY = 'dpanel-theme';
 
 const applyInitialTheme = () => {
     if (typeof window === 'undefined' || typeof document === 'undefined') {
@@ -40,7 +40,7 @@ const registerServiceWorker = () => {
 
 registerServiceWorker();
 
-// The <meta> CSRF token and Ziggy's cpsess default are rendered once with the
+// The <meta> CSRF token and Ziggy's dpt default are rendered once with the
 // HTML, but login/logout happen as Inertia visits that rotate both. Refresh
 // them from every page's props so fetch() callers never send a stale token.
 const syncSessionTokens = (pageProps) => {

@@ -117,7 +117,7 @@ class LocalProfileBackendsTest extends TestCase
                 return $capability !== 'redis';
             }
         });
-        config(['serverpanel.edge_gateway_internal_url' => 'http://127.0.0.1', 'serverpanel.execution_api_token' => 'test-token']);
+        config(['dpanel.edge_gateway_internal_url' => 'http://127.0.0.1', 'dpanel.execution_api_token' => 'test-token']);
         Http::fake(['http://127.0.0.1/__admin/reload' => Http::response(['success' => true])]);
         Redis::shouldReceive('connection')->never();
 

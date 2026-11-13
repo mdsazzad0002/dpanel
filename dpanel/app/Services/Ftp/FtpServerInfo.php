@@ -47,7 +47,7 @@ class FtpServerInfo
      */
     private function settings(): array
     {
-        $path = (string) config('serverpanel.ftp.config_path', '/etc/vsftpd.conf');
+        $path = (string) config('dpanel.ftp.config_path', '/etc/vsftpd.conf');
         $lines = is_readable($path) ? (file($path, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES) ?: []) : [];
         $values = [];
         foreach ($lines as $line) {

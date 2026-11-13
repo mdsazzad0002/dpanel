@@ -124,8 +124,8 @@ class FilemanagerService
 
         try {
             $request = Http::acceptJson()
-                ->timeout((int) config('serverpanel.execution_api_upload_timeout', 3600));
-            $token = trim((string) config('serverpanel.execution_api_token', ''));
+                ->timeout((int) config('dpanel.execution_api_upload_timeout', 3600));
+            $token = trim((string) config('dpanel.execution_api_token', ''));
             if ($token !== '') {
                 $request = $request->withToken($token);
             }
@@ -426,7 +426,7 @@ class FilemanagerService
         $result = $this->filemanagerApiRequest(
             'unzip',
             $payload,
-            (int) config('serverpanel.execution_api_upload_timeout', 3600)
+            (int) config('dpanel.execution_api_upload_timeout', 3600)
         );
         if (! $result['success']) {
             $output = trim((string) $result['output']);
@@ -452,7 +452,7 @@ class FilemanagerService
             'paths' => $paths,
             'destination' => $destination,
             'format' => $format,
-        ], (int) config('serverpanel.execution_api_upload_timeout', 3600));
+        ], (int) config('dpanel.execution_api_upload_timeout', 3600));
         if (! $result['success']) {
             $output = trim((string) $result['output']);
             throw new \RuntimeException($output !== '' ? $output : 'Failed to create zip through the filemanager API.');
@@ -587,9 +587,9 @@ class FilemanagerService
             return ['success' => false, 'output' => 'Filemanager API is not configured.', 'data' => []];
         }
 
-        $token = trim((string) config('serverpanel.execution_api_token', ''));
+        $token = trim((string) config('dpanel.execution_api_token', ''));
         $request = Http::acceptJson()->asJson()->timeout(
-            $timeout ?? (int) config('serverpanel.execution_api_timeout', 60)
+            $timeout ?? (int) config('dpanel.execution_api_timeout', 60)
         );
         if ($token !== '') {
             $request = $request->withToken($token);
@@ -612,12 +612,12 @@ class FilemanagerService
 
     private function filemanagerApiBaseUrl(): string
     {
-        $baseUrl = trim((string) config('serverpanel.filemanager_api_url', ''));
+        $baseUrl = trim((string) config('dpanel.filemanager_api_url', ''));
         if ($baseUrl !== '') {
             return $baseUrl;
         }
 
-        $baseUrl = trim((string) config('serverpanel.execution_api_base_url', ''));
+        $baseUrl = trim((string) config('dpanel.execution_api_base_url', ''));
 
         return $baseUrl !== '' ? rtrim($baseUrl, '/').'/api/v1/filemanager' : '';
     }

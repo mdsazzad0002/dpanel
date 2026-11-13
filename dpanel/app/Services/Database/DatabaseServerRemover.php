@@ -76,12 +76,12 @@ class DatabaseServerRemover
     /** @param array<string, string> $payload one dRust /database-request call */
     private function send(array $payload): string
     {
-        $apiUrl = trim((string) config('serverpanel.database_api_url', ''));
+        $apiUrl = trim((string) config('dpanel.database_api_url', ''));
         if ($apiUrl === '') {
-            throw new RuntimeException('Database API is not configured. Set SERVERPANEL_DATABASE_API_URL.');
+            throw new RuntimeException('Database API is not configured. Set dPanel_DATABASE_API_URL.');
         }
-        $request = Http::acceptJson()->asJson()->timeout((int) config('serverpanel.execution_api_timeout', 60));
-        $token = trim((string) config('serverpanel.database_api_token', ''));
+        $request = Http::acceptJson()->asJson()->timeout((int) config('dpanel.execution_api_timeout', 60));
+        $token = trim((string) config('dpanel.database_api_token', ''));
         if ($token !== '') {
             $request = $request->withToken($token);
         }

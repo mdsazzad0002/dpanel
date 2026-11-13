@@ -135,7 +135,7 @@ composer require phpseclib/phpseclib
 ## Supervisor Example
 
 ```ini
-[program:serverpanel-worker]
+[program:dpanel-worker]
 process_name=%(program_name)s_%(process_num)02d
 command=php /path-to-project/artisan queue:work redis --queue=heavy,server-commands,default --sleep=2 --tries=1 --timeout=3600
 autostart=true
@@ -143,12 +143,12 @@ autorestart=true
 user=www-data
 numprocs=2
 redirect_stderr=true
-stdout_logfile=/path-to-project/storage/logs/serverpanel-worker.log
+stdout_logfile=/path-to-project/storage/logs/dpanel-worker.log
 ```
 
 ## Config
 
-See `config/serverpanel.php` for:
+See `config/dpanel.php` for:
 
 - `ssh_timeout`
 - `command_timeout`
@@ -165,7 +165,7 @@ See `config/serverpanel.php` for:
 
 Command reports are saved under:
 
-`storage/app/serverpanel/reports/YYYY-MM-DD/server-{id}/command-{uuid}.txt`
+`storage/app/dpanel/reports/YYYY-MM-DD/server-{id}/command-{uuid}.txt`
 
 ## Tests
 

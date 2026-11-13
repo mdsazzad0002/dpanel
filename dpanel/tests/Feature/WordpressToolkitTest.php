@@ -28,7 +28,7 @@ class WordpressToolkitTest extends TestCase
         parent::setUp();
         $this->token = str_repeat('a', 64);
         URL::defaults(['token' => $this->token]);
-        config(['serverpanel.execution_api_base_url' => 'http://drust.test', 'serverpanel.execution_api_token' => 'secret']);
+        config(['dpanel.execution_api_base_url' => 'http://drust.test', 'dpanel.execution_api_token' => 'secret']);
         $this->admin = User::factory()->create();
         $this->admin->assignRole('admin');
     }
@@ -52,7 +52,7 @@ class WordpressToolkitTest extends TestCase
 
     private function url(string $path): string
     {
-        return "/cpsess{$this->token}/wordpress{$path}";
+        return "/dpt{$this->token}/wordpress{$path}";
     }
 
     public function test_updating_named_plugins_sends_only_those_and_returns_fresh_info(): void

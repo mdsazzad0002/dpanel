@@ -179,11 +179,11 @@ class McpOAuthController extends Controller
         $panelToken = $request->hasSession() ? (string) $request->session()->get('panel_session_token', '') : '';
 
         if (Auth::check() && $panelToken !== '') {
-            return redirect('/cpsess'.$panelToken.$consentPath);
+            return redirect('/dpt'.$panelToken.$consentPath);
         }
 
         // Land on the consent screen right after signing in.
-        PanelReturnPath::rememberUrl($request, $request->getSchemeAndHttpHost().'/cpsess0'.$consentPath);
+        PanelReturnPath::rememberUrl($request, $request->getSchemeAndHttpHost().'/dpt0'.$consentPath);
 
         return redirect()->route('login');
     }

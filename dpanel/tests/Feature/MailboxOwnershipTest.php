@@ -50,7 +50,7 @@ class MailboxOwnershipTest extends TestCase
     private function listed(User $user): array
     {
         $emails = [];
-        $this->as($user)->get("/cpsess{$this->token}/emails/list")
+        $this->as($user)->get("/dpt{$this->token}/emails/list")
             ->assertInertia(function (AssertableInertia $page) use (&$emails) {
                 $emails = collect($page->toArray()['props']['mailboxes'])->pluck('email')->sort()->values()->all();
             });
@@ -72,8 +72,8 @@ class MailboxOwnershipTest extends TestCase
         $this->assertSame(['b@two.test', 'c@three.test'], $this->listed($reseller));
         $this->assertCount(4, $this->listed($admin));
 
-        $this->as($reseller)->get("/cpsess{$this->token}/emails/{$other->id}/connect-device")->assertNotFound();
-        $this->as($admin)->get("/cpsess{$this->token}/emails/{$other->id}/connect-device")->assertOk();
+        $this->as($reseller)->get("/dpt{$this->token}/emails/{$other->id}/connect-device")->assertNotFound();
+        $this->as($admin)->get("/dpt{$this->token}/emails/{$other->id}/connect-device")->assertOk();
     }
 
     public function test_only_admins_assign_a_mailbox_to_a_reseller(): void
@@ -82,14 +82,14 @@ class MailboxOwnershipTest extends TestCase
         $reseller = $this->user('reseller');
         $mailbox = $this->mailbox('d@four.test', $admin);
 
-        $this->as($reseller)->patchJson("/cpsess{$this->token}/emails/{$mailbox->id}/reseller", ['reseller_id' => $reseller->id])->assertForbidden();
-        $this->as($admin)->patchJson("/cpsess{$this->token}/emails/{$mailbox->id}/reseller", ['reseller_id' => $this->user('general')->id])->assertUnprocessable();
+        $this->as($reseller)->patchJson("/dpt{$this->token}/emails/{$mailbox->id}/reseller", ['reseller_id' => $reseller->id])->assertForbidden();
+        $this->as($admin)->patchJson("/dpt{$this->token}/emails/{$mailbox->id}/reseller", ['reseller_id' => $this->user('general')->id])->assertUnprocessable();
 
-        $this->as($admin)->patchJson("/cpsess{$this->token}/emails/{$mailbox->id}/reseller", ['reseller_id' => $reseller->id])
+        $this->as($admin)->patchJson("/dpt{$this->token}/emails/{$mailbox->id}/reseller", ['reseller_id' => $reseller->id])
             ->assertOk()->assertJsonPath('reseller.id', $reseller->id);
         $this->assertSame(['d@four.test'], $this->listed($reseller));
 
-        $this->as($admin)->patchJson("/cpsess{$this->token}/emails/{$mailbox->id}/reseller", ['reseller_id' => null])->assertOk();
+        $this->as($admin)->patchJson("/dpt{$this->token}/emails/{$mailbox->id}/reseller", ['reseller_id' => null])->assertOk();
         $this->assertSame([], $this->listed($reseller));
     }
 
@@ -99,14 +99,14 @@ class MailboxOwnershipTest extends TestCase
         $general = $this->user('general');
         $mailbox = $this->mailbox('d@four.test', $admin);
 
-        $this->as($admin)->get("/cpsess{$this->token}/emails/list")
+        $this->as($admin)->get("/dpt{$this->token}/emails/list")
             ->assertInertia(fn (AssertableInertia $page) => $page->has('owners', 2));
 
-        $this->as($admin)->patchJson("/cpsess{$this->token}/emails/{$mailbox->id}/owner", ['owner_id' => $general->id])
+        $this->as($admin)->patchJson("/dpt{$this->token}/emails/{$mailbox->id}/owner", ['owner_id' => $general->id])
             ->assertOk()->assertJsonPath('owner.id', $general->id);
 
         $this->assertSame(['d@four.test'], $this->listed($general));
-        $this->as($admin)->patchJson("/cpsess{$this->token}/emails/{$mailbox->id}/owner", ['owner_id' => 999999])->assertUnprocessable();
+        $this->as($admin)->patchJson("/dpt{$this->token}/emails/{$mailbox->id}/owner", ['owner_id' => 999999])->assertUnprocessable();
     }
 
     public function test_resellers_hand_mailboxes_only_to_their_own_users_and_keep_access(): void
@@ -119,10 +119,10 @@ class MailboxOwnershipTest extends TestCase
         $mine = $this->mailbox('b@two.test', $reseller);
         $other = $this->mailbox('d@four.test', $admin);
 
-        $this->as($reseller)->patchJson("/cpsess{$this->token}/emails/{$mine->id}/owner", ['owner_id' => $stranger->id])->assertUnprocessable();
-        $this->as($reseller)->patchJson("/cpsess{$this->token}/emails/{$other->id}/owner", ['owner_id' => $client->id])->assertNotFound();
+        $this->as($reseller)->patchJson("/dpt{$this->token}/emails/{$mine->id}/owner", ['owner_id' => $stranger->id])->assertUnprocessable();
+        $this->as($reseller)->patchJson("/dpt{$this->token}/emails/{$other->id}/owner", ['owner_id' => $client->id])->assertNotFound();
 
-        $this->as($reseller)->patchJson("/cpsess{$this->token}/emails/{$mine->id}/owner", ['owner_id' => $client->id])
+        $this->as($reseller)->patchJson("/dpt{$this->token}/emails/{$mine->id}/owner", ['owner_id' => $client->id])
             ->assertOk()->assertJsonPath('reseller.id', $reseller->id);
 
         $this->assertSame(['b@two.test'], $this->listed($client));
@@ -134,8 +134,8 @@ class MailboxOwnershipTest extends TestCase
         $general = $this->user('general');
         $mailbox = $this->mailbox('a@one.test', $general);
 
-        $this->as($general)->patchJson("/cpsess{$this->token}/emails/{$mailbox->id}/owner", ['owner_id' => $this->user('general')->id])->assertForbidden();
-        $this->as($general)->get("/cpsess{$this->token}/emails/list")
+        $this->as($general)->patchJson("/dpt{$this->token}/emails/{$mailbox->id}/owner", ['owner_id' => $this->user('general')->id])->assertForbidden();
+        $this->as($general)->get("/dpt{$this->token}/emails/list")
             ->assertInertia(fn (AssertableInertia $page) => $page->has('owners', 0));
     }
 
@@ -146,12 +146,12 @@ class MailboxOwnershipTest extends TestCase
         $stranger = $this->user('general');
         $mailbox = $this->mailbox('d@four.test', $admin);
 
-        $this->as($owner)->get("/cpsess{$this->token}/mail/{$mailbox->id}")->assertNotFound();
+        $this->as($owner)->get("/dpt{$this->token}/mail/{$mailbox->id}")->assertNotFound();
 
-        $this->as($admin)->patchJson("/cpsess{$this->token}/emails/{$mailbox->id}/owner", ['owner_id' => $owner->id])->assertOk();
+        $this->as($admin)->patchJson("/dpt{$this->token}/emails/{$mailbox->id}/owner", ['owner_id' => $owner->id])->assertOk();
 
-        $this->as($owner)->get("/cpsess{$this->token}/mail/{$mailbox->id}")->assertOk();
-        $this->as($stranger)->get("/cpsess{$this->token}/mail/{$mailbox->id}")->assertNotFound();
-        $this->as($stranger)->getJson("/cpsess{$this->token}/mail/{$mailbox->id}/contacts")->assertNotFound();
+        $this->as($owner)->get("/dpt{$this->token}/mail/{$mailbox->id}")->assertOk();
+        $this->as($stranger)->get("/dpt{$this->token}/mail/{$mailbox->id}")->assertNotFound();
+        $this->as($stranger)->getJson("/dpt{$this->token}/mail/{$mailbox->id}/contacts")->assertNotFound();
     }
 }

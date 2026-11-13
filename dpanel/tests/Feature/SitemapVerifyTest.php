@@ -108,10 +108,10 @@ class SitemapVerifyTest extends TestCase
         $this->app->instance(\App\Services\ActivityLogService::class, $activity);
 
         $this->withoutMiddleware()->actingAs($this->admin)->withSession(['panel_session_token' => $this->token])
-            ->putJson("/cpsess{$this->token}/seo/sitemap-verify/robots", ['website_id' => 'site-1', 'content' => "User-agent: *\nAllow: /"])
+            ->putJson("/dpt{$this->token}/seo/sitemap-verify/robots", ['website_id' => 'site-1', 'content' => "User-agent: *\nAllow: /"])
             ->assertOk()->assertJsonPath('file.exists', true);
         $this->withoutMiddleware()->actingAs($this->admin)->withSession(['panel_session_token' => $this->token])
-            ->putJson("/cpsess{$this->token}/seo/sitemap-verify/robots", ['website_id' => 'missing', 'content' => 'x'])
+            ->putJson("/dpt{$this->token}/seo/sitemap-verify/robots", ['website_id' => 'missing', 'content' => 'x'])
             ->assertNotFound();
     }
 
@@ -127,7 +127,7 @@ class SitemapVerifyTest extends TestCase
             ->withoutMiddleware()
             ->actingAs($this->admin)
             ->withSession(['panel_session_token' => $this->token])
-            ->postJson("/cpsess{$this->token}/seo/sitemap-verify/{$action}", $body);
+            ->postJson("/dpt{$this->token}/seo/sitemap-verify/{$action}", $body);
     }
 
     private function expectVerify(string $host, bool $https, ?string $path): void
@@ -143,6 +143,6 @@ class SitemapVerifyTest extends TestCase
             ->withoutMiddleware()
             ->actingAs($this->admin)
             ->withSession(['panel_session_token' => $this->token])
-            ->postJson("/cpsess{$this->token}/seo/sitemap-verify", $body);
+            ->postJson("/dpt{$this->token}/seo/sitemap-verify", $body);
     }
 }

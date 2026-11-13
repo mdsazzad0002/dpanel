@@ -17,8 +17,8 @@ class MailDomainProvisionerTest extends TestCase
     {
         config([
             'app.url' => 'https://panel.example.com',
-            'serverpanel.mail.server_ip' => '203.0.113.5',
-            'serverpanel.mail.hostname' => '',
+            'dpanel.mail.server_ip' => '203.0.113.5',
+            'dpanel.mail.hostname' => '',
         ]);
         $this->app->instance(PublicDnsLookup::class, new FakeDns([]));
         $gateway = $this->gateway();

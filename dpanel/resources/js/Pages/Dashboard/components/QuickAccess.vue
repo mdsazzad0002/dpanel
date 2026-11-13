@@ -19,7 +19,7 @@ const { t } = useI18n();
 const usage = ref(readPageUsage(props.userId));
 
 const panelToken = usePage().props.panel?.token;
-const hrefFor = (path) => (panelToken ? `/cpsess${panelToken}${path}` : path);
+const hrefFor = (path) => (panelToken ? `/dpt${panelToken}${path}` : path);
 
 // Pages for one website or database (Manage, Terminal, Edit…) aren't sidebar
 // tools, but still earn a tile once clicked. app.js stores their title.

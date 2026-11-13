@@ -31,7 +31,7 @@ class WordpressSafeUpdateTest extends TestCase
         parent::setUp();
         $this->token = str_repeat('a', 64);
         URL::defaults(['token' => $this->token]);
-        config(['serverpanel.execution_api_base_url' => 'http://drust.test', 'serverpanel.execution_api_token' => 'secret']);
+        config(['dpanel.execution_api_base_url' => 'http://drust.test', 'dpanel.execution_api_token' => 'secret']);
         $this->admin = User::factory()->create();
         $this->admin->assignRole('admin');
     }
@@ -98,7 +98,7 @@ class WordpressSafeUpdateTest extends TestCase
         Http::fake(['drust.test/api/v1/wordpress' => Http::response(['success' => true, 'data' => ['home' => ['ok' => true, 'output' => "https://shop.test\n", 'error' => '']]])]);
         $live = $this->website('shop.test');
         $copy = $this->website('staging.shop.test');
-        $url = "/cpsess{$this->token}/wordpress/sites/{$live->id}/safe-update";
+        $url = "/dpt{$this->token}/wordpress/sites/{$live->id}/safe-update";
         $as = fn () => $this->withoutMiddleware()->actingAs($this->admin)->withSession(['panel_session_token' => $this->token]);
 
         $as()->postJson($url, ['kind' => 'plugins', 'names' => ['woocommerce']])->assertStatus(422);

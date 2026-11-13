@@ -26,7 +26,7 @@ class WebsiteBulkExportTest extends TestCase
         parent::setUp();
         $this->token = str_repeat('e', 64);
         URL::defaults(['token' => $this->token]);
-        config(['serverpanel.execution_api_base_url' => 'http://127.0.0.1:1', 'serverpanel.execution_api_token' => 'secret']);
+        config(['dpanel.execution_api_base_url' => 'http://127.0.0.1:1', 'dpanel.execution_api_token' => 'secret']);
         $this->admin = User::factory()->create();
         $this->admin->assignRole('admin');
     }
@@ -47,7 +47,7 @@ class WebsiteBulkExportTest extends TestCase
     {
         return $this->withoutMiddleware()->actingAs($this->admin)
             ->withSession(['panel_session_token' => $this->token])
-            ->postJson("/cpsess{$this->token}/websites/bulk-export", $payload);
+            ->postJson("/dpt{$this->token}/websites/bulk-export", $payload);
     }
 
     public function test_it_queues_files_and_every_active_database_per_website(): void

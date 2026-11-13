@@ -84,7 +84,7 @@ class ResticBackupService
             'domain' => (string) $website->domain,
             'site_owner' => (string) $website->site_owner,
             'databases' => $this->databases($website),
-        ]], (int) config('serverpanel.execution_api_upload_timeout', 3600));
+        ]], (int) config('dpanel.execution_api_upload_timeout', 3600));
 
         return ResticSnapshot::query()->create([
             'website_id' => (string) $website->id,
@@ -128,7 +128,7 @@ class ResticBackupService
             'snapshot_id' => $snapshotId,
             'website' => $this->target($website, $item['kind'] === 'database'),
             'item' => $item,
-        ], (int) config('serverpanel.execution_api_upload_timeout', 3600));
+        ], (int) config('dpanel.execution_api_upload_timeout', 3600));
     }
 
     /**
@@ -156,7 +156,7 @@ class ResticBackupService
             'snapshot_id' => $snapshotId,
             'website' => $this->target($website, false),
             'sample' => $sample,
-        ], (int) config('serverpanel.execution_api_upload_timeout', 3600));
+        ], (int) config('dpanel.execution_api_upload_timeout', 3600));
     }
 
     /** @return array{id: string, site_owner: string, databases: list<array<string, string>>} */
@@ -234,12 +234,12 @@ class ResticBackupService
     /** @return array<string, mixed> */
     private function call(string $action, array $payload, int $timeout): array
     {
-        $baseUrl = trim((string) config('serverpanel.execution_api_base_url', ''));
+        $baseUrl = trim((string) config('dpanel.execution_api_base_url', ''));
         if ($baseUrl === '') {
             throw new \RuntimeException('drust is not configured.');
         }
         $response = Http::acceptJson()->asJson()->timeout($timeout)
-            ->withToken(trim((string) config('serverpanel.execution_api_token', '')))
+            ->withToken(trim((string) config('dpanel.execution_api_token', '')))
             ->post(rtrim($baseUrl, '/').'/api/v1/restic/'.$action, $payload);
         if (! $response->successful() || ! (bool) $response->json('success')) {
             throw new \RuntimeException((string) ($response->json('message') ?: 'restic '.$action.' failed.'));

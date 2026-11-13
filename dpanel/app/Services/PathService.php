@@ -219,7 +219,7 @@ class PathService
         $suffixParts = 1;
         if ($count >= 3) {
             $lastTwo = strtolower($labels[$count - 2].'.'.$labels[$count - 1]);
-            if (in_array($lastTwo, (array) config('serverpanel.compound_public_suffixes', []), true)) {
+            if (in_array($lastTwo, (array) config('dpanel.compound_public_suffixes', []), true)) {
                 $suffixParts = 2;
             }
         }

@@ -196,7 +196,7 @@ class PortShareController extends Controller
     private function reservedPorts(): array
     {
         $reserved = [80, 443];
-        $apiPort = parse_url((string) config('serverpanel.execution_api_base_url', ''), PHP_URL_PORT);
+        $apiPort = parse_url((string) config('dpanel.execution_api_base_url', ''), PHP_URL_PORT);
         if (is_int($apiPort)) {
             $reserved[] = $apiPort;
         }

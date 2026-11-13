@@ -10,7 +10,7 @@ use Illuminate\Support\Facades\Schema;
 
 class DnsRegistryService
 {
-    private const NAMESERVER_TABLE = 'serverpanel_dns_nameservers';
+    private const NAMESERVER_TABLE = 'dpanel_dns_nameservers';
 
     public function engine(): string
     {

@@ -19,8 +19,8 @@ class MailHostnameDetectorTest extends TestCase
         $this->app->instance(PublicDnsLookup::class, new FakeDns([]));
         config([
             'app.url' => 'https://panel.example.com',
-            'serverpanel.mail.server_ip' => '203.0.113.5',
-            'serverpanel.mail.hostname' => 'old.example.net',
+            'dpanel.mail.server_ip' => '203.0.113.5',
+            'dpanel.mail.hostname' => 'old.example.net',
         ]);
     }
 

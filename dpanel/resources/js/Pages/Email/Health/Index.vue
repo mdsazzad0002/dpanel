@@ -216,7 +216,7 @@ const statusClass = (status) => ({
             <div v-if="!mailHealth.diagnostics?.log_source" class="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800 dark:border-amber-900 dark:bg-amber-950/40 dark:text-amber-200">
                 <div class="flex gap-3">
                     <i class="bi bi-exclamation-triangle mt-0.5"></i>
-                    <div><p class="font-semibold">Mail logs are not readable</p><p class="mt-1">The panel reads the Postfix log through the execution service (<code>mail-log-tail.sh</code>). Make sure drust is running and its runtime scripts are up to date, or set <code>SERVERPANEL_MAIL_HEALTH_LOG_PATHS</code> to a log under <code>/var/log</code>. Queue data may still be available.</p></div>
+                    <div><p class="font-semibold">Mail logs are not readable</p><p class="mt-1">The panel reads the Postfix log through the execution service (<code>mail-log-tail.sh</code>). Make sure drust is running and its runtime scripts are up to date, or set <code>dPanel_MAIL_HEALTH_LOG_PATHS</code> to a log under <code>/var/log</code>. Queue data may still be available.</p></div>
                 </div>
             </div>
 

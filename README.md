@@ -117,7 +117,7 @@ installs the latest release.
 If the panel domain resolves to the server, the installer also requests its
 SSL certificate and switches the panel to `https://`. When that fails (DNS not
 pointed yet, port 80 blocked), the panel stays on `http://`; retry with
-`cd /var/www/dpanel && sudo php artisan serverpanel:panel-ssl`.
+`cd /var/www/dpanel && sudo php artisan dpanel:panel-ssl`.
 
 The installed version is written to the panel `.env` automatically. See
 [Versions and updates](docs/installation.md#versions-and-updates).

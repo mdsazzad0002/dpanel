@@ -80,13 +80,13 @@ class LoginUserController extends Controller
      */
     private function drust(?array $payload = null): array
     {
-        $baseUrl = trim((string) config('serverpanel.execution_api_base_url', ''));
+        $baseUrl = trim((string) config('dpanel.execution_api_base_url', ''));
         if ($baseUrl === '') {
             throw new \RuntimeException('drust API is not configured.');
         }
 
         $request = Http::acceptJson()->asJson()->timeout(30);
-        $token = trim((string) config('serverpanel.execution_api_token', ''));
+        $token = trim((string) config('dpanel.execution_api_token', ''));
         if ($token !== '') {
             $request = $request->withToken($token);
         }

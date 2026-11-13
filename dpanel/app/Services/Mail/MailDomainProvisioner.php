@@ -96,7 +96,7 @@ class MailDomainProvisioner
             return ['ok' => true, 'message' => ''];
         }
 
-        $selector = trim((string) config('serverpanel.mail.dkim_selector', 'default')) ?: 'default';
+        $selector = trim((string) config('dpanel.mail.dkim_selector', 'default')) ?: 'default';
         $script = ScriptPathResolver::resolveRepositoryRoot().'/scripts/generate-dkim.sh';
         $result = $this->gateway->execute($script, [$domain, $selector], [], true);
 

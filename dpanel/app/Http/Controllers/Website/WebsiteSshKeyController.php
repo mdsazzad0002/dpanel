@@ -31,13 +31,13 @@ class WebsiteSshKeyController extends Controller
             'comment' => ['nullable', 'string', 'max:120', 'regex:/^[^\r\n]+$/'],
         ]);
 
-        $client = Http::acceptJson()->asJson()->timeout((int) config('serverpanel.execution_api_timeout', 60));
-        $apiToken = trim((string) config('serverpanel.execution_api_token', ''));
+        $client = Http::acceptJson()->asJson()->timeout((int) config('dpanel.execution_api_timeout', 60));
+        $apiToken = trim((string) config('dpanel.execution_api_token', ''));
         if ($apiToken !== '') {
             $client = $client->withToken($apiToken);
         }
         $response = $client->post(
-            rtrim((string) config('serverpanel.execution_api_base_url'), '/').'/api/v1/ssh-key/generate',
+            rtrim((string) config('dpanel.execution_api_base_url'), '/').'/api/v1/ssh-key/generate',
             [
                 'site_owner' => (string) $website->site_owner,
                 'comment' => trim((string) ($validated['comment'] ?? '')) ?: 'github-actions@'.$website->domain,

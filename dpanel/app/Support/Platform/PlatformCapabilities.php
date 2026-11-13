@@ -103,14 +103,14 @@ class PlatformCapabilities
     /** @return array<string, mixed> */
     private function fetch(): array
     {
-        $baseUrl = trim((string) config('serverpanel.execution_api_base_url', ''));
+        $baseUrl = trim((string) config('dpanel.execution_api_base_url', ''));
         if ($baseUrl === '') {
             return [];
         }
 
         try {
             $request = Http::acceptJson()->timeout(self::TIMEOUT_SECONDS);
-            $token = trim((string) config('serverpanel.execution_api_token', ''));
+            $token = trim((string) config('dpanel.execution_api_token', ''));
             $response = ($token === '' ? $request : $request->withToken($token))->get(rtrim($baseUrl, '/').'/capabilities');
         } catch (\Throwable) {
             return [];

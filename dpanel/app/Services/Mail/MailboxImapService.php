@@ -569,7 +569,7 @@ class MailboxImapService
     {
         return Cache::remember('mail:authserv-ids', 3600, fn (): array => array_values(array_unique(array_filter(array_map(
             fn ($name): string => strtolower(trim((string) $name)),
-            [gethostname(), app(PostfixHostname::class)->current(), config('serverpanel.mail.hostname')],
+            [gethostname(), app(PostfixHostname::class)->current(), config('dpanel.mail.hostname')],
         )))));
     }
 

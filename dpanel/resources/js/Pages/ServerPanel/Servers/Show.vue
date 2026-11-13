@@ -49,7 +49,7 @@ const trigger = (action) => {
             </div>
 
             <div class="flex flex-wrap gap-2 text-xs">
-                <Link :href="route('serverpanel.index')" class="rounded bg-slate-100 px-3 py-1">Open Control Center</Link>
+                <Link :href="route('dpanel.index')" class="rounded bg-slate-100 px-3 py-1">Open Control Center</Link>
                 <Link :href="route('servers.edit', server.id)" class="rounded bg-slate-100 px-3 py-1">Settings</Link>
             </div>
 

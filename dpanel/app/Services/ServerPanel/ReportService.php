@@ -12,7 +12,7 @@ class ReportService
         $job->loadMissing(['server', 'events', 'approvedBy', 'requestedBy']);
 
         $date = now()->format('Y-m-d');
-        $relativePath = trim((string) config('serverpanel.report_base_path', 'serverpanel/reports'), '/').'/'.$date.'/server-'.$job->server_id.'/command-'.$job->uuid.'.txt';
+        $relativePath = trim((string) config('dpanel.report_base_path', 'dpanel/reports'), '/').'/'.$date.'/server-'.$job->server_id.'/command-'.$job->uuid.'.txt';
 
         $lines = [
             'ServerPanel Command Report',

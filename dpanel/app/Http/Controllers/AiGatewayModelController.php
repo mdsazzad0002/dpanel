@@ -71,7 +71,7 @@ class AiGatewayModelController extends Controller
     private function localTranscription(): array
     {
         $mode = AiGatewayService::localTranscriptionMode();
-        $url = (string) config('serverpanel.media_transcribe_api_url');
+        $url = (string) config('dpanel.media_transcribe_api_url');
         $reachable = false;
 
         if ($mode !== 'off' && str_starts_with($url, 'http')) {

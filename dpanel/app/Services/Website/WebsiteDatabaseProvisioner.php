@@ -231,12 +231,12 @@ class WebsiteDatabaseProvisioner
      */
     private function provisionPostgresql(array $database): array
     {
-        $apiUrl = trim((string) config('serverpanel.database_api_url', ''));
+        $apiUrl = trim((string) config('dpanel.database_api_url', ''));
         if ($apiUrl === '') {
             return ['success' => false, 'output' => 'Database API is not configured.'];
         }
-        $request = Http::acceptJson()->asJson()->timeout((int) config('serverpanel.execution_api_timeout', 60));
-        $token = trim((string) config('serverpanel.database_api_token', ''));
+        $request = Http::acceptJson()->asJson()->timeout((int) config('dpanel.execution_api_timeout', 60));
+        $token = trim((string) config('dpanel.database_api_token', ''));
         if ($token !== '') {
             $request = $request->withToken($token);
         }

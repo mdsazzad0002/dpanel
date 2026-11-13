@@ -12,7 +12,7 @@ use Illuminate\Console\Command;
  */
 class DisableUserTwoFactorCommand extends Command
 {
-    protected $signature = 'serverpanel:2fa-disable {email : Email of the user to disable 2FA for} {--force : Skip the confirmation prompt}';
+    protected $signature = 'dpanel:2fa-disable {email : Email of the user to disable 2FA for} {--force : Skip the confirmation prompt}';
     protected $description = 'Disable two-factor authentication for a user (lost authenticator recovery)';
 
     public function handle(): int

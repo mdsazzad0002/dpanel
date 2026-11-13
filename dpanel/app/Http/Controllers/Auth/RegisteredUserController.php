@@ -57,7 +57,7 @@ class RegisteredUserController extends Controller
         $urlToken = bin2hex(random_bytes(32));
         $cookieToken = bin2hex(random_bytes(32));
         $lifetime = PanelSession::inactivityMinutes();
-        $cookieName = (string) config('serverpanel.panel_cookie_name', 'panel_session_proof');
+        $cookieName = (string) config('dpanel.panel_cookie_name', 'panel_session_proof');
 
         PanelSession::syncSingleSession(
             userId: (int) $user->id,

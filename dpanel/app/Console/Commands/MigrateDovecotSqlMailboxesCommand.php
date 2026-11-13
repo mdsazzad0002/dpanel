@@ -20,8 +20,8 @@ class MigrateDovecotSqlMailboxesCommand extends Command
     public function handle(): int
     {
         $dryRun = (bool) $this->option('dry-run');
-        if (! $dryRun && is_file('/etc/dovecot/serverpanel-users') && ! is_file('/etc/dovecot/serverpanel-users.pre-sql.bak')) {
-            @copy('/etc/dovecot/serverpanel-users', '/etc/dovecot/serverpanel-users.pre-sql.bak');
+        if (! $dryRun && is_file('/etc/dovecot/dpanel-users') && ! is_file('/etc/dovecot/dpanel-users.pre-sql.bak')) {
+            @copy('/etc/dovecot/dpanel-users', '/etc/dovecot/dpanel-users.pre-sql.bak');
         }
         $migrated = 0;
         $skipped = 0;
@@ -91,11 +91,11 @@ class MigrateDovecotSqlMailboxesCommand extends Command
         if (! $dryRun && $skipped === 0) {
             $local = app(LocalCommand::class);
             if (! $local->supports(LocalCommand::POSTFIX) || ! $local->succeeds(['doveconf', '-n'])) {
-                $this->error('Dovecot validation failed; legacy users file backup is /etc/dovecot/serverpanel-users.pre-sql.bak.');
+                $this->error('Dovecot validation failed; legacy users file backup is /etc/dovecot/dpanel-users.pre-sql.bak.');
                 return self::FAILURE;
             }
             if (! $local->succeeds(['systemctl', 'restart', 'dovecot.service'], 120)) {
-                $this->error('Dovecot restart failed; legacy users file backup is /etc/dovecot/serverpanel-users.pre-sql.bak.');
+                $this->error('Dovecot restart failed; legacy users file backup is /etc/dovecot/dpanel-users.pre-sql.bak.');
                 return self::FAILURE;
             }
         }

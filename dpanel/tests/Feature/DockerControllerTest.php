@@ -58,8 +58,8 @@ class DockerControllerTest extends TestCase
         $this->admin->assignRole('admin');
 
         config([
-            'serverpanel.execution_api_base_url' => 'http://drust.test',
-            'serverpanel.execution_api_token' => 'secret',
+            'dpanel.execution_api_base_url' => 'http://drust.test',
+            'dpanel.execution_api_token' => 'secret',
         ]);
     }
 
@@ -67,7 +67,7 @@ class DockerControllerTest extends TestCase
     {
         foreach (['' => 'Containers', '/images' => 'Images'] as $path => $component) {
             $this->request()
-                ->get("/cpsess{$this->token}/docker{$path}")
+                ->get("/dpt{$this->token}/docker{$path}")
                 ->assertOk()
                 ->assertInertia(fn ($page) => $page->component("Docker/{$component}"));
         }
@@ -88,7 +88,7 @@ class DockerControllerTest extends TestCase
         Http::fake(['drust.test/api/v1/docker' => Http::response(['success' => true, 'data' => $this->status])]);
 
         $this->request()
-            ->getJson("/cpsess{$this->token}/docker/status")
+            ->getJson("/dpt{$this->token}/docker/status")
             ->assertOk()
             ->assertJsonPath('data.containers.0.name', 'web');
     }
@@ -98,7 +98,7 @@ class DockerControllerTest extends TestCase
         Http::fake(['drust.test/api/v1/docker' => Http::response(['success' => true, 'message' => 'Container web stopped.', 'data' => $this->status])]);
 
         $this->request()
-            ->postJson("/cpsess{$this->token}/docker/containers/action", ['action' => 'stop', 'id' => 'web'])
+            ->postJson("/dpt{$this->token}/docker/containers/action", ['action' => 'stop', 'id' => 'web'])
             ->assertOk()
             ->assertJsonPath('message', 'Container web stopped.');
 
@@ -113,7 +113,7 @@ class DockerControllerTest extends TestCase
         Http::fake(['drust.test/api/v1/docker' => Http::response(['success' => true, 'message' => 'Container 3f2a is running nginx.', 'data' => $this->status])]);
 
         $this->request()
-            ->postJson("/cpsess{$this->token}/docker/containers/run", [
+            ->postJson("/dpt{$this->token}/docker/containers/run", [
                 'image' => 'nginx:alpine',
                 'ports' => [['host' => 8080, 'container' => 80]],
                 'env' => [['key' => 'DB_PASSWORD', 'value' => 'hunter2']],
@@ -135,13 +135,13 @@ class DockerControllerTest extends TestCase
         Http::fake();
 
         $this->request()
-            ->postJson("/cpsess{$this->token}/docker/containers/action", ['action' => 'stop', 'id' => '--all'])
+            ->postJson("/dpt{$this->token}/docker/containers/action", ['action' => 'stop', 'id' => '--all'])
             ->assertStatus(422);
         $this->request()
-            ->postJson("/cpsess{$this->token}/docker/images/pull", ['image' => 'nginx; rm -rf /'])
+            ->postJson("/dpt{$this->token}/docker/images/pull", ['image' => 'nginx; rm -rf /'])
             ->assertStatus(422);
         $this->request()
-            ->postJson("/cpsess{$this->token}/docker/containers/action", ['action' => 'exec', 'id' => 'web'])
+            ->postJson("/dpt{$this->token}/docker/containers/action", ['action' => 'exec', 'id' => 'web'])
             ->assertStatus(422);
         Http::assertNothingSent();
     }
@@ -151,7 +151,7 @@ class DockerControllerTest extends TestCase
         Http::fake(['drust.test/api/v1/docker' => Http::response(['success' => false, 'message' => 'Failed: image is being used by running container 3f2a'])]);
 
         $this->request()
-            ->deleteJson("/cpsess{$this->token}/docker/images", ['image' => 'nginx:alpine'])
+            ->deleteJson("/dpt{$this->token}/docker/images", ['image' => 'nginx:alpine'])
             ->assertStatus(422)
             ->assertJsonPath('message', 'image is being used by running container 3f2a');
         $this->assertSame(0, ActivityLog::query()->count());
@@ -162,7 +162,7 @@ class DockerControllerTest extends TestCase
         Http::fake(['drust.test/api/v1/docker/logs' => Http::response(['success' => true, 'data' => ['id' => 'web', 'lines' => 50, 'logs' => 'ready']])]);
 
         $this->request()
-            ->postJson("/cpsess{$this->token}/docker/containers/logs", ['id' => 'web', 'lines' => 50])
+            ->postJson("/dpt{$this->token}/docker/containers/logs", ['id' => 'web', 'lines' => 50])
             ->assertOk()
             ->assertJsonPath('data.logs', 'ready');
     }

@@ -326,10 +326,10 @@ class WebsiteGitService
             rtrim((string) $website->project_root, '/'),
         ])));
 
-        $request = Http::acceptJson()->asJson()->timeout(max((int) config('serverpanel.execution_api_timeout', 60), 300));
-        $token = trim((string) config('serverpanel.execution_api_token', ''));
+        $request = Http::acceptJson()->asJson()->timeout(max((int) config('dpanel.execution_api_timeout', 60), 300));
+        $token = trim((string) config('dpanel.execution_api_token', ''));
         if ($token !== '') $request = $request->withToken($token);
-        $response = $request->post(rtrim((string) config('serverpanel.execution_api_base_url'), '/').'/api/v1/local-dev', [
+        $response = $request->post(rtrim((string) config('dpanel.execution_api_base_url'), '/').'/api/v1/local-dev', [
             'action' => $action,
             'site_owner' => (string) $website->site_owner,
             'paths' => $paths,
@@ -354,10 +354,10 @@ class WebsiteGitService
     {
         // init pushes everything; conflicts/resolve may first fetch the full history.
         $slow = in_array($action, ['init', 'conflicts', 'resolve', 'confirm_push'], true);
-        $request = Http::acceptJson()->asJson()->timeout(max((int) config('serverpanel.execution_api_timeout', 60), $slow ? 300 : 0));
-        $token = trim((string) config('serverpanel.execution_api_token', ''));
+        $request = Http::acceptJson()->asJson()->timeout(max((int) config('dpanel.execution_api_timeout', 60), $slow ? 300 : 0));
+        $token = trim((string) config('dpanel.execution_api_token', ''));
         if ($token !== '') $request = $request->withToken($token);
-        $response = $request->post(rtrim((string) config('serverpanel.execution_api_base_url'), '/').'/api/v1/git-deploy', [
+        $response = $request->post(rtrim((string) config('dpanel.execution_api_base_url'), '/').'/api/v1/git-deploy', [
             'site_owner' => (string) $website->site_owner,
             'target' => rtrim((string) $website->root_path, '/'),
             'repository' => $repositoryUrl,

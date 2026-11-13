@@ -14,13 +14,13 @@ action="${1:-install}"
 fail2ban_config_path() {
   case "$(pkg_distro_family)" in
     debian)
-      printf '%s' '/etc/fail2ban/jail.d/serverpanel.local'
+      printf '%s' '/etc/fail2ban/jail.d/dpanel.local'
       ;;
     rpm)
-      printf '%s' '/etc/fail2ban/jail.d/serverpanel.local'
+      printf '%s' '/etc/fail2ban/jail.d/dpanel.local'
       ;;
     *)
-      printf '%s' '/etc/fail2ban/jail.d/serverpanel.local'
+      printf '%s' '/etc/fail2ban/jail.d/dpanel.local'
       ;;
   esac
 }

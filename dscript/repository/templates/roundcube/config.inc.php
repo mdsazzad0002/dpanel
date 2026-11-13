@@ -11,5 +11,5 @@ $config['login_autocomplete'] = 2;
 $config['ip_check'] = true;
 $config['session_lifetime'] = 120;
 $config['product_name'] = 'ServerPanel Webmail';
-$config['plugins'] = ['serverpanel_sso'];
+$config['plugins'] = ['dpanel_sso'];
 $config['skin'] = 'elastic';

@@ -125,7 +125,7 @@ class MailDnsVerifier
     private function checkPtr(string $host, string $ip): array
     {
         if ($ip === '') {
-            return $this->result('ptr', 'Reverse DNS (PTR)', 'warn', '', 'Server IP unknown; set SERVERPANEL_MAIL_SERVER_IP.');
+            return $this->result('ptr', 'Reverse DNS (PTR)', 'warn', '', 'Server IP unknown; set dPanel_MAIL_SERVER_IP.');
         }
         $name = (string) ($this->dns->ptr($ip)[0] ?? '');
         if ($name === '') {

@@ -83,8 +83,8 @@ class WebsiteDockerTest extends TestCase
 
         $this->mock(EdgeGatewayReloader::class)->shouldReceive('reloadDomains')->andReturn(true);
         config([
-            'serverpanel.execution_api_base_url' => 'http://drust.test',
-            'serverpanel.execution_api_token' => 'secret',
+            'dpanel.execution_api_base_url' => 'http://drust.test',
+            'dpanel.execution_api_token' => 'secret',
         ]);
     }
 
@@ -102,7 +102,7 @@ class WebsiteDockerTest extends TestCase
         $this->fakeDrust([['name' => 'dpanel-site-site-1', 'state' => 'running']]);
 
         $this->request()
-            ->postJson("/cpsess{$this->token}/websites/site-1/docker/control", ['action' => 'recreate'])
+            ->postJson("/dpt{$this->token}/websites/site-1/docker/control", ['action' => 'recreate'])
             ->assertOk()
             ->assertJsonPath('docker_process_status', 'running');
 
@@ -120,7 +120,7 @@ class WebsiteDockerTest extends TestCase
         $this->fakeDrust([['name' => 'dpanel-site-site-1', 'state' => 'running']]);
 
         $this->request()
-            ->postJson("/cpsess{$this->token}/websites/site-1/docker/control", ['action' => 'stop'])
+            ->postJson("/dpt{$this->token}/websites/site-1/docker/control", ['action' => 'stop'])
             ->assertOk();
 
         Http::assertSent(fn ($request) => ($request['action'] ?? '') === 'stop' && $request['id'] === 'dpanel-site-site-1');
@@ -132,7 +132,7 @@ class WebsiteDockerTest extends TestCase
         Queue::fake();
 
         $this->request()
-            ->patchJson("/cpsess{$this->token}/websites/site-1/docker/public", ['public' => true])
+            ->patchJson("/dpt{$this->token}/websites/site-1/docker/public", ['public' => true])
             ->assertOk()
             ->assertJsonPath('docker_public', true);
 
@@ -166,7 +166,7 @@ class WebsiteDockerTest extends TestCase
         ]]));
 
         $this->request()
-            ->postJson("/cpsess{$this->token}/websites/site-1/docker/control", ['action' => 'restart'])
+            ->postJson("/dpt{$this->token}/websites/site-1/docker/control", ['action' => 'restart'])
             ->assertOk()
             ->assertJsonPath('message', 'Stack restarted.')
             ->assertJsonPath('data.container.status', 'stack wp: 2/2 running');
@@ -181,7 +181,7 @@ class WebsiteDockerTest extends TestCase
         DB::table('websites')->where('id', 'site-1')->update(['docker_source' => 'port', 'docker_stack' => 'wp', 'docker_port' => 8085]);
         Http::fake(fn () => Http::response(['success' => true, 'message' => 'ok', 'data' => ['services' => []]]));
 
-        $this->request()->postJson("/cpsess{$this->token}/websites/site-1/docker/control", ['action' => 'recreate'])->assertOk();
+        $this->request()->postJson("/dpt{$this->token}/websites/site-1/docker/control", ['action' => 'recreate'])->assertOk();
 
         Http::assertSent(fn ($request) => ($request['action'] ?? '') === 'up' && $request['name'] === 'wp');
     }
@@ -192,9 +192,9 @@ class WebsiteDockerTest extends TestCase
         Http::fake();
         DB::table('websites')->where('id', 'site-1')->update(['docker_source' => 'port', 'docker_stack' => null, 'docker_port' => 9000]);
 
-        $this->request()->postJson("/cpsess{$this->token}/websites/site-1/docker/control", ['action' => 'status'])->assertOk();
-        $this->request()->postJson("/cpsess{$this->token}/websites/site-1/docker/control", ['action' => 'start'])->assertStatus(422);
-        $this->request()->patchJson("/cpsess{$this->token}/websites/site-1/docker/public", ['public' => true])->assertStatus(422);
+        $this->request()->postJson("/dpt{$this->token}/websites/site-1/docker/control", ['action' => 'status'])->assertOk();
+        $this->request()->postJson("/dpt{$this->token}/websites/site-1/docker/control", ['action' => 'start'])->assertStatus(422);
+        $this->request()->patchJson("/dpt{$this->token}/websites/site-1/docker/public", ['public' => true])->assertStatus(422);
         (new StartDockerSiteJob('site-1'))->handle(app(DockerSiteService::class));
 
         Http::assertNothingSent();
@@ -212,12 +212,12 @@ class WebsiteDockerTest extends TestCase
 
         // drust's own API port, or MySQL: refused.
         $this->request()
-            ->patchJson("/cpsess{$this->token}/websites/site-1/runtime-settings", ['runtime' => 'docker', 'docker_source' => 'port', 'docker_target_port' => 3306])
+            ->patchJson("/dpt{$this->token}/websites/site-1/runtime-settings", ['runtime' => 'docker', 'docker_source' => 'port', 'docker_target_port' => 3306])
             ->assertStatus(422)
             ->assertJsonPath('message', 'No Docker container publishes port 3306. Deploy the stack first, then pick one of its ports.');
 
         $this->request()
-            ->patchJson("/cpsess{$this->token}/websites/site-1/runtime-settings", ['runtime' => 'docker', 'docker_source' => 'port', 'docker_stack' => 'wp', 'docker_target_port' => 8085])
+            ->patchJson("/dpt{$this->token}/websites/site-1/runtime-settings", ['runtime' => 'docker', 'docker_source' => 'port', 'docker_stack' => 'wp', 'docker_target_port' => 8085])
             ->assertOk();
 
         $site = Website::query()->findOrFail('site-1');

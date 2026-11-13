@@ -490,7 +490,7 @@ smooth, and what felt confusing or unfinished. Screenshots help a lot.
 | Every file shows as modified after install | `sudo git -C /var/www config core.fileMode false` |
 | `Permission denied` when editing or committing | Re-run the `setfacl` commands in [step 5](#5-give-yourself-write-access) |
 | `destination path '/var/www' already exists` | Use the clone-in-place commands in [step 2](#2-fork-and-clone) |
-| Panel actions fail with `Unauthorized` | Make `DRUST_API_TOKEN` in `/etc/drust/drust.env` match `SERVERPANEL_EXECUTION_API_TOKEN` in `/var/www/dpanel/.env`, then `sudo systemctl restart drust.service` |
+| Panel actions fail with `Unauthorized` | Make `DRUST_API_TOKEN` in `/etc/drust/drust.env` match `dPanel_EXECUTION_API_TOKEN` in `/var/www/dpanel/.env`, then `sudo systemctl restart drust.service` |
 | Laravel shows a 500 error | `sudo tail -n 50 /var/www/dpanel/storage/logs/laravel.log` |
 | `Password authentication is not supported` | Sign in with `gh auth login`, an SSH key, or a token (see [step 3](#sign-in-to-github)) |
 | `Permission denied (publickey)` | Add your SSH key to GitHub and check it with `ssh -T git@github.com` |

@@ -79,7 +79,7 @@ class WebsiteArchiver
         // same path again, so retrying is safe; a timeout is not retried
         // because drust may still be working on it.
         return Http::acceptJson()->asJson()->withToken($token)
-            ->timeout((int) config('serverpanel.execution_api_upload_timeout', 3600))
+            ->timeout((int) config('dpanel.execution_api_upload_timeout', 3600))
             ->retry(6, fn (int $attempt) => min(10000, 1000 * 2 ** ($attempt - 1)), fn (Throwable $e) => self::isDrustRestart($e), throw: false)
             ->post(rtrim($baseUrl, '/').$path, [
                 'zip_path' => $zipPath,

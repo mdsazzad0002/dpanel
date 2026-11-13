@@ -74,7 +74,7 @@ class AccountTerminationTest extends TestCase
 
     public function test_after_the_grace_period_websites_are_archived_then_everything_is_deleted(): void
     {
-        config(['serverpanel.execution_api_base_url' => 'http://drust.test']);
+        config(['dpanel.execution_api_base_url' => 'http://drust.test']);
         Http::fake(['drust.test/*' => Http::response(['success' => true])]);
         $user = User::factory()->create();
         $primary = $this->website($user);

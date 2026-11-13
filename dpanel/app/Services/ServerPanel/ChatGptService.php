@@ -17,11 +17,11 @@ class ChatGptService
         try {
             $response = Http::withToken($apiKey)
                 ->baseUrl((string) config('services.openai.base_url', 'https://api.openai.com/v1'))
-                ->timeout((int) config('serverpanel.ai.timeout', 45))
+                ->timeout((int) config('dpanel.ai.timeout', 45))
                 ->acceptJson()
                 ->post('/chat/completions', [
-                    'model' => (string) config('serverpanel.ai.model', 'gpt-4.1-mini'),
-                    'temperature' => (float) config('serverpanel.ai.temperature', 0.2),
+                    'model' => (string) config('dpanel.ai.model', 'gpt-4.1-mini'),
+                    'temperature' => (float) config('dpanel.ai.temperature', 0.2),
                     'messages' => [
                         [
                             'role' => 'system',

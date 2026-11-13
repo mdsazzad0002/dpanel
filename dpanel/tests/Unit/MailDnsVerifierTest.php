@@ -17,7 +17,7 @@ class MailDnsVerifierTest extends TestCase
     {
         parent::setUp();
         $this->app->instance(PublicDnsLookup::class, new FakeDns([]));
-        config(['serverpanel.mail.hostname' => 'mail.example.net', 'serverpanel.mail.server_ip' => '203.0.113.5']);
+        config(['dpanel.mail.hostname' => 'mail.example.net', 'dpanel.mail.server_ip' => '203.0.113.5']);
     }
 
     public function test_a_complete_setup_passes(): void

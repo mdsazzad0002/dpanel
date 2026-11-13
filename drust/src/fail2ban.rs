@@ -14,7 +14,7 @@ const WHITELIST_FILE: &str = "/etc/fail2ban/jail.d/dpanel-whitelist.local";
 /// Always ignored; fail2ban's own default.
 const LOCAL_IGNORES: &[&str] = &["127.0.0.1/8", "::1"];
 /// dPanel's sshd rules. jail.d/*.local files are read in name order, so `zz-`
-/// lets this override serverpanel.local, whose `port = ssh` misses a custom port.
+/// lets this override dpanel.local, whose `port = ssh` misses a custom port.
 const POLICY_FILE: &str = "/etc/fail2ban/jail.d/zz-dpanel-sshd.local";
 /// Failed SSH logins allowed before an IP is blocked for good.
 pub const DEFAULT_MAX_RETRY: u32 = 3;

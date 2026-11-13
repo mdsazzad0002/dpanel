@@ -23,7 +23,7 @@ class WebsiteCreateOnWindowsTest extends TestCase
         parent::setUp();
 
         config()->set('app.server_base_dir', 'C:\\Users\\First Last\\dPanel\\sites');
-        config()->set('serverpanel.filemanager_api_url', 'http://drust.test/api/v1/filemanager');
+        config()->set('dpanel.filemanager_api_url', 'http://drust.test/api/v1/filemanager');
         Bus::fake();
     }
 

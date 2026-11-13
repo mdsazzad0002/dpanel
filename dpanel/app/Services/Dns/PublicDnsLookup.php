@@ -137,12 +137,12 @@ class PublicDnsLookup
      */
     private function viaDrust(array $chunks): array
     {
-        $baseUrl = trim((string) config('serverpanel.execution_api_base_url', ''));
+        $baseUrl = trim((string) config('dpanel.execution_api_base_url', ''));
         if ($baseUrl === '' || $chunks === []) {
             return array_fill(0, count($chunks), null);
         }
         $url = rtrim($baseUrl, '/').'/api/v1/dns/lookup';
-        $token = trim((string) config('serverpanel.execution_api_token', ''));
+        $token = trim((string) config('dpanel.execution_api_token', ''));
         $request = function ($http, array $queries) use ($url, $token) {
             $http = $http->acceptJson()->asJson()->timeout(15);
 

@@ -14,7 +14,7 @@ class SystemOverviewTest extends TestCase
     protected function setUp(): void
     {
         parent::setUp();
-        config(['serverpanel.execution_api_base_url' => 'http://drust.test', 'serverpanel.execution_api_token' => 'secret']);
+        config(['dpanel.execution_api_base_url' => 'http://drust.test', 'dpanel.execution_api_token' => 'secret']);
     }
 
     public function test_the_overview_asks_drust_for_the_named_services(): void

@@ -56,7 +56,7 @@ impl CronDirScheduler {
         [
             self.dir.join(format!("dpanel-{id}")),
             // Written by the panel before it was renamed.
-            self.dir.join(format!("serverpanel-{id}")),
+            self.dir.join(format!("dpanel-{id}")),
         ]
     }
 }
@@ -395,14 +395,14 @@ mod tests {
     fn cron_dir_files_replace_the_legacy_name() {
         let dir = std::env::temp_dir().join(format!("dpanel-crond-{}", std::process::id()));
         fs::create_dir_all(&dir).unwrap();
-        fs::write(dir.join("serverpanel-7"), "old").unwrap();
+        fs::write(dir.join("dpanel-7"), "old").unwrap();
         let scheduler = CronDirScheduler { dir: dir.clone() };
         scheduler.upsert(&job("7", "0 * * * *")).unwrap();
         assert_eq!(
             fs::read_to_string(dir.join("dpanel-7")).unwrap(),
             "# Managed by dPanel; job-id=7\n0 * * * * shop true\n"
         );
-        assert!(!dir.join("serverpanel-7").exists());
+        assert!(!dir.join("dpanel-7").exists());
         scheduler.remove("7").unwrap();
         assert!(!dir.join("dpanel-7").exists());
         let _ = fs::remove_dir_all(&dir);

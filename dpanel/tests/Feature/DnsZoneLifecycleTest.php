@@ -88,7 +88,7 @@ class DnsZoneLifecycleTest extends TestCase
 
     public function test_a_zone_can_be_created_filled_and_exported(): void
     {
-        $this->request()->post("/cpsess{$this->token}/dns/zones", [
+        $this->request()->post("/dpt{$this->token}/dns/zones", [
             'domain' => 'example.com',
             'type' => 'master',
             'email' => 'hostmaster@example.com',
@@ -106,7 +106,7 @@ class DnsZoneLifecycleTest extends TestCase
         // A new zone answers with this server's nameservers straight away.
         $this->assertSame(['ns1.panel.test', 'ns2.panel.test'], DB::table('records')->where('type', 'NS')->where('name', 'example.com')->orderBy('content')->pluck('content')->all());
 
-        $this->request()->post("/cpsess{$this->token}/dns/records", [
+        $this->request()->post("/dpt{$this->token}/dns/records", [
             'zone_domain' => 'example.com', 'type' => 'TXT', 'name' => '@',
             'content' => 'v=spf1 mx -all', 'ttl' => 300, 'priority' => null, 'status' => 'active',
         ])->assertSessionHasNoErrors();
@@ -116,19 +116,19 @@ class DnsZoneLifecycleTest extends TestCase
             (int) explode(' ', DB::table('records')->where('type', 'SOA')->value('content'))[2],
         );
 
-        $this->request()->post("/cpsess{$this->token}/dns/records", [
+        $this->request()->post("/dpt{$this->token}/dns/records", [
             'zone_domain' => 'example.com', 'type' => 'CNAME', 'name' => '@',
             'content' => 'other.example.net', 'ttl' => 300, 'priority' => null, 'status' => 'active',
         ])->assertSessionHasErrors('content');
 
-        $this->request()->get("/cpsess{$this->token}/dns/zones/{$zone->id}/export")
+        $this->request()->get("/dpt{$this->token}/dns/zones/{$zone->id}/export")
             ->assertOk()
             ->assertSee("example.com.\t300\tIN\tTXT\t\"v=spf1 mx -all\"", false);
     }
 
     public function test_existing_records_are_scanned_and_the_picked_ones_imported(): void
     {
-        config(['serverpanel.execution_api_base_url' => 'http://drust.test', 'serverpanel.execution_api_token' => 'secret', 'dns.our_nameservers' => ['ns1.panel.test']]);
+        config(['dpanel.execution_api_base_url' => 'http://drust.test', 'dpanel.execution_api_token' => 'secret', 'dns.our_nameservers' => ['ns1.panel.test']]);
         $public = [
             'NS shop.test' => ['ada.ns.cloudflare.com', 'bob.ns.cloudflare.com'],
             'A shop.test' => ['203.0.113.10'],
@@ -147,7 +147,7 @@ class DnsZoneLifecycleTest extends TestCase
         $this->createZone('shop.test');
         $zone = DnsZone::query()->sole();
 
-        $scan = $this->request()->getJson("/cpsess{$this->token}/dns/zones/{$zone->id}/scan")->assertOk();
+        $scan = $this->request()->getJson("/dpt{$this->token}/dns/zones/{$zone->id}/scan")->assertOk();
         $scan->assertJsonPath('nameservers', ['ada.ns.cloudflare.com', 'bob.ns.cloudflare.com'])
             ->assertJsonPath('uses_our_nameservers', false)
             ->assertJsonPath('wildcard', false);
@@ -163,7 +163,7 @@ class DnsZoneLifecycleTest extends TestCase
 
         $picked = collect($scan->json('records'))->reject(fn ($r) => $r['type'] === 'SRV')
             ->map(fn ($r) => array_intersect_key($r, array_flip(['name', 'type', 'content', 'priority', 'ttl'])))->values()->all();
-        $this->request()->post("/cpsess{$this->token}/dns/zones/{$zone->id}/import-records", ['records' => $picked])
+        $this->request()->post("/dpt{$this->token}/dns/zones/{$zone->id}/import-records", ['records' => $picked])
             ->assertSessionHas('success', 'Imported 5 records into shop.test.');
 
         $this->assertSame('shop.test', DB::table('records')->where('type', 'CNAME')->value('content'));
@@ -172,7 +172,7 @@ class DnsZoneLifecycleTest extends TestCase
         $this->assertFalse(DB::table('records')->where('type', 'SRV')->exists());
 
         // Scanning again marks what the zone already has.
-        $again = $this->request()->getJson("/cpsess{$this->token}/dns/zones/{$zone->id}/scan");
+        $again = $this->request()->getJson("/dpt{$this->token}/dns/zones/{$zone->id}/scan");
         $this->assertTrue(collect($again->json('records'))->firstWhere('type', 'MX')['exists']);
     }
 
@@ -181,7 +181,7 @@ class DnsZoneLifecycleTest extends TestCase
         $this->createZone('shop.test');
         $zone = DnsZone::query()->sole();
 
-        $this->request()->post("/cpsess{$this->token}/dns/zones/{$zone->id}/import-records", ['records' => [
+        $this->request()->post("/dpt{$this->token}/dns/zones/{$zone->id}/import-records", ['records' => [
             ['name' => 'evil.other.test', 'type' => 'A', 'content' => '203.0.113.9', 'priority' => null, 'ttl' => 300],
         ]])->assertSessionHas('error');
         $this->assertFalse(DB::table('records')->where('name', 'evil.other.test')->exists());
@@ -189,7 +189,7 @@ class DnsZoneLifecycleTest extends TestCase
 
     private function createZone(string $domain): void
     {
-        $this->request()->post("/cpsess{$this->token}/dns/zones", [
+        $this->request()->post("/dpt{$this->token}/dns/zones", [
             'domain' => $domain, 'type' => 'master', 'email' => "hostmaster@{$domain}",
             'refresh' => 3600, 'retry' => 600, 'expire' => 1209600, 'minimum_ttl' => 3600, 'status' => 'active',
         ])->assertSessionHasNoErrors();
@@ -198,7 +198,7 @@ class DnsZoneLifecycleTest extends TestCase
     public function test_several_domains_are_added_at_once(): void
     {
         $this->createZone('one.test');
-        $this->request()->post("/cpsess{$this->token}/dns/zones", [
+        $this->request()->post("/dpt{$this->token}/dns/zones", [
             'domain' => "https://Two.test/\nthree.test, one.test\n\n", 'type' => 'master', 'email' => '',
             'refresh' => 3600, 'retry' => 600, 'expire' => 1209600, 'minimum_ttl' => 3600, 'status' => 'active',
         ])->assertSessionHas('success', 'Created 2 DNS zones. Already existed: one.test.');
@@ -206,7 +206,7 @@ class DnsZoneLifecycleTest extends TestCase
         $this->assertSame(['one.test', 'three.test', 'two.test'], DnsZone::query()->orderBy('domain')->pluck('domain')->all());
         $this->assertStringContainsString('hostmaster.two.test', (string) DB::table('records')->where('type', 'SOA')->where('name', 'two.test')->value('content'));
 
-        $this->request()->post("/cpsess{$this->token}/dns/zones", [
+        $this->request()->post("/dpt{$this->token}/dns/zones", [
             'domain' => 'good.test bad_domain', 'type' => 'master', 'email' => '',
             'refresh' => 3600, 'retry' => 600, 'expire' => 1209600, 'minimum_ttl' => 3600, 'status' => 'active',
         ])->assertSessionHasErrors('domain');
@@ -215,7 +215,7 @@ class DnsZoneLifecycleTest extends TestCase
 
     public function test_connection_status_compares_public_nameservers_with_the_zone(): void
     {
-        config(['serverpanel.execution_api_base_url' => 'http://drust.test', 'serverpanel.execution_api_token' => 'secret']);
+        config(['dpanel.execution_api_base_url' => 'http://drust.test', 'dpanel.execution_api_token' => 'secret']);
         $public = ['NS here.test' => ['ns2.panel.test', 'ns1.panel.test'], 'NS away.test' => ['ada.ns.cloudflare.com']];
         Http::fake(['drust.test/api/v1/dns/lookup' => fn ($request) => Http::response(['success' => true, 'data' => ['answers' => array_map(fn ($q) => [
             'name' => $q['name'], 'type' => $q['type'], 'error' => '', 'values' => $public[$q['type'].' '.$q['name']] ?? [],
@@ -224,7 +224,7 @@ class DnsZoneLifecycleTest extends TestCase
             $this->createZone($domain);
         }
 
-        $zones = $this->request()->getJson("/cpsess{$this->token}/dns/zones/connection")->assertOk()->json('zones');
+        $zones = $this->request()->getJson("/dpt{$this->token}/dns/zones/connection")->assertOk()->json('zones');
         $this->assertSame('connected', $zones['here.test']['status']);
         $this->assertSame('pending', $zones['away.test']['status']);
         $this->assertSame(['ns1.panel.test', 'ns2.panel.test'], collect($zones['away.test']['assigned'])->sort()->values()->all());
@@ -233,7 +233,7 @@ class DnsZoneLifecycleTest extends TestCase
 
     public function test_an_invalid_soa_email_is_rejected_with_a_field_error(): void
     {
-        $this->request()->post("/cpsess{$this->token}/dns/zones", [
+        $this->request()->post("/dpt{$this->token}/dns/zones", [
             'domain' => 'example.com', 'type' => 'master', 'email' => 'not-an-email',
             'refresh' => 3600, 'retry' => 600, 'expire' => 1209600, 'minimum_ttl' => 3600, 'status' => 'active',
         ])->assertSessionHasErrors('email');
@@ -242,7 +242,7 @@ class DnsZoneLifecycleTest extends TestCase
 
     public function test_mail_guide_records_replace_the_old_mail_records_in_a_local_zone(): void
     {
-        $this->request()->post("/cpsess{$this->token}/dns/zones", [
+        $this->request()->post("/dpt{$this->token}/dns/zones", [
             'domain' => 'example.com', 'type' => 'master', 'email' => 'hostmaster@example.com',
             'refresh' => 3600, 'retry' => 600, 'expire' => 1209600, 'minimum_ttl' => 3600, 'status' => 'active',
         ])->assertSessionHasNoErrors();
@@ -251,7 +251,7 @@ class DnsZoneLifecycleTest extends TestCase
             ['TXT', '@', 'v=spf1 include:old.example.net -all', null], ['TXT', '@', 'google-site-verification=abc', null],
             ['CNAME', '_dmarc', 'dmarc.example.net', null], ['A', 'www', '203.0.113.9', null],
         ] as [$type, $name, $content, $priority]) {
-            $this->request()->post("/cpsess{$this->token}/dns/records", [
+            $this->request()->post("/dpt{$this->token}/dns/records", [
                 'zone_domain' => 'example.com', 'type' => $type, 'name' => $name,
                 'content' => $content, 'ttl' => 300, 'priority' => $priority, 'status' => 'active',
             ])->assertSessionHasNoErrors();
@@ -297,7 +297,7 @@ class DnsZoneLifecycleTest extends TestCase
             ['two.test', 'A', 'www', '203.0.113.10'],
             ['two.test', 'CNAME', 'blog', 'host.203.0.113.10.example.net'],
         ] as [$zone, $type, $name, $content]) {
-            $this->request()->post("/cpsess{$this->token}/dns/records", [
+            $this->request()->post("/dpt{$this->token}/dns/records", [
                 'zone_domain' => $zone, 'type' => $type, 'name' => $name,
                 'content' => $content, 'ttl' => 300, 'priority' => null, 'status' => 'active',
             ])->assertSessionHasNoErrors();
@@ -306,7 +306,7 @@ class DnsZoneLifecycleTest extends TestCase
         $before = $serial('two.test');
         $search = ['find' => '203.0.113.10', 'replace' => '198.51.100.20', 'mode' => 'word', 'match_case' => false, 'types' => ['A', 'TXT']];
 
-        $preview = $this->request()->postJson("/cpsess{$this->token}/dns/zones/find-replace/preview", $search)->assertOk();
+        $preview = $this->request()->postJson("/dpt{$this->token}/dns/zones/find-replace/preview", $search)->assertOk();
         $changes = collect($preview->json('changes'));
         // Whole-word matching leaves 203.0.113.100 alone; the type filter leaves the CNAME alone.
         $this->assertSame(['one.test A', 'one.test TXT', 'www.two.test A'], $changes->map(fn ($c) => "{$c['name']} {$c['type']}")->sort()->values()->all());
@@ -315,7 +315,7 @@ class DnsZoneLifecycleTest extends TestCase
 
         // Only the picked records change.
         $picked = $changes->reject(fn ($c) => $c['name'] === 'www.two.test')->pluck('id')->all();
-        $this->request()->post("/cpsess{$this->token}/dns/zones/find-replace", $search + ['record_ids' => $picked])
+        $this->request()->post("/dpt{$this->token}/dns/zones/find-replace", $search + ['record_ids' => $picked])
             ->assertSessionHas('success', 'Updated 2 records in 1 zone.');
         $this->assertSame('198.51.100.20', DB::table('records')->where('name', 'one.test')->where('type', 'A')->value('content'));
         $this->assertSame('"v=spf1 ip4:198.51.100.20 mx -all"', DB::table('dns_records')->where('type', 'TXT')->value('content'));
@@ -324,9 +324,9 @@ class DnsZoneLifecycleTest extends TestCase
         $this->assertSame($before, $serial('two.test'));
 
         // A value that is not valid for the record type is reported, not saved.
-        $bad = $this->request()->postJson("/cpsess{$this->token}/dns/zones/find-replace/preview", ['find' => '203.0.113.10', 'replace' => 'not-an-ip', 'mode' => 'exact', 'types' => ['A']]);
+        $bad = $this->request()->postJson("/dpt{$this->token}/dns/zones/find-replace/preview", ['find' => '203.0.113.10', 'replace' => 'not-an-ip', 'mode' => 'exact', 'types' => ['A']]);
         $this->assertNotNull($bad->json('changes.0.error'));
-        $this->request()->post("/cpsess{$this->token}/dns/zones/find-replace", ['find' => '203.0.113.10', 'replace' => 'not-an-ip', 'mode' => 'exact', 'types' => ['A'], 'record_ids' => [$bad->json('changes.0.id')]])
+        $this->request()->post("/dpt{$this->token}/dns/zones/find-replace", ['find' => '203.0.113.10', 'replace' => 'not-an-ip', 'mode' => 'exact', 'types' => ['A'], 'record_ids' => [$bad->json('changes.0.id')]])
             ->assertSessionHas('error');
         $this->assertSame('203.0.113.10', DB::table('records')->where('name', 'www.two.test')->value('content'));
     }
@@ -334,7 +334,7 @@ class DnsZoneLifecycleTest extends TestCase
     public function test_find_and_replace_only_reaches_the_users_own_zones(): void
     {
         $this->createZone('mine.test');
-        $this->request()->post("/cpsess{$this->token}/dns/records", [
+        $this->request()->post("/dpt{$this->token}/dns/records", [
             'zone_domain' => 'mine.test', 'type' => 'A', 'name' => '@',
             'content' => '203.0.113.10', 'ttl' => 300, 'priority' => null, 'status' => 'active',
         ])->assertSessionHasNoErrors();
@@ -342,9 +342,9 @@ class DnsZoneLifecycleTest extends TestCase
         $this->admin = User::factory()->create();
         $this->admin->assignRole('general');
 
-        $this->request()->postJson("/cpsess{$this->token}/dns/zones/find-replace/preview", ['find' => '203.0.113.10', 'replace' => '198.51.100.20', 'mode' => 'word'])
+        $this->request()->postJson("/dpt{$this->token}/dns/zones/find-replace/preview", ['find' => '203.0.113.10', 'replace' => '198.51.100.20', 'mode' => 'word'])
             ->assertOk()->assertJsonPath('changes', []);
-        $this->request()->post("/cpsess{$this->token}/dns/zones/find-replace", ['find' => '203.0.113.10', 'replace' => '198.51.100.20', 'mode' => 'word', 'record_ids' => [$recordId]])
+        $this->request()->post("/dpt{$this->token}/dns/zones/find-replace", ['find' => '203.0.113.10', 'replace' => '198.51.100.20', 'mode' => 'word', 'record_ids' => [$recordId]])
             ->assertSessionHas('error');
         $this->assertSame('203.0.113.10', DB::table('records')->where('id', $recordId)->value('content'));
     }

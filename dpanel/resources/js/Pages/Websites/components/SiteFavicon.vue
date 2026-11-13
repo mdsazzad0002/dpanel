@@ -3,7 +3,7 @@ import { ref, watch } from 'vue';
 
 // A website's own /favicon.ico, loaded straight from the site; the letter
 // avatar shows while it loads and whenever the site has none or is down.
-// no-referrer: the panel URL carries the cpsess session token, which must
+// no-referrer: the panel URL carries the dpt session token, which must
 // never reach the website in a Referer header.
 const props = defineProps({
     url: { type: String, default: '' },

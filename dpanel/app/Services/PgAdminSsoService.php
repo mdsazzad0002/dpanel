@@ -49,14 +49,14 @@ class PgAdminSsoService
      */
     private function request(array $payload): string
     {
-        $baseUrl = trim((string) config('serverpanel.execution_api_base_url', ''));
+        $baseUrl = trim((string) config('dpanel.execution_api_base_url', ''));
         if ($baseUrl === '') {
             throw new \RuntimeException('drust API is not configured.');
         }
 
         // Each call boots pgAdmin's CLI twice, which takes several seconds.
         $request = Http::acceptJson()->asJson()->timeout(60);
-        $token = trim((string) config('serverpanel.execution_api_token', ''));
+        $token = trim((string) config('dpanel.execution_api_token', ''));
         if ($token !== '') {
             $request = $request->withToken($token);
         }

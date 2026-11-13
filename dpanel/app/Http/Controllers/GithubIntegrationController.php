@@ -99,7 +99,7 @@ class GithubIntegrationController extends Controller
     }
 
     /**
-     * GitHub's redirect_uri must be a fixed URL (no rotating cpsess token), so
+     * GitHub's redirect_uri must be a fixed URL (no rotating dpt token), so
      * this route is public and trusts only the state stored in the browser
      * session when the user clicked "Connect GitHub" inside the panel.
      */

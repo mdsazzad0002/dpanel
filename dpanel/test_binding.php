@@ -24,7 +24,7 @@ class TokenParamTest extends TestCase
         ]);
 
         $token = \Str::random(64);
-        $url = "/cpsess{$token}/ai-gateway/providers/{$provider->id}/test";
+        $url = "/dpt{$token}/ai-gateway/providers/{$provider->id}/test";
 
         $response = $this->post($url);
         echo "ai-gateway providers/{provider}/test response status: " . $response->status() . PHP_EOL;
@@ -40,7 +40,7 @@ class TokenParamTest extends TestCase
 
         $server = Server::factory()->create();
         $token = \Str::random(64);
-        $url = "/cpsess{$token}/servers/{$server->id}";
+        $url = "/dpt{$token}/servers/{$server->id}";
 
         $response = $this->get($url);
         echo "servers/{server} response status: " . $response->status() . PHP_EOL;

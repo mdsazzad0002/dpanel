@@ -101,7 +101,7 @@ class AiGatewayTranscriptionTest extends TestCase
 
     public function test_drusts_whisper_is_the_voice_to_text_gateway_when_it_is_running(): void
     {
-        config(['serverpanel.media_transcribe_api_url' => 'http://drust.test/api/v1/media/transcribe', 'aigateway.local_transcription' => 'first']);
+        config(['dpanel.media_transcribe_api_url' => 'http://drust.test/api/v1/media/transcribe', 'aigateway.local_transcription' => 'first']);
         Http::fake(['drust.test/*' => Http::response(['success' => true, 'message' => 'Transcribed', 'data' => ['text' => ' POS er dam koto? ']])]);
 
         // no transcription model at all: drust alone is enough
@@ -116,7 +116,7 @@ class AiGatewayTranscriptionTest extends TestCase
 
     public function test_models_take_over_when_drust_cannot_transcribe(): void
     {
-        config(['serverpanel.media_transcribe_api_url' => 'http://drust.test/api/v1/media/transcribe', 'aigateway.local_transcription' => 'first']);
+        config(['dpanel.media_transcribe_api_url' => 'http://drust.test/api/v1/media/transcribe', 'aigateway.local_transcription' => 'first']);
         $this->model('groq', 'whisper-large-v3-turbo', ['transcription']);
         Http::fake([
             'drust.test/*' => Http::response(['success' => false, 'message' => 'drust was built without speech support'], 500),
@@ -129,7 +129,7 @@ class AiGatewayTranscriptionTest extends TestCase
 
     public function test_fallback_mode_asks_drust_only_after_the_models_fail(): void
     {
-        config(['serverpanel.media_transcribe_api_url' => 'http://drust.test/api/v1/media/transcribe', 'aigateway.local_transcription' => 'fallback']);
+        config(['dpanel.media_transcribe_api_url' => 'http://drust.test/api/v1/media/transcribe', 'aigateway.local_transcription' => 'fallback']);
         $this->model('groq', 'whisper-large-v3-turbo', ['transcription']);
         Http::fake([
             'api.groq.com/*' => Http::response(['error' => ['message' => 'Rate limit reached']], 429),
@@ -146,7 +146,7 @@ class AiGatewayTranscriptionTest extends TestCase
 
     public function test_translations_turn_speech_into_english_with_drusts_whisper(): void
     {
-        config(['serverpanel.media_transcribe_api_url' => 'http://drust.test/api/v1/media/transcribe', 'aigateway.local_transcription' => 'first']);
+        config(['dpanel.media_transcribe_api_url' => 'http://drust.test/api/v1/media/transcribe', 'aigateway.local_transcription' => 'first']);
         $this->model('groq', 'whisper-large-v3-turbo', ['transcription']);
         Http::fake(['drust.test/*' => Http::response(['success' => true, 'data' => ['text' => 'What is the price?']])]);
 

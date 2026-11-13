@@ -51,7 +51,7 @@ class MailDnsRecords
         }
         $candidates = array_values(array_filter([
             app(PostfixHostname::class)->current(),
-            strtolower(trim((string) config('serverpanel.mail.hostname', ''))),
+            strtolower(trim((string) config('dpanel.mail.hostname', ''))),
             strtolower((string) parse_url((string) config('app.url', ''), PHP_URL_HOST)),
         ], fn ($host) => MailDomainProvisioner::isValidFqdn($host)));
 
@@ -84,7 +84,7 @@ class MailDnsRecords
         if ($this->assignedIp !== null) {
             return $this->assignedIp;
         }
-        $configured = trim((string) config('serverpanel.mail.server_ip', ''));
+        $configured = trim((string) config('dpanel.mail.server_ip', ''));
         if (filter_var($configured, FILTER_VALIDATE_IP)) {
             return $configured;
         }

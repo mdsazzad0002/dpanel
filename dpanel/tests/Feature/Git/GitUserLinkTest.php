@@ -25,7 +25,7 @@ class GitUserLinkTest extends TestCase
         parent::setUp();
         $this->token = str_repeat('a', 64);
         URL::defaults(['token' => $this->token]);
-        config(['serverpanel.execution_api_base_url' => 'http://daemon.test']);
+        config(['dpanel.execution_api_base_url' => 'http://daemon.test']);
     }
 
     private function user(string $role): User
@@ -60,7 +60,7 @@ class GitUserLinkTest extends TestCase
 
     private function url(WebsiteGitDeployment $deployment, string $path = ''): string
     {
-        return "/cpsess{$this->token}/websites/{$deployment->website_id}/git{$path}";
+        return "/dpt{$this->token}/websites/{$deployment->website_id}/git{$path}";
     }
 
     public function test_another_user_must_link_before_pulling(): void

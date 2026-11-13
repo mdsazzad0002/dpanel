@@ -455,15 +455,15 @@ fi
 # Keep Laravel's client token aligned with the daemon token automatically.
 LARAVEL_ENV="${DPANEL_ROOT}/.env"
 if [[ -f "${LARAVEL_ENV}" ]]; then
-  if grep -q '^SERVERPANEL_EXECUTION_API_TOKEN=' "${LARAVEL_ENV}"; then
-    sed -i "s#^SERVERPANEL_EXECUTION_API_TOKEN=.*#SERVERPANEL_EXECUTION_API_TOKEN=${DRUST_API_TOKEN}#" "${LARAVEL_ENV}"
+  if grep -q '^dPanel_EXECUTION_API_TOKEN=' "${LARAVEL_ENV}"; then
+    sed -i "s#^dPanel_EXECUTION_API_TOKEN=.*#dPanel_EXECUTION_API_TOKEN=${DRUST_API_TOKEN}#" "${LARAVEL_ENV}"
   else
-    printf '\nSERVERPANEL_EXECUTION_API_TOKEN=%s\n' "${DRUST_API_TOKEN}" >> "${LARAVEL_ENV}"
+    printf '\ndPanel_EXECUTION_API_TOKEN=%s\n' "${DRUST_API_TOKEN}" >> "${LARAVEL_ENV}"
   fi
   DRUST_LIVE_API_URL="http://127.0.0.1:${DRUST_API_PORT:-9500}"
   for key_value in \
-    "SERVERPANEL_EXECUTION_API_BASE_URL=${DRUST_LIVE_API_URL}" \
-    "SERVERPANEL_FILEMANAGER_API_URL=${DRUST_LIVE_API_URL}/api/v1/filemanager"; do
+    "dPanel_EXECUTION_API_BASE_URL=${DRUST_LIVE_API_URL}" \
+    "dPanel_FILEMANAGER_API_URL=${DRUST_LIVE_API_URL}/api/v1/filemanager"; do
     key="${key_value%%=*}"
     if grep -q "^${key}=" "${LARAVEL_ENV}"; then
       sed -i "s#^${key}=.*#${key_value}#" "${LARAVEL_ENV}"

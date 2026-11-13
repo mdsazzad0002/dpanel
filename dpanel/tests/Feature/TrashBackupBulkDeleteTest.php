@@ -25,8 +25,8 @@ class TrashBackupBulkDeleteTest extends TestCase
         $this->token = str_repeat('a', 64);
         URL::defaults(['token' => $this->token]);
         config([
-            'serverpanel.execution_api_base_url' => 'http://drust.test',
-            'serverpanel.execution_api_token' => 'secret',
+            'dpanel.execution_api_base_url' => 'http://drust.test',
+            'dpanel.execution_api_token' => 'secret',
         ]);
         Http::fake(['drust.test/*' => fn () => $this->drustOk
             ? Http::response(['success' => true])
@@ -65,7 +65,7 @@ class TrashBackupBulkDeleteTest extends TestCase
         return $this->withoutMiddleware(EnsurePanelSessionIsValid::class)
             ->actingAs($actor)
             ->withSession(['panel_session_token' => $this->token])
-            ->postJson("/cpsess{$this->token}/trash-backups/bulk-delete", ['ids' => $ids]);
+            ->postJson("/dpt{$this->token}/trash-backups/bulk-delete", ['ids' => $ids]);
     }
 
     public function test_admin_deletes_selected_backups_through_drust(): void

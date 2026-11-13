@@ -212,14 +212,14 @@ class PostfixDovecotBackend implements MailBackend
     /** @param  array<string, mixed>  $extra */
     private function storage(string $action, Mailbox $mailbox, array $extra = []): void
     {
-        $baseUrl = rtrim((string) config('serverpanel.execution_api_base_url', ''), '/');
-        $token = trim((string) config('serverpanel.execution_api_token', ''));
+        $baseUrl = rtrim((string) config('dpanel.execution_api_base_url', ''), '/');
+        $token = trim((string) config('dpanel.execution_api_token', ''));
         if ($baseUrl === '' || $token === '') {
             throw new MailBackendException('Rust execution service is not configured.');
         }
         try {
             $response = Http::acceptJson()->asJson()->withToken($token)
-                ->timeout((int) config('serverpanel.execution_api_timeout', 60))
+                ->timeout((int) config('dpanel.execution_api_timeout', 60))
                 ->post($baseUrl.'/api/v1/mailbox-storage', [
                     'action' => $action,
                     'mail_home' => $mailbox->mail_home,

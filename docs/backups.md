@@ -3,7 +3,7 @@
 dPanel includes a built-in backup command:
 
 ```bash
-php artisan serverpanel:backup
+php artisan dpanel:backup
 ```
 
 ## What gets backed up
@@ -69,19 +69,19 @@ Notes:
 ## Run backup manually
 
 ```bash
-php artisan serverpanel:backup
+php artisan dpanel:backup
 ```
 
 Only database:
 
 ```bash
-php artisan serverpanel:backup --only=db
+php artisan dpanel:backup --only=db
 ```
 
 Only files:
 
 ```bash
-php artisan serverpanel:backup --only=files
+php artisan dpanel:backup --only=files
 ```
 
 ## Restore on a new dPanel server
@@ -89,14 +89,14 @@ php artisan serverpanel:backup --only=files
 Install the same or a newer compatible dPanel release on the destination, copy the full `backup-*.tar.gz` file there, then validate it first:
 
 ```bash
-php artisan serverpanel:restore /path/to/backup-*.tar.gz --dry-run
+php artisan dpanel:restore /path/to/backup-*.tar.gz --dry-run
 ```
 
 After the validation succeeds, put the panel in maintenance mode and restore:
 
 ```bash
 php artisan down
-php artisan serverpanel:restore /path/to/backup-file.tar.gz --force
+php artisan dpanel:restore /path/to/backup-file.tar.gz --force
 php artisan up
 ```
 
@@ -157,7 +157,7 @@ Note:
 ## Verify
 
 1. Run:
-   - `php artisan serverpanel:backup`
+   - `php artisan dpanel:backup`
 2. Check folder:
    - `storage/app/backups`
 3. Test scheduler:
@@ -175,7 +175,7 @@ Note:
 4. Ensure write permission:
    - `storage/app/backups`
 5. Run once manually:
-   - `php artisan serverpanel:backup --only=all`
+   - `php artisan dpanel:backup --only=all`
 6. Configure scheduler:
    - Linux cron or Windows Task Scheduler to run `php artisan schedule:run` every minute.
 7. Open `/backups` and verify new run is listed and downloadable.
@@ -193,7 +193,7 @@ Note:
 2. Keep host checking enabled for production:
    - `BACKUP_REMOTE_STRICT_HOST_CHECKING=true`
 3. Test manually:
-   - `php artisan serverpanel:backup --only=all`
+   - `php artisan dpanel:backup --only=all`
 4. Verify remote folder:
    - `<BACKUP_REMOTE_PATH>/YYYYmmdd_HHMMSS/`
 5. Open `/backups` page:

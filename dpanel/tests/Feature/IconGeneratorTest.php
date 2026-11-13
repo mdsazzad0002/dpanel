@@ -96,6 +96,6 @@ class IconGeneratorTest extends TestCase
             ->withoutMiddleware()
             ->actingAs($this->admin)
             ->withSession(['panel_session_token' => $this->token])
-            ->post("/cpsess{$this->token}/seo/icon-generator/{$action}", $body, ['Accept' => 'application/json']);
+            ->post("/dpt{$this->token}/seo/icon-generator/{$action}", $body, ['Accept' => 'application/json']);
     }
 }

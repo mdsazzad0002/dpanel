@@ -64,7 +64,7 @@ class RedirectRuleTest extends TestCase
             ->withArgs(fn ($channel, $payload) => json_decode($payload, true)['domains'] === ['shop.test'])
             ->andReturn(1);
 
-        $this->request()->post("/cpsess{$this->token}/rules/redirects", [
+        $this->request()->post("/dpt{$this->token}/rules/redirects", [
             'website_id' => 'site-1',
             'kind' => 'to_domain',
             'name' => 'Moved',
@@ -81,7 +81,7 @@ class RedirectRuleTest extends TestCase
 
     public function test_domain_target_must_be_a_bare_hostname(): void
     {
-        $this->request()->post("/cpsess{$this->token}/rules/redirects", [
+        $this->request()->post("/dpt{$this->token}/rules/redirects", [
             'website_id' => 'site-1',
             'kind' => 'to_domain',
             'name' => 'Moved',
@@ -96,17 +96,17 @@ class RedirectRuleTest extends TestCase
     {
         $payload = ['kind' => 'http_to_https', 'name' => 'HTTPS', 'status_code' => 301, 'preserve_query' => true];
 
-        $this->request()->post("/cpsess{$this->token}/rules/redirects", ['website_id' => 'site-2', ...$payload])
+        $this->request()->post("/dpt{$this->token}/rules/redirects", ['website_id' => 'site-2', ...$payload])
             ->assertSessionHasErrors('website_id');
 
         WebsiteRedirectRule::query()->create(['website_id' => 'site-1', ...$payload]);
-        $this->request()->post("/cpsess{$this->token}/rules/redirects", ['website_id' => 'site-1', ...$payload])
+        $this->request()->post("/dpt{$this->token}/rules/redirects", ['website_id' => 'site-1', ...$payload])
             ->assertSessionHasErrors('kind');
     }
 
     public function test_panel_site_is_out_of_reach(): void
     {
-        $this->request()->post("/cpsess{$this->token}/rules/redirects", [
+        $this->request()->post("/dpt{$this->token}/rules/redirects", [
             'website_id' => '1',
             'kind' => 'www_to_root',
             'name' => 'WWW',
@@ -122,10 +122,10 @@ class RedirectRuleTest extends TestCase
         ]);
         $this->expectPublish(2)->andReturn(1);
 
-        $this->request()->patch("/cpsess{$this->token}/rules/redirects/{$rule->id}/toggle")->assertSessionHas('success');
+        $this->request()->patch("/dpt{$this->token}/rules/redirects/{$rule->id}/toggle")->assertSessionHas('success');
         $this->assertFalse($rule->fresh()->enabled);
 
-        $this->request()->delete("/cpsess{$this->token}/rules/redirects/{$rule->id}")->assertSessionHas('success');
+        $this->request()->delete("/dpt{$this->token}/rules/redirects/{$rule->id}")->assertSessionHas('success');
         $this->assertSame(0, WebsiteRedirectRule::query()->count());
     }
 

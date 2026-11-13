@@ -224,12 +224,12 @@ class WebsiteDeletionService
 
     private function archiveWebsiteViaDrust(Website $website, array $databaseRequests, array $cronJobs): array
     {
-        $drustUrl = trim((string) config('serverpanel.execution_api_base_url', ''));
+        $drustUrl = trim((string) config('dpanel.execution_api_base_url', ''));
         if ($drustUrl === '') {
             throw new \RuntimeException('drust archive API is not configured.');
         }
 
-        $token = trim((string) config('serverpanel.execution_api_token', ''));
+        $token = trim((string) config('dpanel.execution_api_token', ''));
         if ($token === '') {
             throw new \RuntimeException('drust archive API token is missing.');
         }
@@ -248,7 +248,7 @@ class WebsiteDeletionService
 
         $response = Http::acceptJson()
             ->asJson()
-            ->timeout((int) config('serverpanel.execution_api_upload_timeout', 3600))
+            ->timeout((int) config('dpanel.execution_api_upload_timeout', 3600))
             ->withToken($token)
             ->post(rtrim($drustUrl, '/').'/api/v1/website/archive', [
                 'zip_path' => $zipPath,
@@ -294,15 +294,15 @@ class WebsiteDeletionService
         if (! $deleteUser && $paths === []) {
             return;
         }
-        $baseUrl = trim((string) config('serverpanel.execution_api_base_url', ''));
-        $token = trim((string) config('serverpanel.execution_api_token', ''));
+        $baseUrl = trim((string) config('dpanel.execution_api_base_url', ''));
+        $token = trim((string) config('dpanel.execution_api_token', ''));
         if ($baseUrl === '' || $token === '') {
             throw new \RuntimeException('Rust website cleanup API is not configured.');
         }
 
         $response = Http::acceptJson()
             ->asJson()
-            ->timeout((int) config('serverpanel.execution_api_timeout', 60))
+            ->timeout((int) config('dpanel.execution_api_timeout', 60))
             ->withToken($token)
             ->post(rtrim($baseUrl, '/').'/api/v1/website/delete', [
                 'site_owner' => (string) $website->site_owner,

@@ -58,8 +58,8 @@ class DockerManagerTest extends TestCase
         $this->admin->assignRole('admin');
 
         config([
-            'serverpanel.execution_api_base_url' => 'http://drust.test',
-            'serverpanel.execution_api_token' => 'secret',
+            'dpanel.execution_api_base_url' => 'http://drust.test',
+            'dpanel.execution_api_token' => 'secret',
         ]);
     }
 
@@ -67,7 +67,7 @@ class DockerManagerTest extends TestCase
     {
         foreach (['overview' => 'Overview', 'stacks' => 'Stacks', 'networks' => 'Networks', 'volumes' => 'Volumes', 'templates' => 'Templates'] as $path => $component) {
             $this->request()
-                ->get("/cpsess{$this->token}/docker/{$path}")
+                ->get("/dpt{$this->token}/docker/{$path}")
                 ->assertOk()
                 ->assertInertia(fn ($page) => $page->component("Docker/{$component}"));
         }
@@ -89,7 +89,7 @@ class DockerManagerTest extends TestCase
         Http::fake(['drust.test/api/v1/docker' => Http::response(['success' => true, 'message' => 'Container es recreated.', 'data' => $this->status])]);
 
         $this->request()
-            ->postJson("/cpsess{$this->token}/docker/containers/recreate", [
+            ->postJson("/dpt{$this->token}/docker/containers/recreate", [
                 'id' => 'es',
                 'spec' => [
                     'image' => 'elasticsearch:8.15.3',
@@ -122,10 +122,10 @@ class DockerManagerTest extends TestCase
         Http::fake();
 
         $this->request()
-            ->postJson("/cpsess{$this->token}/docker/containers/run", ['image' => 'nginx', 'memory' => 'lots'])
+            ->postJson("/dpt{$this->token}/docker/containers/run", ['image' => 'nginx', 'memory' => 'lots'])
             ->assertStatus(422);
         $this->request()
-            ->postJson("/cpsess{$this->token}/docker/containers/run", ['image' => 'nginx', 'network' => '--host'])
+            ->postJson("/dpt{$this->token}/docker/containers/run", ['image' => 'nginx', 'network' => '--host'])
             ->assertStatus(422);
         Http::assertNothingSent();
     }
@@ -141,7 +141,7 @@ class DockerManagerTest extends TestCase
         });
 
         $this->request()
-            ->postJson("/cpsess{$this->token}/docker/containers/bulk", ['action' => 'restart', 'ids' => ['web', 'broken', 'web']])
+            ->postJson("/dpt{$this->token}/docker/containers/bulk", ['action' => 'restart', 'ids' => ['web', 'broken', 'web']])
             ->assertOk()
             ->assertJsonPath('success', false)
             ->assertJsonPath('data.containers.0.name', 'web');
@@ -155,7 +155,7 @@ class DockerManagerTest extends TestCase
         Http::fake(['drust.test/api/v1/docker/exec' => Http::response(['success' => true, 'message' => 'Command finished.', 'data' => ['output' => "hi\n", 'exit_code' => 0, 'timed_out' => false]])]);
 
         $this->request()
-            ->postJson("/cpsess{$this->token}/docker/containers/exec", ['id' => 'web', 'command' => 'echo hi', 'workdir' => '/app'])
+            ->postJson("/dpt{$this->token}/docker/containers/exec", ['id' => 'web', 'command' => 'echo hi', 'workdir' => '/app'])
             ->assertOk()
             ->assertJsonPath('data.output', "hi\n");
 
@@ -170,8 +170,8 @@ class DockerManagerTest extends TestCase
             'drust.test/api/v1/docker/stats' => Http::response(['success' => true, 'message' => 'ok', 'data' => ['stats' => [['name' => 'web', 'cpu' => '0.5%']]]]),
         ]);
 
-        $this->request()->postJson("/cpsess{$this->token}/docker/containers/inspect", ['id' => 'web'])->assertOk()->assertJsonPath('data.spec.image', 'nginx');
-        $this->request()->getJson("/cpsess{$this->token}/docker/containers/stats")->assertOk()->assertJsonPath('data.stats.0.cpu', '0.5%');
+        $this->request()->postJson("/dpt{$this->token}/docker/containers/inspect", ['id' => 'web'])->assertOk()->assertJsonPath('data.spec.image', 'nginx');
+        $this->request()->getJson("/dpt{$this->token}/docker/containers/stats")->assertOk()->assertJsonPath('data.stats.0.cpu', '0.5%');
         $this->assertSame(0, ActivityLog::query()->count());
     }
 
@@ -180,13 +180,13 @@ class DockerManagerTest extends TestCase
         Http::fake(['drust.test/api/v1/docker/networks' => Http::response(['success' => true, 'message' => 'ok', 'data' => ['networks' => []]])]);
 
         $this->request()
-            ->postJson("/cpsess{$this->token}/docker/networks/action", ['action' => 'create', 'name' => 'search', 'internal' => true, 'subnet' => '10.20.0.0/24'])
+            ->postJson("/dpt{$this->token}/docker/networks/action", ['action' => 'create', 'name' => 'search', 'internal' => true, 'subnet' => '10.20.0.0/24'])
             ->assertOk();
         $this->request()
-            ->postJson("/cpsess{$this->token}/docker/networks/action", ['action' => 'connect', 'name' => 'search', 'container' => 'web', 'aliases' => ['es']])
+            ->postJson("/dpt{$this->token}/docker/networks/action", ['action' => 'connect', 'name' => 'search', 'container' => 'web', 'aliases' => ['es']])
             ->assertOk();
         $this->request()
-            ->postJson("/cpsess{$this->token}/docker/networks/action", ['action' => 'connect', 'name' => 'search'])
+            ->postJson("/dpt{$this->token}/docker/networks/action", ['action' => 'connect', 'name' => 'search'])
             ->assertStatus(422);
 
         Http::assertSent(fn ($request) => $request['action'] === 'create' && $request['spec'] === ['name' => 'search', 'internal' => true, 'subnet' => '10.20.0.0/24']);
@@ -198,9 +198,9 @@ class DockerManagerTest extends TestCase
     {
         Http::fake(['drust.test/api/v1/docker/volumes' => Http::response(['success' => true, 'message' => 'ok', 'data' => ['volumes' => []]])]);
 
-        $this->request()->postJson("/cpsess{$this->token}/docker/volumes/action", ['action' => 'remove', 'name' => 'pg-data'])->assertOk();
-        $this->request()->postJson("/cpsess{$this->token}/docker/volumes/action", ['action' => 'prune', 'all' => true])->assertOk();
-        $this->request()->postJson("/cpsess{$this->token}/docker/volumes/action", ['action' => 'remove', 'name' => '-rf'])->assertStatus(422);
+        $this->request()->postJson("/dpt{$this->token}/docker/volumes/action", ['action' => 'remove', 'name' => 'pg-data'])->assertOk();
+        $this->request()->postJson("/dpt{$this->token}/docker/volumes/action", ['action' => 'prune', 'all' => true])->assertOk();
+        $this->request()->postJson("/dpt{$this->token}/docker/volumes/action", ['action' => 'remove', 'name' => '-rf'])->assertStatus(422);
 
         Http::assertSent(fn ($request) => $request['action'] === 'prune' && $request['all'] === true);
         Http::assertSentCount(2);
@@ -212,7 +212,7 @@ class DockerManagerTest extends TestCase
         $compose = "services:\n  db:\n    image: mysql:8.4\n    environment:\n      MYSQL_PASSWORD: \${DB_PASSWORD}\n";
 
         $this->request()
-            ->postJson("/cpsess{$this->token}/docker/stacks/action", ['action' => 'deploy_new', 'name' => 'wp', 'compose' => $compose, 'env' => 'DB_PASSWORD=hunter2'])
+            ->postJson("/dpt{$this->token}/docker/stacks/action", ['action' => 'deploy_new', 'name' => 'wp', 'compose' => $compose, 'env' => 'DB_PASSWORD=hunter2'])
             ->assertOk()
             ->assertJsonPath('message', 'Stack wp is up.');
 
@@ -226,10 +226,10 @@ class DockerManagerTest extends TestCase
     {
         Http::fake();
 
-        $this->request()->postJson("/cpsess{$this->token}/docker/stacks/action", ['action' => 'up', 'name' => 'WordPress'])->assertStatus(422);
-        $this->request()->postJson("/cpsess{$this->token}/docker/stacks/action", ['action' => 'up', 'name' => '../etc'])->assertStatus(422);
-        $this->request()->postJson("/cpsess{$this->token}/docker/stacks/action", ['action' => 'restart', 'name' => 'wp', 'service' => '--all'])->assertStatus(422);
-        $this->request()->postJson("/cpsess{$this->token}/docker/stacks/action", ['action' => 'create', 'name' => 'wp'])->assertStatus(422);
+        $this->request()->postJson("/dpt{$this->token}/docker/stacks/action", ['action' => 'up', 'name' => 'WordPress'])->assertStatus(422);
+        $this->request()->postJson("/dpt{$this->token}/docker/stacks/action", ['action' => 'up', 'name' => '../etc'])->assertStatus(422);
+        $this->request()->postJson("/dpt{$this->token}/docker/stacks/action", ['action' => 'restart', 'name' => 'wp', 'service' => '--all'])->assertStatus(422);
+        $this->request()->postJson("/dpt{$this->token}/docker/stacks/action", ['action' => 'create', 'name' => 'wp'])->assertStatus(422);
         Http::assertNothingSent();
     }
 
@@ -237,8 +237,8 @@ class DockerManagerTest extends TestCase
     {
         Http::fake(['drust.test/api/v1/docker/system' => Http::response(['success' => true, 'message' => 'Clean-up finished; 1.2GB freed.', 'data' => ['disk' => []]])]);
 
-        $this->request()->postJson("/cpsess{$this->token}/docker/system/action", ['action' => 'prune', 'all' => false])->assertOk();
-        $this->request()->postJson("/cpsess{$this->token}/docker/system/action", ['action' => 'volumes'])->assertStatus(422);
+        $this->request()->postJson("/dpt{$this->token}/docker/system/action", ['action' => 'prune', 'all' => false])->assertOk();
+        $this->request()->postJson("/dpt{$this->token}/docker/system/action", ['action' => 'volumes'])->assertStatus(422);
 
         $this->assertSame('docker.system.prune', ActivityLog::query()->sole()->action);
     }

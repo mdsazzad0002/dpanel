@@ -19,4 +19,4 @@ if [[ ! -f "${APP_DIR}/artisan" ]]; then
 fi
 
 cd "$APP_DIR"
-php artisan serverpanel:2fa-disable "$@"
+php artisan dpanel:2fa-disable "$@"

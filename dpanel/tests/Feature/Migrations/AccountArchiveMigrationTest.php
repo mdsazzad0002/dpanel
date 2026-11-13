@@ -37,7 +37,7 @@ class AccountArchiveMigrationTest extends TestCase
         File::ensureDirectoryExists($this->storage.'/app');
         $this->app->useStoragePath($this->storage);
         $this->mock(UploadScanner::class, fn ($mock) => $mock->shouldReceive('assertClean'));
-        config(['serverpanel.execution_api_base_url' => 'http://daemon.test']);
+        config(['dpanel.execution_api_base_url' => 'http://daemon.test']);
     }
 
     protected function tearDown(): void
@@ -61,7 +61,7 @@ class AccountArchiveMigrationTest extends TestCase
 
     private function url(string $path): string
     {
-        return "/cpsess{$this->token}{$path}";
+        return "/dpt{$this->token}{$path}";
     }
 
     public function test_the_new_provider_pages_render(): void

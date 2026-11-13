@@ -82,7 +82,7 @@ class SslLifecycleService
                 (string) $website->root_path,
                 (string) $website->start_directory,
             ),
-            'renew_before_days' => max(0, (int) config('serverpanel.ssl_auto_renew_days', 30)),
+            'renew_before_days' => max(0, (int) config('dpanel.ssl_auto_renew_days', 30)),
             // Reinstall: issue a new certificate even when the current one is valid.
             'force' => $force,
         ];
@@ -252,14 +252,14 @@ class SslLifecycleService
 
     protected function drustSslRequest(string $action, array $payload, int $timeout = 300): \Illuminate\Http\Client\Response
     {
-        $baseUrl = trim((string) config('serverpanel.execution_api_base_url', ''));
+        $baseUrl = trim((string) config('dpanel.execution_api_base_url', ''));
         if ($baseUrl === '') {
             throw new \RuntimeException('drust SSL API is not configured.');
         }
 
         // A wildcard waits for its TXT record to reach the nameservers, twice.
         $request = Http::acceptJson()->asJson()->timeout($timeout);
-        $token = trim((string) config('serverpanel.execution_api_token', ''));
+        $token = trim((string) config('dpanel.execution_api_token', ''));
         if ($token !== '') {
             $request = $request->withToken($token);
         }

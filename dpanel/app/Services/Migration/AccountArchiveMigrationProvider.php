@@ -69,9 +69,9 @@ class AccountArchiveMigrationProvider
             throw new RuntimeException("Unknown migration provider {$provider}.");
         }
         $response = Http::acceptJson()->asJson()
-            ->withToken((string) config('serverpanel.execution_api_token'))
-            ->timeout((int) config('serverpanel.execution_api_upload_timeout', 3600))
-            ->post(rtrim((string) config('serverpanel.execution_api_base_url'), '/')."/api/v1/migration/{$provider}/{$action}", $payload);
+            ->withToken((string) config('dpanel.execution_api_token'))
+            ->timeout((int) config('dpanel.execution_api_upload_timeout', 3600))
+            ->post(rtrim((string) config('dpanel.execution_api_base_url'), '/')."/api/v1/migration/{$provider}/{$action}", $payload);
         if (! $response->successful() || ! $response->json('success')) {
             throw new RuntimeException((string) ($response->json('message') ?: self::PROVIDERS[$provider]['name'].' migration failed.'));
         }

@@ -36,13 +36,13 @@ class CpanelMigrationArchiveTest extends TestCase
             $this->assertFileDoesNotExist($run.'/app-data.zip');
             $this->assertFileDoesNotExist($run.'/database-mysql.sql');
 
-            $this->artisan('serverpanel:restore', [
+            $this->artisan('dpanel:restore', [
                 'archive' => $archive,
                 '--dry-run' => true,
             ])->expectsOutputToContain('Dry run completed')->assertSuccessful();
 
             config(['database.default' => 'sqlite', 'database.connections.sqlite.driver' => 'sqlite']);
-            $this->artisan('serverpanel:restore', [
+            $this->artisan('dpanel:restore', [
                 'archive' => $archive,
                 '--dry-run' => true,
             ])->expectsOutputToContain('Migration package database artifact does not match the configured target database driver.')

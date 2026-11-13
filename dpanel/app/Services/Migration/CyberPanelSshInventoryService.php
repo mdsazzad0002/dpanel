@@ -29,7 +29,7 @@ class CyberPanelSshInventoryService implements RemotePanelInventoryProvider
                 'source_path' => $sourcePath,
                 'database' => $database,
                 'destination' => $destination,
-            ], (int) config('serverpanel.execution_api_upload_timeout', 3600));
+            ], (int) config('dpanel.execution_api_upload_timeout', 3600));
         } catch (\Throwable $exception) {
             @unlink($destination);
             throw $exception;
@@ -51,10 +51,10 @@ class CyberPanelSshInventoryService implements RemotePanelInventoryProvider
         $payload['transport_id'] = (string) Str::uuid();
         $response = Http::acceptJson()
             ->asJson()
-            ->withToken((string) config('serverpanel.execution_api_token'))
+            ->withToken((string) config('dpanel.execution_api_token'))
             ->connectTimeout(10)
             ->timeout($timeout)
-            ->post(rtrim((string) config('serverpanel.execution_api_base_url'), '/').'/api/v1/migration/cyberpanel-ssh/'.$action, $payload);
+            ->post(rtrim((string) config('dpanel.execution_api_base_url'), '/').'/api/v1/migration/cyberpanel-ssh/'.$action, $payload);
 
         if (! $response->successful() || ! $response->json('success')) {
             $detail = $response->json('message')

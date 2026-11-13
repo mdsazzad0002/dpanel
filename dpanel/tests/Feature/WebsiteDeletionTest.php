@@ -21,7 +21,7 @@ class WebsiteDeletionTest extends TestCase
     protected function setUp(): void
     {
         parent::setUp();
-        config(['serverpanel.execution_api_base_url' => 'http://drust.test', 'serverpanel.execution_api_token' => 'secret']);
+        config(['dpanel.execution_api_base_url' => 'http://drust.test', 'dpanel.execution_api_token' => 'secret']);
         Http::fake(['drust.test/*' => Http::response(['success' => true])]);
     }
 
@@ -93,7 +93,7 @@ class WebsiteDeletionTest extends TestCase
 
     public function test_databases_stay_on_the_server_unless_the_box_is_ticked(): void
     {
-        config(['serverpanel.database_api_url' => 'http://drust.test/api/v1/database-request']);
+        config(['dpanel.database_api_url' => 'http://drust.test/api/v1/database-request']);
         $site = $this->site('shop.test', 'shop_test');
         $this->database('shop.test', 'shop_db', 'shop_user');
 
@@ -105,7 +105,7 @@ class WebsiteDeletionTest extends TestCase
 
     public function test_with_trash_only_mariadb_databases_are_dropped_and_they_are_in_the_archive(): void
     {
-        config(['serverpanel.database_api_url' => 'http://drust.test/api/v1/database-request']);
+        config(['dpanel.database_api_url' => 'http://drust.test/api/v1/database-request']);
         $site = $this->site('shop.test', 'shop_test');
         $this->database('shop.test', 'shop_db', 'shop_user');
         $this->database('shop.test', 'shop_pg', 'shop_pg_user', 'postgresql');
@@ -120,7 +120,7 @@ class WebsiteDeletionTest extends TestCase
 
     public function test_permanent_drops_every_database_and_keeps_a_user_another_database_uses(): void
     {
-        config(['serverpanel.database_api_url' => 'http://drust.test/api/v1/database-request']);
+        config(['dpanel.database_api_url' => 'http://drust.test/api/v1/database-request']);
         $site = $this->site('shop.test', 'shop_test');
         $this->database('shop.test', 'shop_db', 'shared_user');
         $this->database('shop.test', 'shop_pg', 'shop_pg_user', 'postgresql');
@@ -136,7 +136,7 @@ class WebsiteDeletionTest extends TestCase
 
     public function test_restoring_from_trash_makes_a_dropped_mariadb_database_again(): void
     {
-        config(['serverpanel.database_api_url' => 'http://drust.test/api/v1/database-request']);
+        config(['dpanel.database_api_url' => 'http://drust.test/api/v1/database-request']);
 
         app(\App\Services\Database\DatabaseServerRemover::class)->recreate([
             ['name' => 'shop_db', 'user' => 'shop_user', 'password' => 'secret-pw', 'host' => '127.0.0.1', 'engine' => 'mariadb'],

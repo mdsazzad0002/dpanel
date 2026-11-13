@@ -46,7 +46,7 @@ class CronJobSuspendedStatusTest extends TestCase
         $admin = User::factory()->create();
         $admin->assignRole('admin');
         $this->withoutMiddleware()->actingAs($admin)
-            ->patch("/cpsess{$this->token}/websites/{$job->website_id}/cron-jobs/{$job->id}", [
+            ->patch("/dpt{$this->token}/websites/{$job->website_id}/cron-jobs/{$job->id}", [
                 'name' => 'job', 'expression' => '*/5 * * * *', 'command' => 'true', 'status' => $status,
             ])
             ->assertSessionHasNoErrors();

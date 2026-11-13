@@ -8,7 +8,7 @@ use App\Services\Website\TrashBackupDeleter;
 
 class PruneWebsiteTrashBackupsCommand extends Command
 {
-    protected $signature = 'serverpanel:trash-backups-prune {--days=15}';
+    protected $signature = 'dpanel:trash-backups-prune {--days=15}';
 
     protected $description = 'Remove expired website trash archives through drust';
 

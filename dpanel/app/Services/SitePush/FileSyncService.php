@@ -80,12 +80,12 @@ class FileSyncService
     private function call(Website $website, array $payload): array
     {
         // Hashing every file of a big site takes a while.
-        $request = Http::acceptJson()->asJson()->timeout(max((int) config('serverpanel.execution_api_timeout', 60), 900));
-        $token = trim((string) config('serverpanel.execution_api_token', ''));
+        $request = Http::acceptJson()->asJson()->timeout(max((int) config('dpanel.execution_api_timeout', 60), 900));
+        $token = trim((string) config('dpanel.execution_api_token', ''));
         if ($token !== '') {
             $request = $request->withToken($token);
         }
-        $response = $request->post(rtrim((string) config('serverpanel.execution_api_base_url'), '/').'/api/v1/file-sync', [
+        $response = $request->post(rtrim((string) config('dpanel.execution_api_base_url'), '/').'/api/v1/file-sync', [
             ...$payload,
             'site_owner' => (string) $website->site_owner,
             'root' => $this->root($website),

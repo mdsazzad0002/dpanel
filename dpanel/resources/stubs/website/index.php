@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-// @serverpanel-starter
+// @dpanel-starter
 $host = strtolower(trim((string) ($_SERVER['HTTP_HOST'] ?? $_SERVER['SERVER_NAME'] ?? 'localhost')));
 $host = preg_replace('/:\\d+$/', '', $host) ?: 'localhost';
 $scheme = (! empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off')

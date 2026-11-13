@@ -26,8 +26,8 @@ class PanelUpdateTest extends TestCase
     {
         parent::setUp();
         config([
-            'serverpanel.execution_api_base_url' => 'http://drust.test',
-            'serverpanel.execution_api_token' => 'secret',
+            'dpanel.execution_api_base_url' => 'http://drust.test',
+            'dpanel.execution_api_token' => 'secret',
             'app.version' => '1.0.0',
             'panel_update.repo' => 'me/dpanel',
             'panel_update.release_ref' => 'v1.0.0',

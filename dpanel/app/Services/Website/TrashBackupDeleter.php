@@ -23,15 +23,15 @@ class TrashBackupDeleter
 
     public function deleteArchive(string $path): void
     {
-        $baseUrl = trim((string) config('serverpanel.execution_api_base_url', ''));
-        $token = trim((string) config('serverpanel.execution_api_token', ''));
+        $baseUrl = trim((string) config('dpanel.execution_api_base_url', ''));
+        $token = trim((string) config('dpanel.execution_api_token', ''));
         if ($baseUrl === '' || $token === '') {
             throw new \RuntimeException('Rust execution API is not configured.');
         }
 
         $response = Http::acceptJson()
             ->asJson()
-            ->timeout((int) config('serverpanel.execution_api_timeout', 60))
+            ->timeout((int) config('dpanel.execution_api_timeout', 60))
             ->withToken($token)
             ->post(rtrim($baseUrl, '/').'/api/v1/website/archive/delete', [
                 'zip_path' => $path,

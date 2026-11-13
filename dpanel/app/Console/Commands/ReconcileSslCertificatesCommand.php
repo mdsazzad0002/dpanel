@@ -9,7 +9,7 @@ use Illuminate\Console\Command;
 
 class ReconcileSslCertificatesCommand extends Command
 {
-    protected $signature = 'serverpanel:ssl-reconcile';
+    protected $signature = 'dpanel:ssl-reconcile';
     protected $description = 'Inspect and issue or renew enabled website certificates through drust';
 
     public function handle(SslLifecycleService $ssl, CustomCertificateExpiryAlert $expiry): int

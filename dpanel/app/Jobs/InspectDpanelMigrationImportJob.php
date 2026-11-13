@@ -36,7 +36,7 @@ class InspectDpanelMigrationImportJob implements ShouldQueue
         try {
             $result = Process::path(base_path())
                 ->timeout($this->timeout - 60)
-                ->run([PHP_BINARY, base_path('artisan'), 'serverpanel:restore', $import->archive_path, '--dry-run']);
+                ->run([PHP_BINARY, base_path('artisan'), 'dpanel:restore', $import->archive_path, '--dry-run']);
             if (! $result->successful()) {
                 throw new RuntimeException('DPanel package validation failed: '.trim($result->errorOutput().' '.$result->output()));
             }

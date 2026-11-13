@@ -90,16 +90,16 @@ class WebsiteTrashBackupController extends Controller
     /** @param array<string, mixed> $settings */
     private function syncRetentionCron(array $settings): void
     {
-        $baseUrl = trim((string) config('serverpanel.execution_api_base_url', ''));
-        $token = trim((string) config('serverpanel.execution_api_token', ''));
+        $baseUrl = trim((string) config('dpanel.execution_api_base_url', ''));
+        $token = trim((string) config('dpanel.execution_api_token', ''));
         [$hour, $minute] = array_map('intval', explode(':', (string) $settings['trash_retention_time']));
         $days = max(1, (int) $settings['trash_retention_days']);
 
-        $command = app(LocalCommand::class)->artisanCronLine(['serverpanel:trash-backups-prune', '--days='.$days]);
+        $command = app(LocalCommand::class)->artisanCronLine(['dpanel:trash-backups-prune', '--days='.$days]);
 
         $response = Http::acceptJson()
             ->asJson()
-            ->timeout((int) config('serverpanel.execution_api_timeout', 60))
+            ->timeout((int) config('dpanel.execution_api_timeout', 60))
             ->withToken($token)
             ->post(rtrim($baseUrl, '/').'/api/v1/cron-job', [
                 'action' => 'upsert',
@@ -179,9 +179,9 @@ class WebsiteTrashBackupController extends Controller
 
         try {
             $response = Http::acceptJson()->asJson()
-                ->withToken((string) config('serverpanel.execution_api_token', ''))
-                ->timeout((int) config('serverpanel.execution_api_upload_timeout', 3600))
-                ->post(rtrim((string) config('serverpanel.execution_api_base_url', ''), '/').'/api/v1/website/archive/restore', [
+                ->withToken((string) config('dpanel.execution_api_token', ''))
+                ->timeout((int) config('dpanel.execution_api_upload_timeout', 3600))
+                ->post(rtrim((string) config('dpanel.execution_api_base_url', ''), '/').'/api/v1/website/archive/restore', [
                     'zip_path' => $archive,
                 ]);
         } catch (\Throwable $e) {

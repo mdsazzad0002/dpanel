@@ -21,23 +21,23 @@ class PanelReturnPathTest extends TestCase
 
     public function test_expired_session_remembers_the_page_being_opened(): void
     {
-        $request = $this->request("/cpsess{$this->oldToken}/websites/abc/git?tab=deploy");
+        $request = $this->request("/dpt{$this->oldToken}/websites/abc/git?tab=deploy");
 
         $response = (new EnsurePanelSessionIsValid())->handle($request, fn () => response('never'));
 
         $this->assertTrue($response->isRedirect(route('login')));
         $this->assertSame('/websites/abc/git', $request->session()->get('panel.last_path'));
-        $this->assertSame('/cpsess'.str_repeat('b', 64).'/websites/abc/git', PanelReturnPath::consume($request, str_repeat('b', 64), 7));
+        $this->assertSame('/dpt'.str_repeat('b', 64).'/websites/abc/git', PanelReturnPath::consume($request, str_repeat('b', 64), 7));
         $this->assertNull($request->session()->get('panel.last_path'));
     }
 
     public function test_background_json_and_form_requests_are_not_remembered(): void
     {
-        $json = $this->request("/cpsess{$this->oldToken}/integrations/github/accounts/x/repositories", ['HTTP_ACCEPT' => 'application/json']);
+        $json = $this->request("/dpt{$this->oldToken}/integrations/github/accounts/x/repositories", ['HTTP_ACCEPT' => 'application/json']);
         PanelReturnPath::rememberRequest($json);
         $this->assertNull($json->session()->get('panel.last_path'));
 
-        $post = $this->request("/cpsess{$this->oldToken}/websites/abc/git/run", [], 'POST');
+        $post = $this->request("/dpt{$this->oldToken}/websites/abc/git/run", [], 'POST');
         PanelReturnPath::rememberRequest($post);
         $this->assertNull($post->session()->get('panel.last_path'));
     }
@@ -46,17 +46,17 @@ class PanelReturnPathTest extends TestCase
     {
         $request = $this->request('/logout', [], 'POST');
 
-        PanelReturnPath::rememberUrl($request, 'https://evil.test/cpsess'.$this->oldToken.'/users');
+        PanelReturnPath::rememberUrl($request, 'https://evil.test/dpt'.$this->oldToken.'/users');
         $this->assertNull($request->session()->get('panel.last_path'));
 
-        PanelReturnPath::rememberUrl($request, 'http://localhost/cpsess'.$this->oldToken.'/emails/create?secret=x', 5);
+        PanelReturnPath::rememberUrl($request, 'http://localhost/dpt'.$this->oldToken.'/emails/create?secret=x', 5);
         $this->assertSame('/emails/create', $request->session()->get('panel.last_path'));
     }
 
     public function test_a_different_user_logging_in_goes_to_the_dashboard(): void
     {
         $request = $this->request('/logout', [], 'POST');
-        PanelReturnPath::rememberUrl($request, 'http://localhost/cpsess'.$this->oldToken.'/users', 5);
+        PanelReturnPath::rememberUrl($request, 'http://localhost/dpt'.$this->oldToken.'/users', 5);
 
         $newToken = str_repeat('c', 64);
         $this->assertSame(route('dashboard', ['token' => $newToken], absolute: false), PanelReturnPath::consume($request, $newToken, 6));

@@ -30,7 +30,7 @@ class MongoAdminClient
      */
     public function run(array|\stdClass $op, ?DatabaseRequest $database = null): array
     {
-        $baseUrl = trim((string) config('serverpanel.execution_api_base_url', ''));
+        $baseUrl = trim((string) config('dpanel.execution_api_base_url', ''));
         if ($baseUrl === '') {
             return $this->failure('drust API is not configured.');
         }
@@ -39,7 +39,7 @@ class MongoAdminClient
         }
 
         $request = Http::acceptJson()->asJson()->timeout(120);
-        $token = trim((string) config('serverpanel.execution_api_token', ''));
+        $token = trim((string) config('dpanel.execution_api_token', ''));
         if ($token !== '') {
             $request = $request->withToken($token);
         }

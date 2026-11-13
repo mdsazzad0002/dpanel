@@ -52,20 +52,20 @@ panel_fix_app_permissions() { :; }
 panel_finalize_default_install
 
 [[ -f "$TEST_ROOT/app/.env" ]]
-if ! grep -q '^SERVERPANEL_EXECUTION_API_BASE_URL=http://127.0.0.1:9500$' "$TEST_ROOT/app/.env"; then
-  echo 'missing SERVERPANEL_EXECUTION_API_BASE_URL' >&2
+if ! grep -q '^dPanel_EXECUTION_API_BASE_URL=http://127.0.0.1:9500$' "$TEST_ROOT/app/.env"; then
+  echo 'missing dPanel_EXECUTION_API_BASE_URL' >&2
   exit 1
 fi
-if ! grep -q '^SERVERPANEL_EXECUTION_API_TOKEN=demo-token$' "$TEST_ROOT/app/.env"; then
-  echo 'missing SERVERPANEL_EXECUTION_API_TOKEN' >&2
+if ! grep -q '^dPanel_EXECUTION_API_TOKEN=demo-token$' "$TEST_ROOT/app/.env"; then
+  echo 'missing dPanel_EXECUTION_API_TOKEN' >&2
   exit 1
 fi
 if ! grep -q '^PHPMYADMIN_URL=http://installer.localhost/phpmyadmin/$' "$TEST_ROOT/app/.env"; then
   echo 'missing PHPMYADMIN_URL' >&2
   exit 1
 fi
-if ! grep -q '^SERVERPANEL_MAIL_SERVER_IP=203.0.113.25$' "$TEST_ROOT/app/.env"; then
-  echo 'missing SERVERPANEL_MAIL_SERVER_IP' >&2
+if ! grep -q '^dPanel_MAIL_SERVER_IP=203.0.113.25$' "$TEST_ROOT/app/.env"; then
+  echo 'missing dPanel_MAIL_SERVER_IP' >&2
   exit 1
 fi
 if [[ ! -f "$TEST_ROOT/marker" ]]; then

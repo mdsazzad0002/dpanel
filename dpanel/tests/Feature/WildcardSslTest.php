@@ -28,8 +28,8 @@ class WildcardSslTest extends TestCase
         $this->token = str_repeat('c', 64);
         URL::defaults(['token' => $this->token]);
         config([
-            'serverpanel.execution_api_base_url' => 'http://drust.test',
-            'serverpanel.execution_api_token' => 'secret',
+            'dpanel.execution_api_base_url' => 'http://drust.test',
+            'dpanel.execution_api_token' => 'secret',
             'dns.engine' => 'powerdns',
             'services.cloudflare.api_token' => null,
         ]);
@@ -66,7 +66,7 @@ class WildcardSslTest extends TestCase
 
     private function toggle(Website $site, bool $enabled): \Illuminate\Testing\TestResponse
     {
-        return $this->patchJson("/cpsess{$this->token}/websites/{$site->id}/ssl/wildcard", ['enabled' => $enabled]);
+        return $this->patchJson("/dpt{$this->token}/websites/{$site->id}/ssl/wildcard", ['enabled' => $enabled]);
     }
 
     /** @return array<int, array<string, mixed>> what drust's ssl/ensure was sent */

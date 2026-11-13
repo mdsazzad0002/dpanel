@@ -33,7 +33,7 @@ class ResticRestoreTestTest extends TestCase
         parent::setUp();
         $this->token = str_repeat('a', 64);
         URL::defaults(['token' => $this->token]);
-        config(['serverpanel.execution_api_base_url' => 'http://drust.test', 'serverpanel.execution_api_token' => 'secret']);
+        config(['dpanel.execution_api_base_url' => 'http://drust.test', 'dpanel.execution_api_token' => 'secret']);
         app(ResticSettings::class)->write(['repository' => '/var/backups/restic', 'password' => 'the-key', 'env' => [], 'key_confirmed_at' => now()->toIso8601String()]);
     }
 
@@ -54,7 +54,7 @@ class ResticRestoreTestTest extends TestCase
 
     private function url(string $path): string
     {
-        return "/cpsess{$this->token}/backups/incremental{$path}";
+        return "/dpt{$this->token}/backups/incremental{$path}";
     }
 
     private function website(string $domain): Website

@@ -47,13 +47,13 @@ class ResourceLimitsClient
     {
         // Moving PHP between masters reloads PHP-FPM, which can take a while.
         return Http::acceptJson()->asJson()
-            ->timeout(max(60, (int) config('serverpanel.execution_api_timeout', 60)))
-            ->withToken(trim((string) config('serverpanel.execution_api_token', '')));
+            ->timeout(max(60, (int) config('dpanel.execution_api_timeout', 60)))
+            ->withToken(trim((string) config('dpanel.execution_api_token', '')));
     }
 
     private function url(string $group): string
     {
-        $baseUrl = trim((string) config('serverpanel.execution_api_base_url', ''));
+        $baseUrl = trim((string) config('dpanel.execution_api_base_url', ''));
         if ($baseUrl === '') {
             throw new \RuntimeException('drust execution API is not configured.');
         }

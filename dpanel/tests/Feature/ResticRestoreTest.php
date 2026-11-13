@@ -35,7 +35,7 @@ class ResticRestoreTest extends TestCase
         parent::setUp();
         $this->token = str_repeat('d', 64);
         URL::defaults(['token' => $this->token]);
-        config(['serverpanel.execution_api_base_url' => 'http://drust.test', 'serverpanel.execution_api_token' => 'secret']);
+        config(['dpanel.execution_api_base_url' => 'http://drust.test', 'dpanel.execution_api_token' => 'secret']);
         app(ResticSettings::class)->write(['repository' => '/var/backups/restic', 'password' => 'the-key', 'env' => [], 'key_confirmed_at' => now()->toIso8601String()]);
 
         $this->customer = User::factory()->create();
@@ -66,7 +66,7 @@ class ResticRestoreTest extends TestCase
     {
         $site ??= $this->site;
 
-        return "/cpsess{$this->token}/backups/incremental/{$site->id}/{$snapshot}{$suffix}";
+        return "/dpt{$this->token}/backups/incremental/{$site->id}/{$snapshot}{$suffix}";
     }
 
     /** @return array<int, array<string, mixed>> */
@@ -120,12 +120,12 @@ class ResticRestoreTest extends TestCase
 
             return $job->item === ['kind' => 'files', 'path' => '/home/shoptest/site/wp-config.php'] && $job->snapshotId === self::SNAP;
         });
-        $this->getJson("/cpsess{$this->token}/backups/incremental/restores/{$restoreId}")->assertOk()->assertJsonPath('stage', 'queued')->assertJsonMissingPath('user_id');
+        $this->getJson("/dpt{$this->token}/backups/incremental/restores/{$restoreId}")->assertOk()->assertJsonPath('stage', 'queued')->assertJsonMissingPath('user_id');
 
         Http::fake(['drust.test/api/v1/restic/restore' => Http::response(['success' => true, 'data' => ['kind' => 'files', 'restored_to' => '/home/shoptest/restored-20261111-120000/wp-config.php']])]);
         $pushed->handle(app(ResticBackupService::class), app(NotificationService::class));
 
-        $this->getJson("/cpsess{$this->token}/backups/incremental/restores/{$restoreId}")
+        $this->getJson("/dpt{$this->token}/backups/incremental/restores/{$restoreId}")
             ->assertJsonPath('stage', 'completed')
             ->assertJsonPath('message', fn ($message) => str_contains($message, 'restored-20261111-120000'));
         $this->assertSame(['kind' => 'files', 'path' => '/home/shoptest/site/wp-config.php'], $this->sent('restore')[0]['item']);
@@ -133,7 +133,7 @@ class ResticRestoreTest extends TestCase
         // Someone else cannot read it.
         $stranger = User::factory()->create();
         $stranger->assignRole('general');
-        $this->actingAs($stranger)->getJson("/cpsess{$this->token}/backups/incremental/restores/{$restoreId}")->assertNotFound();
+        $this->actingAs($stranger)->getJson("/dpt{$this->token}/backups/incremental/restores/{$restoreId}")->assertNotFound();
     }
 
     public function test_a_database_restore_carries_only_its_websites_credentials(): void

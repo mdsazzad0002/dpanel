@@ -49,8 +49,8 @@ class BackupRunListingTest extends TestCase
         File::ensureDirectoryExists($runPath);
         File::put($runPath.'/backup.zip', 'backup');
         config([
-            'serverpanel.execution_api_token' => 'test-token',
-            'serverpanel.execution_api_base_url' => 'http://drust.test',
+            'dpanel.execution_api_token' => 'test-token',
+            'dpanel.execution_api_base_url' => 'http://drust.test',
         ]);
         Http::fake(['http://drust.test/api/v1/backup/delete' => Http::response(['success' => true], 200)]);
 

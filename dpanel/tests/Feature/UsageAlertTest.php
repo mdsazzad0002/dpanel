@@ -124,7 +124,7 @@ class UsageAlertTest extends TestCase
         AccountUsageSample::query()->create(['user_id' => $user->id, 'sampled_at' => now(), 'memory_mb' => 256, 'cpu_percent' => 12.5]);
         app(UsageAlertService::class)->record($user, 'disk', 850, 1000, '850 MB of 1000 MB');
 
-        $this->as($user)->get("/cpsess{$this->token}/usage")
+        $this->as($user)->get("/dpt{$this->token}/usage")
             ->assertOk()
             ->assertInertia(fn ($page) => $page->component('Usage/Index')
                 ->has('accounts', 1)
@@ -146,12 +146,12 @@ class UsageAlertTest extends TestCase
         $admin = User::factory()->create();
         $admin->assignRole('admin');
 
-        $this->as($admin)->get("/cpsess{$this->token}/usage")->assertInertia(fn ($page) => $page->has('accounts', 2));
-        $this->as($reseller)->get("/cpsess{$this->token}/usage")
+        $this->as($admin)->get("/dpt{$this->token}/usage")->assertInertia(fn ($page) => $page->has('accounts', 2));
+        $this->as($reseller)->get("/dpt{$this->token}/usage")
             ->assertInertia(fn ($page) => $page->has('accounts', 2)->where('accounts', fn ($rows) => collect($rows)->pluck('id')->contains($customer->id) && ! collect($rows)->pluck('id')->contains($stranger->id)));
 
-        $this->as($customer)->getJson("/cpsess{$this->token}/usage/{$stranger->id}/history")->assertNotFound();
-        $this->as($reseller)->getJson("/cpsess{$this->token}/usage/{$customer->id}/history")->assertOk();
+        $this->as($customer)->getJson("/dpt{$this->token}/usage/{$stranger->id}/history")->assertNotFound();
+        $this->as($reseller)->getJson("/dpt{$this->token}/usage/{$customer->id}/history")->assertOk();
     }
 
     public function test_history_is_one_average_per_hour(): void
@@ -162,7 +162,7 @@ class UsageAlertTest extends TestCase
         AccountUsageSample::query()->create(['user_id' => $user->id, 'sampled_at' => $hour->copy()->addMinutes(10), 'memory_mb' => 300]);
         AccountUsageSample::query()->create(['user_id' => $user->id, 'sampled_at' => now()->subDays(9), 'memory_mb' => 999]);
 
-        $series = $this->as($user)->getJson("/cpsess{$this->token}/usage/{$user->id}/history")->assertOk()->json('series');
+        $series = $this->as($user)->getJson("/dpt{$this->token}/usage/{$user->id}/history")->assertOk()->json('series');
 
         $this->assertSame([[$hour->copy()->utc()->format('Y-m-d\TH:00:00\Z'), 200]], $series['memory_mb']);
         $this->assertSame([], $series['disk_mb']);

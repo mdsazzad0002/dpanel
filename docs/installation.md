@@ -212,7 +212,7 @@ The panel talks to drust with the same token. Keep these values identical in
 `/var/www/dpanel/.env`:
 
 ```dotenv
-SERVERPANEL_EXECUTION_API_TOKEN=the_same_value_as_DRUST_API_TOKEN
+dPanel_EXECUTION_API_TOKEN=the_same_value_as_DRUST_API_TOKEN
 ```
 
 ### Apply changes

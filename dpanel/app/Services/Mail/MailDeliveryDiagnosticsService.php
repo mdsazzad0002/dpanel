@@ -67,7 +67,7 @@ class MailDeliveryDiagnosticsService
      */
     public function clearLog(): array
     {
-        $path = collect((array) config('serverpanel.mail.health_log_paths', []))
+        $path = collect((array) config('dpanel.mail.health_log_paths', []))
             ->first(fn ($candidate) => is_string($candidate) && is_file($candidate));
         if ($path === null) {
             return ['ok' => false, 'message' => 'No mail log file was found to clear.'];
@@ -282,7 +282,7 @@ class MailDeliveryDiagnosticsService
     /** @return array{0: array<int, string>, 1: string|null} */
     private function readLogLines(int $maxLines = self::MAX_LOG_LINES): array
     {
-        $paths = array_values(array_filter((array) config('serverpanel.mail.health_log_paths', []), 'is_string'));
+        $paths = array_values(array_filter((array) config('dpanel.mail.health_log_paths', []), 'is_string'));
         foreach ($paths as $path) {
             if (is_file($path) && is_readable($path)) {
                 return [array_slice($this->tailLines($path), -$maxLines), $path];

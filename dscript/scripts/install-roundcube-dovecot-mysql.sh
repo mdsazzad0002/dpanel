@@ -236,7 +236,7 @@ deploy_roundcube_templates() {
 
     secret="${ROUNDCUBE_DES_KEY:-$(generate_secret)}"
     config_target="${ROUNDCUBE_CONFIG_TARGET:-}"
-    plugin_root="${root%/}/plugins/serverpanel_sso"
+    plugin_root="${root%/}/plugins/dpanel_sso"
 
     if [[ -z "$config_target" ]]; then
         if [[ -d /etc/roundcube ]]; then
@@ -257,8 +257,8 @@ deploy_roundcube_templates() {
         roundcube_db_password "$ROUNDCUBE_DB_PASSWORD"
 
     mkdir -p "$plugin_root"
-    cp "${TEMPLATE_ROOT}/roundcube/plugins/serverpanel_sso/serverpanel_sso.php" "$plugin_root/serverpanel_sso.php"
-    cp "${TEMPLATE_ROOT}/roundcube/plugins/serverpanel_sso/README.md" "$plugin_root/README.md"
+    cp "${TEMPLATE_ROOT}/roundcube/plugins/dpanel_sso/dpanel_sso.php" "$plugin_root/dpanel_sso.php"
+    cp "${TEMPLATE_ROOT}/roundcube/plugins/dpanel_sso/README.md" "$plugin_root/README.md"
 }
 
 check_installation() {

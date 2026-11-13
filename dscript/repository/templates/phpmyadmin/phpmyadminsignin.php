@@ -1,7 +1,7 @@
 <?php
 declare(strict_types=1);
 
-function serverpanelRequestIsSecure(): bool
+function dpanelRequestIsSecure(): bool
 {
     $forwardedProto = strtolower(trim((string) ($_SERVER['HTTP_X_FORWARDED_PROTO'] ?? '')));
     if ($forwardedProto !== '') {
@@ -16,7 +16,7 @@ session_name('phpMyAdmin');
 session_set_cookie_params([
     'lifetime' => 0,
     'path' => '/',
-    'secure' => serverpanelRequestIsSecure(),
+    'secure' => dpanelRequestIsSecure(),
     'httponly' => true,
     'samesite' => 'Lax',
 ]);
@@ -95,7 +95,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET' && $action !== 'redirect') {
         setcookie(session_name(), '', [
             'expires' => time() - 3600,
             'path' => '/',
-            'secure' => serverpanelRequestIsSecure(),
+            'secure' => dpanelRequestIsSecure(),
             'httponly' => true,
             'samesite' => 'Lax',
         ]);

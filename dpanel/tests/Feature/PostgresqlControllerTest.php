@@ -28,7 +28,7 @@ class PostgresqlControllerTest extends TestCase
         });
 
         $this->request()
-            ->postJson("/cpsess{$this->token}/databases/postgresql/pgadmin/toggle", ['running' => true])
+            ->postJson("/dpt{$this->token}/databases/postgresql/pgadmin/toggle", ['running' => true])
             ->assertOk()
             ->assertJson(['success' => true]);
     }
@@ -42,7 +42,7 @@ class PostgresqlControllerTest extends TestCase
         });
 
         $this->request()
-            ->postJson("/cpsess{$this->token}/databases/postgresql/postgresql/toggle", ['running' => false])
+            ->postJson("/dpt{$this->token}/databases/postgresql/postgresql/toggle", ['running' => false])
             ->assertStatus(422)
             ->assertJson(['success' => false, 'message' => 'sudo: a password is required']);
     }
@@ -54,7 +54,7 @@ class PostgresqlControllerTest extends TestCase
         });
 
         $this->request()
-            ->postJson("/cpsess{$this->token}/databases/postgresql/mariadb/toggle", ['running' => true])
+            ->postJson("/dpt{$this->token}/databases/postgresql/mariadb/toggle", ['running' => true])
             ->assertNotFound();
     }
 
@@ -71,8 +71,8 @@ class PostgresqlControllerTest extends TestCase
     public function test_manager_toggles_services_through_drust(): void
     {
         config([
-            'serverpanel.execution_api_base_url' => 'http://drust.test',
-            'serverpanel.execution_api_token' => 'secret',
+            'dpanel.execution_api_base_url' => 'http://drust.test',
+            'dpanel.execution_api_token' => 'secret',
         ]);
         Http::fake([
             'drust.test/api/v1/postgresql/service' => Http::response(['success' => true, 'message' => 'ok']),
@@ -87,7 +87,7 @@ class PostgresqlControllerTest extends TestCase
 
     public function test_manager_surfaces_drust_errors(): void
     {
-        config(['serverpanel.execution_api_base_url' => 'http://drust.test']);
+        config(['dpanel.execution_api_base_url' => 'http://drust.test']);
         Http::fake([
             'drust.test/*' => Http::response(['success' => false, 'message' => 'Failed: unit not found'], 400),
         ]);

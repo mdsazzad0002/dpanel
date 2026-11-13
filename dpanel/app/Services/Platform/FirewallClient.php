@@ -66,12 +66,12 @@ class FirewallClient
     {
         return Http::acceptJson()->asJson()
             ->timeout(30)
-            ->withToken(trim((string) config('serverpanel.execution_api_token', '')));
+            ->withToken(trim((string) config('dpanel.execution_api_token', '')));
     }
 
     private function url(string $path): string
     {
-        $baseUrl = trim((string) config('serverpanel.execution_api_base_url', ''));
+        $baseUrl = trim((string) config('dpanel.execution_api_base_url', ''));
         if ($baseUrl === '') {
             throw new \RuntimeException('drust execution API is not configured.');
         }

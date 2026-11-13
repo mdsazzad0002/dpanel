@@ -19,7 +19,7 @@ class ScriptPathResolver
      */
     public static function repositorySearchPaths(): array
     {
-        $configured = config('serverpanel.installer_search_paths', []);
+        $configured = config('dpanel.installer_search_paths', []);
         if (! is_array($configured)) {
             $configured = [];
         }

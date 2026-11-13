@@ -6,7 +6,7 @@
  * The panel performs the actual authentication handoff. This plugin is shipped
  * so the Roundcube deployment can keep a consistent plugin directory layout.
  */
-class serverpanel_sso extends rcube_plugin
+class dpanel_sso extends rcube_plugin
 {
     public $task = 'login';
 

@@ -66,7 +66,7 @@ abstract class SystemdStackServiceManager
             return ['success' => false, 'error' => 'Unknown service.'];
         }
 
-        $baseUrl = trim((string) config('serverpanel.execution_api_base_url', ''));
+        $baseUrl = trim((string) config('dpanel.execution_api_base_url', ''));
         if ($baseUrl === '') {
             return ['success' => false, 'error' => 'drust API is not configured.'];
         }
@@ -74,7 +74,7 @@ abstract class SystemdStackServiceManager
         // Enabling a service (pgAdmin first start, plus drust's stay-up check)
         // can take a while.
         $request = Http::acceptJson()->asJson()->timeout(120);
-        $token = trim((string) config('serverpanel.execution_api_token', ''));
+        $token = trim((string) config('dpanel.execution_api_token', ''));
         if ($token !== '') {
             $request = $request->withToken($token);
         }
@@ -104,14 +104,14 @@ abstract class SystemdStackServiceManager
      */
     private function unitStates(array $units): array
     {
-        $baseUrl = trim((string) config('serverpanel.execution_api_base_url', ''));
+        $baseUrl = trim((string) config('dpanel.execution_api_base_url', ''));
         if ($units === [] || $baseUrl === '') {
             return [];
         }
 
         try {
             $response = Http::acceptJson()->timeout(15)
-                ->withToken(trim((string) config('serverpanel.execution_api_token', '')))
+                ->withToken(trim((string) config('dpanel.execution_api_token', '')))
                 ->get(rtrim($baseUrl, '/').'/system/services', ['services' => implode(',', $units)]);
         } catch (\Throwable) {
             return [];

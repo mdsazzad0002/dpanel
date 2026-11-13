@@ -41,13 +41,13 @@ class CronSystemService
     /** @param array<string, mixed> $payload */
     private function request(array $payload): string
     {
-        $baseUrl = trim((string) config('serverpanel.execution_api_base_url', ''));
+        $baseUrl = trim((string) config('dpanel.execution_api_base_url', ''));
         if ($baseUrl === '') {
             throw new \RuntimeException('Rust execution API is not configured.');
         }
 
-        $request = Http::acceptJson()->asJson()->timeout((int) config('serverpanel.execution_api_timeout', 60));
-        $token = trim((string) config('serverpanel.execution_api_token', ''));
+        $request = Http::acceptJson()->asJson()->timeout((int) config('dpanel.execution_api_timeout', 60));
+        $token = trim((string) config('dpanel.execution_api_token', ''));
         if ($token !== '') {
             $request = $request->withToken($token);
         }

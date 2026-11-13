@@ -28,7 +28,7 @@ class PlatformCapabilitiesTest extends TestCase
         parent::setUp();
         $this->token = str_repeat('a', 64);
         URL::defaults(['token' => $this->token]);
-        config(['serverpanel.execution_api_base_url' => 'http://drust.test', 'serverpanel.execution_api_token' => 'secret']);
+        config(['dpanel.execution_api_base_url' => 'http://drust.test', 'dpanel.execution_api_token' => 'secret']);
         Cache::flush();
     }
 
@@ -56,7 +56,7 @@ class PlatformCapabilitiesTest extends TestCase
         return $this->withoutMiddleware(\App\Http\Middleware\EnsurePanelSessionIsValid::class)
             ->actingAs($this->admin())
             ->withSession(['panel_session_token' => $this->token])
-            ->get("/cpsess{$this->token}/{$path}");
+            ->get("/dpt{$this->token}/{$path}");
     }
 
     public function test_false_and_none_are_closed_and_everything_else_is_open(): void
@@ -210,7 +210,7 @@ class PlatformCapabilitiesTest extends TestCase
         $this->withoutMiddleware(\App\Http\Middleware\EnsurePanelSessionIsValid::class)
             ->actingAs($this->admin())
             ->withSession(['panel_session_token' => $this->token])
-            ->postJson("/cpsess{$this->token}/websites/{$website->id}/local-development", ['action' => 'open_permissions'])
+            ->postJson("/dpt{$this->token}/websites/{$website->id}/local-development", ['action' => 'open_permissions'])
             ->assertNotFound();
     }
 }

@@ -178,12 +178,12 @@ class GatewayMedia
             return $this->ocrCache[$key];
         }
 
-        $url = (string) config('serverpanel.media_ocr_api_url');
+        $url = (string) config('dpanel.media_ocr_api_url');
         $text = null;
 
         if ($url !== '' && $base64 !== '') {
             try {
-                $token = (string) config('serverpanel.execution_api_token');
+                $token = (string) config('dpanel.execution_api_token');
                 $response = Http::timeout(60)->acceptJson()
                     ->when($token !== '', fn ($request) => $request->withToken($token))
                     ->post($url, ['data' => $base64]);

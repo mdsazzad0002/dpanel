@@ -10,13 +10,13 @@ class FtpProvisioningService
     /** @param array<string, mixed> $payload */
     public function run(array $payload): void
     {
-        $baseUrl = rtrim((string) config('serverpanel.execution_api_base_url'), '/');
+        $baseUrl = rtrim((string) config('dpanel.execution_api_base_url'), '/');
         if ($baseUrl === '') {
             throw new RuntimeException('FTP provisioning service is not configured.');
         }
 
-        $request = Http::acceptJson()->asJson()->timeout((int) config('serverpanel.execution_api_timeout', 60));
-        $token = trim((string) config('serverpanel.execution_api_token', ''));
+        $request = Http::acceptJson()->asJson()->timeout((int) config('dpanel.execution_api_timeout', 60));
+        $token = trim((string) config('dpanel.execution_api_token', ''));
         if ($token !== '') {
             $request = $request->withToken($token);
         }
@@ -42,8 +42,8 @@ class FtpProvisioningService
     {
         return [
             'host' => $host,
-            'port' => (int) config('serverpanel.ftp.port', 21),
-            'tls' => (bool) config('serverpanel.ftp.tls', true),
+            'port' => (int) config('dpanel.ftp.port', 21),
+            'tls' => (bool) config('dpanel.ftp.tls', true),
         ];
     }
 }

@@ -28,7 +28,7 @@ class MongoAdminControllerTest extends TestCase
         });
 
         $this->request()
-            ->postJson("/cpsess{$this->token}/databases/mongodb/admin/run", ['op' => [
+            ->postJson("/dpt{$this->token}/databases/mongodb/admin/run", ['op' => [
                 'action' => 'find', 'db' => 'shop', 'collection' => 'orders', 'filter' => new \stdClass, 'sort' => ['name' => 1],
             ]])
             ->assertOk()
@@ -42,7 +42,7 @@ class MongoAdminControllerTest extends TestCase
         });
 
         $this->request()
-            ->postJson("/cpsess{$this->token}/databases/mongodb/admin/run", ['op' => ['action' => 'overview']])
+            ->postJson("/dpt{$this->token}/databases/mongodb/admin/run", ['op' => ['action' => 'overview']])
             ->assertStatus(422)
             ->assertJson(['message' => 'MongoDB is not reachable.']);
     }
@@ -55,7 +55,7 @@ class MongoAdminControllerTest extends TestCase
 
         foreach (['shutdown', 'export'] as $action) {
             $this->request()
-                ->postJson("/cpsess{$this->token}/databases/mongodb/admin/run", ['op' => ['action' => $action]])
+                ->postJson("/dpt{$this->token}/databases/mongodb/admin/run", ['op' => ['action' => $action]])
                 ->assertStatus(422);
         }
     }
@@ -70,7 +70,7 @@ class MongoAdminControllerTest extends TestCase
             ->withoutMiddleware()
             ->actingAs(User::factory()->make(['role' => 'user']))
             ->withSession(['panel_session_token' => $this->token])
-            ->postJson("/cpsess{$this->token}/databases/mongodb/admin/run", ['op' => ['action' => 'overview']])
+            ->postJson("/dpt{$this->token}/databases/mongodb/admin/run", ['op' => ['action' => 'overview']])
             ->assertForbidden();
     }
 
@@ -81,7 +81,7 @@ class MongoAdminControllerTest extends TestCase
         });
 
         $this->request()
-            ->postJson("/cpsess{$this->token}/databases/mongodb/admin/run", ['op' => ['action' => 'provision_user', 'db' => 'x', 'user' => 'root', 'password' => 'p']])
+            ->postJson("/dpt{$this->token}/databases/mongodb/admin/run", ['op' => ['action' => 'provision_user', 'db' => 'x', 'user' => 'root', 'password' => 'p']])
             ->assertStatus(422);
     }
 
@@ -94,7 +94,7 @@ class MongoAdminControllerTest extends TestCase
         });
 
         $response = $this->request()
-            ->get("/cpsess{$this->token}/databases/mongodb/admin/export?db=shop&collection=orders&filter=".urlencode('{"paid":true}'));
+            ->get("/dpt{$this->token}/databases/mongodb/admin/export?db=shop&collection=orders&filter=".urlencode('{"paid":true}'));
 
         $response->assertOk()->assertDownload('shop.orders.json');
         $this->assertSame([['_id' => ['$oid' => 'abc'], 'paid' => true]], json_decode($response->streamedContent(), true));
@@ -103,8 +103,8 @@ class MongoAdminControllerTest extends TestCase
     public function test_client_sends_the_saved_login_to_drust(): void
     {
         config([
-            'serverpanel.execution_api_base_url' => 'http://drust.test',
-            'serverpanel.execution_api_token' => 'secret',
+            'dpanel.execution_api_base_url' => 'http://drust.test',
+            'dpanel.execution_api_token' => 'secret',
             'mongodb.admin_username' => 'admin',
             'mongodb.admin_password' => 'pw',
         ]);
@@ -123,7 +123,7 @@ class MongoAdminControllerTest extends TestCase
 
     public function test_client_refuses_without_a_saved_password(): void
     {
-        config(['serverpanel.execution_api_base_url' => 'http://drust.test', 'mongodb.admin_password' => '']);
+        config(['dpanel.execution_api_base_url' => 'http://drust.test', 'mongodb.admin_password' => '']);
         Http::fake();
 
         $this->assertFalse((new MongoAdminClient)->run(['action' => 'overview'])['success']);

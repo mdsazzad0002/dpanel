@@ -29,14 +29,14 @@ class SystemOverviewClient
     /** @param  list<string>  $services */
     private function fetch(array $services): ?array
     {
-        $baseUrl = trim((string) config('serverpanel.execution_api_base_url', ''));
+        $baseUrl = trim((string) config('dpanel.execution_api_base_url', ''));
         if ($baseUrl === '') {
             return null;
         }
 
         try {
             $response = Http::acceptJson()->timeout(5)
-                ->withToken(trim((string) config('serverpanel.execution_api_token', '')))
+                ->withToken(trim((string) config('dpanel.execution_api_token', '')))
                 ->get(rtrim($baseUrl, '/').'/system/overview', ['services' => implode(',', $services)]);
         } catch (\Throwable) {
             return null;

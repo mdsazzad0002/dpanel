@@ -31,7 +31,7 @@ class AiGatewayVoiceTest extends TestCase
     {
         parent::setUp();
 
-        config(['serverpanel.execution_api_base_url' => 'http://drust.test', 'serverpanel.execution_api_token' => 'drust-token']);
+        config(['dpanel.execution_api_base_url' => 'http://drust.test', 'dpanel.execution_api_token' => 'drust-token']);
         $this->session = str_repeat('a', 64);
         $this->withoutMiddleware(EnsurePanelSessionIsValid::class)->withSession(['panel_session_token' => $this->session]);
     }
@@ -124,7 +124,7 @@ class AiGatewayVoiceTest extends TestCase
 
     public function test_local_whisper_can_be_switched_off_so_live_models_transcribe(): void
     {
-        config(['serverpanel.media_transcribe_api_url' => 'http://drust.test/api/v1/media/transcribe', 'aigateway.local_transcription' => 'first']);
+        config(['dpanel.media_transcribe_api_url' => 'http://drust.test/api/v1/media/transcribe', 'aigateway.local_transcription' => 'first']);
         $provider = \App\Models\AiGatewayProvider::query()->create(['name' => 'Main groq', 'driver' => 'groq', 'slug' => 'main-groq', 'credentials' => ['api_key' => 'k'], 'is_active' => true, 'weight' => 1]);
         $provider->models()->create(['name' => 'whisper-large-v3-turbo', 'capabilities' => ['transcription'], 'is_active' => true]);
         Http::fake([

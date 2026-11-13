@@ -19,7 +19,7 @@ class DiskUsageTest extends TestCase
     protected function setUp(): void
     {
         parent::setUp();
-        config(['serverpanel.execution_api_base_url' => 'http://drust.test']);
+        config(['dpanel.execution_api_base_url' => 'http://drust.test']);
     }
 
     /** @param array<string, int> $usage per system account */

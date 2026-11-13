@@ -19,13 +19,13 @@ class ProjectDependencyService
     public function run(string $siteOwner, string $projectRoot, string $action, ?string $phpVersion = null): array
     {
         $client = Http::acceptJson()->asJson()->timeout(900);
-        $apiToken = trim((string) config('serverpanel.execution_api_token', ''));
+        $apiToken = trim((string) config('dpanel.execution_api_token', ''));
         if ($apiToken !== '') {
             $client = $client->withToken($apiToken);
         }
 
         try {
-            $response = $client->post(rtrim((string) config('serverpanel.execution_api_base_url'), '/').'/api/v1/project-dependencies', [
+            $response = $client->post(rtrim((string) config('dpanel.execution_api_base_url'), '/').'/api/v1/project-dependencies', [
                 'site_owner' => $siteOwner,
                 'project_root' => rtrim($projectRoot, '/'),
                 'action' => $action,

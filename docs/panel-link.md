@@ -49,7 +49,7 @@ Turn SSL on once DNS points at the new server.
 ## The whole panel
 
 **Clone the whole panel** moves the same full backup that
-`serverpanel:backup` makes (the `…_dpanel.tar.gz` the upload form takes):
+`dpanel:backup` makes (the `…_dpanel.tar.gz` the upload form takes):
 
 - **Take**: the other panel makes the backup, this panel downloads it, and it
   appears in this page's backup list. Restoring it (type `RESTORE`) replaces

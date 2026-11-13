@@ -13,13 +13,13 @@ class SiteLogClient
     /** @return array{exists: bool, lines: list<string>} */
     public function tail(string $kind, string $domain, string $owner, int $lines): array
     {
-        $baseUrl = trim((string) config('serverpanel.execution_api_base_url', ''));
+        $baseUrl = trim((string) config('dpanel.execution_api_base_url', ''));
         if ($baseUrl === '') {
             throw new \RuntimeException('drust execution API is not configured.');
         }
 
         $response = Http::acceptJson()->timeout(30)
-            ->withToken(trim((string) config('serverpanel.execution_api_token', '')))
+            ->withToken(trim((string) config('dpanel.execution_api_token', '')))
             ->get(rtrim($baseUrl, '/').'/sites/logs', ['kind' => $kind, 'domain' => $domain, 'owner' => $owner, 'lines' => $lines]);
 
         $json = $response->json();

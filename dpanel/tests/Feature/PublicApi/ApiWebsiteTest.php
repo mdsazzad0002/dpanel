@@ -14,7 +14,7 @@ class ApiWebsiteTest extends PublicApiTestCase
     {
         parent::setUp();
         config()->set('app.server_base_dir', '/home');
-        config()->set('serverpanel.filemanager_api_url', 'http://drust.test/api/v1/filemanager');
+        config()->set('dpanel.filemanager_api_url', 'http://drust.test/api/v1/filemanager');
         Http::fake(['http://drust.test/*' => Http::response(['success' => true, 'message' => 'ok', 'data' => []])]);
         Bus::fake();
     }
@@ -126,7 +126,7 @@ class ApiWebsiteTest extends PublicApiTestCase
         $sub = $this->website($customer, 'blog.shop.test', ['type' => 'subdomain', 'parent_id' => $parent->id, 'site_owner' => 'shop_test']);
         $plain = $this->token($customer, ['websites:write']);
         // A subdomain has a directory of its own: dRust archives and removes it.
-        config(['serverpanel.execution_api_base_url' => 'http://drust.test', 'serverpanel.execution_api_token' => 'secret']);
+        config(['dpanel.execution_api_base_url' => 'http://drust.test', 'dpanel.execution_api_token' => 'secret']);
         \Illuminate\Support\Facades\Http::fake(['drust.test/*' => \Illuminate\Support\Facades\Http::response(['success' => true])]);
 
         $this->api($plain, 'DELETE', "/websites/{$sub->id}")->assertOk()->assertJsonStructure(['message']);

@@ -29,8 +29,8 @@ class BackupRestoreJobTest extends TestCase
         }
         $this->app->useStoragePath($this->storageRoot);
         config([
-            'serverpanel.execution_api_token' => 'test-token',
-            'serverpanel.execution_api_base_url' => 'http://drust.test',
+            'dpanel.execution_api_token' => 'test-token',
+            'dpanel.execution_api_base_url' => 'http://drust.test',
         ]);
     }
 

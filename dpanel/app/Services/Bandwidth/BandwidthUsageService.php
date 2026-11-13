@@ -9,7 +9,7 @@ use Illuminate\Support\Collection;
 
 /**
  * Reads the monthly per-domain traffic snapshots the edge gateway writes to
- * `serverpanel.bandwidth_directory` (`<Y-m>.json`, keyed by canonical domain).
+ * `dpanel.bandwidth_directory` (`<Y-m>.json`, keyed by canonical domain).
  */
 class BandwidthUsageService
 {
@@ -151,7 +151,7 @@ class BandwidthUsageService
      */
     public function snapshot(string $month): ?array
     {
-        $path = rtrim((string) config('serverpanel.bandwidth_directory'), '/').'/'.$month.'.json';
+        $path = rtrim((string) config('dpanel.bandwidth_directory'), '/').'/'.$month.'.json';
         $payload = is_file($path) ? @file_get_contents($path) : false;
         $usage = is_string($payload) ? json_decode($payload, true) : null;
 

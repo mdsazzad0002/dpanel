@@ -31,7 +31,7 @@ class DnssecTest extends TestCase
         parent::setUp();
         $this->token = str_repeat('e', 64);
         URL::defaults(['token' => $this->token]);
-        config(['serverpanel.execution_api_base_url' => 'http://drust.test', 'serverpanel.execution_api_token' => 'secret']);
+        config(['dpanel.execution_api_base_url' => 'http://drust.test', 'dpanel.execution_api_token' => 'secret']);
         $this->dns = app(DnsBackend::class);
     }
 
@@ -68,7 +68,7 @@ class DnssecTest extends TestCase
 
     private function url(DnsZone $zone): string
     {
-        return "/cpsess{$this->token}/dns/zones/{$zone->id}/dnssec";
+        return "/dpt{$this->token}/dns/zones/{$zone->id}/dnssec";
     }
 
     public function test_turning_it_on_asks_drust_and_shows_the_ds_records(): void

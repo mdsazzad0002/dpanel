@@ -191,28 +191,28 @@ impl DatabaseAdmin {
     fn from_env() -> Self {
         let user = env_first(&[
             "DRUST_DATABASE_ADMIN_USER",
-            "SERVERPANEL_DATABASE_ADMIN_USER",
+            "dPanel_DATABASE_ADMIN_USER",
             "MARIADB_ADMIN_USER",
             "MYSQL_ADMIN_USER",
         ])
         .or_else(|| panel_env_value("DB_USERNAME"));
         let password = env_first(&[
             "DRUST_DATABASE_ADMIN_PASSWORD",
-            "SERVERPANEL_DATABASE_ADMIN_PASSWORD",
+            "dPanel_DATABASE_ADMIN_PASSWORD",
             "MARIADB_ADMIN_PASSWORD",
             "MYSQL_ADMIN_PASSWORD",
         ])
         .or_else(|| panel_env_value("DB_PASSWORD"));
         let host = env_first(&[
             "DRUST_DATABASE_ADMIN_HOST",
-            "SERVERPANEL_DATABASE_ADMIN_HOST",
+            "dPanel_DATABASE_ADMIN_HOST",
             "MARIADB_ADMIN_HOST",
             "MYSQL_ADMIN_HOST",
         ])
         .or_else(|| panel_env_value("DB_HOST"));
         let port = env_first(&[
             "DRUST_DATABASE_ADMIN_PORT",
-            "SERVERPANEL_DATABASE_ADMIN_PORT",
+            "dPanel_DATABASE_ADMIN_PORT",
             "MARIADB_ADMIN_PORT",
             "MYSQL_ADMIN_PORT",
         ])

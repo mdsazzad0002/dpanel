@@ -11,7 +11,7 @@ class WebsiteTemplateCatalogService
      */
     public function repositoryRoot(): string
     {
-        $configured = trim((string) config('serverpanel.template_repository_dir', ''));
+        $configured = trim((string) config('dpanel.template_repository_dir', ''));
         $candidates = array_values(array_filter([
             $configured !== '' ? $configured : null,
             dirname(base_path()).'/dscript',
@@ -80,7 +80,7 @@ class WebsiteTemplateCatalogService
      */
     public function availablePhpVersions(): array
     {
-        $versions = (array) config('serverpanel.php_versions', []);
+        $versions = (array) config('dpanel.php_versions', []);
 
         return array_values(array_filter(array_map(
             static fn (mixed $version): string => trim((string) $version),
@@ -96,7 +96,7 @@ class WebsiteTemplateCatalogService
         $template = strtolower(trim($template));
         $manifest = (array) ($this->manifest()['families'] ?? []);
         $family = (array) ($manifest[$template] ?? []);
-        $defaults = (array) config('serverpanel.website_php_defaults', []);
+        $defaults = (array) config('dpanel.website_php_defaults', []);
         $configured = (string) (
             $family['default_php_version']
             ?? $defaults[$template]

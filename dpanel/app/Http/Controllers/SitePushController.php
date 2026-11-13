@@ -163,7 +163,7 @@ class SitePushController extends Controller
 
     /**
      * Reduces whatever was pasted (a bare host, or a full panel URL with a
-     * cpsess path) to scheme://host[:port]; https is assumed when omitted.
+     * dpt path) to scheme://host[:port]; https is assumed when omitted.
      */
     private function normalizeHostUrl(string $value): ?string
     {

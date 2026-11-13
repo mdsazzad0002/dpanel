@@ -24,7 +24,7 @@ class ExecuteSshCommandJob implements ShouldQueue
     public function __construct(public int $commandJobId)
     {
         // Leave room past the SSH command timeout so the job can still record its result.
-        $this->timeout = (int) config('serverpanel.command_timeout', 300) + 60;
+        $this->timeout = (int) config('dpanel.command_timeout', 300) + 60;
     }
 
     /**

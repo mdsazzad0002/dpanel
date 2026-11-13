@@ -13,7 +13,7 @@ class ApiDatabaseTest extends PublicApiTestCase
     protected function setUp(): void
     {
         parent::setUp();
-        config(['serverpanel.database_api_url' => 'http://drust.test/api/v1/database-request']);
+        config(['dpanel.database_api_url' => 'http://drust.test/api/v1/database-request']);
         Http::fake(['drust.test/*' => Http::response(['success' => true, 'message' => 'ok'])]);
     }
 

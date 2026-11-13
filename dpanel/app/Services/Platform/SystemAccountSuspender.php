@@ -34,14 +34,14 @@ class SystemAccountSuspender
         if (! self::suspendable($account)) {
             return;
         }
-        $baseUrl = trim((string) config('serverpanel.execution_api_base_url', ''));
+        $baseUrl = trim((string) config('dpanel.execution_api_base_url', ''));
         if ($baseUrl === '') {
             throw new \RuntimeException('drust execution API is not configured.');
         }
 
         $response = Http::acceptJson()
-            ->timeout((int) config('serverpanel.execution_api_timeout', 60))
-            ->withToken(trim((string) config('serverpanel.execution_api_token', '')))
+            ->timeout((int) config('dpanel.execution_api_timeout', 60))
+            ->withToken(trim((string) config('dpanel.execution_api_token', '')))
             ->post(rtrim($baseUrl, '/').'/accounts/'.rawurlencode($account).'/'.$action);
 
         $json = $response->json();

@@ -101,7 +101,7 @@ class ImageWatermarkTest extends TestCase
             ->withoutMiddleware()
             ->actingAs($this->admin)
             ->withSession(['panel_session_token' => $this->token])
-            ->post("/cpsess{$this->token}/seo/image-watermark/check", $file ? ['image' => $file] : [], ['Accept' => 'application/json']);
+            ->post("/dpt{$this->token}/seo/image-watermark/check", $file ? ['image' => $file] : [], ['Accept' => 'application/json']);
     }
 
     /** A 4×3 PNG with extra chunks inserted before IEND. */

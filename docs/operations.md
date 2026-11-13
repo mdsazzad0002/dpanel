@@ -121,7 +121,7 @@ curl http://127.0.0.1:9500/health
 ```
 
 If drust answers `Unauthorized`, make sure `DRUST_API_TOKEN` in
-`/etc/drust/drust.env` matches `SERVERPANEL_EXECUTION_API_TOKEN` in
+`/etc/drust/drust.env` matches `dPanel_EXECUTION_API_TOKEN` in
 `/var/www/dpanel/.env`.
 
 ### SSL is issued but the browser shows no certificate

@@ -588,12 +588,12 @@ panel_detect_public_ipv4() {
 
 panel_collect_mail_server_ip() {
   local env_file existing="" detected="" entered=""
-  PANEL_MAIL_SERVER_IP="${PANEL_MAIL_SERVER_IP:-${SERVERPANEL_MAIL_SERVER_IP:-}}"
+  PANEL_MAIL_SERVER_IP="${PANEL_MAIL_SERVER_IP:-${dPanel_MAIL_SERVER_IP:-}}"
 
   if [[ -z "$PANEL_MAIL_SERVER_IP" ]]; then
     env_file="$(panel_resolve_app_env_file)"
     if [[ -n "$env_file" && -f "$env_file" ]]; then
-      existing="$(sed -n 's/^SERVERPANEL_MAIL_SERVER_IP=//p' "$env_file" | tail -n1 | tr -d '"' | xargs)"
+      existing="$(sed -n 's/^dPanel_MAIL_SERVER_IP=//p' "$env_file" | tail -n1 | tr -d '"' | xargs)"
       panel_is_public_ipv4 "$existing" && PANEL_MAIL_SERVER_IP="$existing"
     fi
   fi
@@ -2013,7 +2013,7 @@ panel_fix_website_permissions() {
 # (PAM) auth, or includes it with no system auth at all.
 panel_dovecot_sql_first() {
   awk '
-    /^!include auth-serverpanel\.conf\.ext$/ { if (!sql) sql = NR }
+    /^!include auth-dpanel\.conf\.ext$/ { if (!sql) sql = NR }
     /^!include auth-system\.conf\.ext$/ { if (!sys) sys = NR }
     END { exit !(sql && (!sys || sql < sys)) }
   ' "$1"
@@ -2021,7 +2021,7 @@ panel_dovecot_sql_first() {
 
 panel_configure_dovecot_sql() {
   local dpanel_env="${DPANEL_ENV_FILE:-${PANEL_APP_DIR:-/var/www/dpanel}/.env}"
-  local auth_file=/etc/dovecot/conf.d/auth-serverpanel.conf.ext
+  local auth_file=/etc/dovecot/conf.d/auth-dpanel.conf.ext
   local sql_file=/etc/dovecot/dpanel-sql.conf.ext
   local dovecot_version db_host db_port db_name db_user db_password auth_content sql_content changed=false
 
@@ -2096,11 +2096,11 @@ user_query = SELECT mail_home AS home, CONCAT('maildir:', mail_home) AS mail, ma
   # waited that long. A wrong mailbox password still falls through to PAM.
   local auth_conf=/etc/dovecot/conf.d/10-auth.conf
   if [[ -f "$auth_conf" ]] && ! panel_dovecot_sql_first "$auth_conf"; then
-    sed -i '/^!include auth-serverpanel\.conf\.ext$/d' "$auth_conf"
+    sed -i '/^!include auth-dpanel\.conf\.ext$/d' "$auth_conf"
     if grep -q '^!include auth-system\.conf\.ext$' "$auth_conf"; then
-      sed -i 's/^!include auth-system\.conf\.ext$/!include auth-serverpanel.conf.ext\n&/' "$auth_conf"
+      sed -i 's/^!include auth-system\.conf\.ext$/!include auth-dpanel.conf.ext\n&/' "$auth_conf"
     else
-      printf '\n!include auth-serverpanel.conf.ext\n' >> "$auth_conf"
+      printf '\n!include auth-dpanel.conf.ext\n' >> "$auth_conf"
     fi
     changed=true
   fi
@@ -2440,8 +2440,8 @@ panel_finalize_default_install() {
   local drust_token="${DRUST_API_TOKEN:-}"
 
   if [[ -n "$drust_token" ]]; then
-    panel_env_set "$env_file" SERVERPANEL_EXECUTION_API_BASE_URL "http://127.0.0.1:9500"
-    panel_env_set "$env_file" SERVERPANEL_EXECUTION_API_TOKEN "$drust_token"
+    panel_env_set "$env_file" dPanel_EXECUTION_API_BASE_URL "http://127.0.0.1:9500"
+    panel_env_set "$env_file" dPanel_EXECUTION_API_TOKEN "$drust_token"
   fi
 
   if [[ -n "$panel_domain" ]]; then
@@ -2458,7 +2458,7 @@ panel_finalize_default_install() {
   fi
 
   if [[ -n "${PANEL_MAIL_SERVER_IP:-}" ]]; then
-    panel_env_set "$env_file" SERVERPANEL_MAIL_SERVER_IP "$PANEL_MAIL_SERVER_IP"
+    panel_env_set "$env_file" dPanel_MAIL_SERVER_IP "$PANEL_MAIL_SERVER_IP"
   fi
 
   panel_ensure_swap
@@ -2491,7 +2491,7 @@ panel_finalize_default_install() {
 
 # Issue the panel domain's certificate once drust is running, then switch the
 # panel to https. A failure only warns: the panel stays reachable over HTTP and
-# the certificate can be retried later with "php artisan serverpanel:panel-ssl".
+# the certificate can be retried later with "php artisan dpanel:panel-ssl".
 panel_issue_panel_ssl() {
   local env_file="$1"
   local app_dir="${PANEL_APP_DIR:-/var/www/dpanel}"
@@ -2509,15 +2509,15 @@ panel_issue_panel_ssl() {
     return 0
   fi
   if ! getent ahosts "$domain" >/dev/null 2>&1; then
-    panel_warn_log "Panel domain ${domain} does not resolve in DNS yet; skipping SSL. Point its A record at this server, then run: cd ${app_dir} && php artisan serverpanel:panel-ssl"
+    panel_warn_log "Panel domain ${domain} does not resolve in DNS yet; skipping SSL. Point its A record at this server, then run: cd ${app_dir} && php artisan dpanel:panel-ssl"
     return 0
   fi
 
   panel_info_log "Requesting an SSL certificate for ${domain}."
   (cd "$app_dir" && php artisan config:clear >/dev/null 2>&1 || true)
-  if ! output="$(cd "$app_dir" && php artisan serverpanel:panel-ssl 2>&1)"; then
+  if ! output="$(cd "$app_dir" && php artisan dpanel:panel-ssl 2>&1)"; then
     printf '%s\n' "$output"
-    panel_warn_log "SSL for ${domain} failed; the panel stays on http://${domain}. Check that ports 80 and 443 are open and DNS points here, then run: cd ${app_dir} && php artisan serverpanel:panel-ssl"
+    panel_warn_log "SSL for ${domain} failed; the panel stays on http://${domain}. Check that ports 80 and 443 are open and DNS points here, then run: cd ${app_dir} && php artisan dpanel:panel-ssl"
     return 0
   fi
   printf '%s\n' "$output"
@@ -2536,8 +2536,8 @@ panel_install_scheduler_cron() {
   local app_dir="${PANEL_APP_DIR:-/var/www/dpanel}"
   [[ -x "${app_dir}/artisan" ]] || return 0
 
-  if ! (cd "$app_dir" && php artisan serverpanel:install-scheduler-cron); then
-    panel_warn_log "Panel scheduler cron was not installed; scheduled tasks will not run. Retry with: cd ${app_dir} && php artisan serverpanel:install-scheduler-cron"
+  if ! (cd "$app_dir" && php artisan dpanel:install-scheduler-cron); then
+    panel_warn_log "Panel scheduler cron was not installed; scheduled tasks will not run. Retry with: cd ${app_dir} && php artisan dpanel:install-scheduler-cron"
   fi
 }
 

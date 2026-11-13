@@ -121,7 +121,7 @@ class WebsiteService
 
         $targetPath = $this->joinPaths($rootPath, $normalizedStartDirectory);
         $template = @file_get_contents(resource_path('stubs/website/index.php'));
-        if (! is_string($template) || ! str_contains($template, '@serverpanel-starter')) {
+        if (! is_string($template) || ! str_contains($template, '@dpanel-starter')) {
             throw new \RuntimeException('Shared website starter template is unavailable.');
         }
 

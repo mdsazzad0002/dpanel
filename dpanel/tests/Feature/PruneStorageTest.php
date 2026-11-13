@@ -64,12 +64,12 @@ class PruneStorageTest extends TestCase
         $job = CronJob::query()->create([
             'id' => 'trash-backups-prune', 'website_id' => 'none', 'domain' => 'panel.test', 'name' => 'Trash Backup Cleanup',
             'expression' => '30 3 * * *', 'status' => 'active',
-            'command' => 'cd /var/www/dpanel && /usr/sbin/php-fpm8.3 artisan serverpanel:trash-backups-prune --days=2 >> /dev/null 2>&1',
+            'command' => 'cd /var/www/dpanel && /usr/sbin/php-fpm8.3 artisan dpanel:trash-backups-prune --days=2 >> /dev/null 2>&1',
         ]);
 
         $this->artisan('storage:prune')->assertSuccessful();
 
         $this->assertStringNotContainsString('php-fpm', $job->fresh()->command);
-        $this->assertStringContainsString(' artisan serverpanel:trash-backups-prune --days=2', $job->fresh()->command);
+        $this->assertStringContainsString(' artisan dpanel:trash-backups-prune --days=2', $job->fresh()->command);
     }
 }

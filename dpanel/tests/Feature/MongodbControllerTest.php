@@ -28,7 +28,7 @@ class MongodbControllerTest extends TestCase
         });
 
         $this->request()
-            ->postJson("/cpsess{$this->token}/databases/mongodb/mongodb/toggle", ['running' => true])
+            ->postJson("/dpt{$this->token}/databases/mongodb/mongodb/toggle", ['running' => true])
             ->assertOk()
             ->assertJson(['success' => true]);
     }
@@ -40,7 +40,7 @@ class MongodbControllerTest extends TestCase
         });
 
         $this->request()
-            ->postJson("/cpsess{$this->token}/databases/mongodb/postgresql/toggle", ['running' => true])
+            ->postJson("/dpt{$this->token}/databases/mongodb/postgresql/toggle", ['running' => true])
             ->assertNotFound();
     }
 
@@ -57,8 +57,8 @@ class MongodbControllerTest extends TestCase
     public function test_manager_toggles_mongodb_through_drust(): void
     {
         config([
-            'serverpanel.execution_api_base_url' => 'http://drust.test',
-            'serverpanel.execution_api_token' => 'secret',
+            'dpanel.execution_api_base_url' => 'http://drust.test',
+            'dpanel.execution_api_token' => 'secret',
         ]);
         Http::fake([
             'drust.test/api/v1/mongodb/service' => Http::response(['success' => true, 'message' => 'ok']),
@@ -78,10 +78,10 @@ class MongodbControllerTest extends TestCase
         });
 
         $this->request()
-            ->postJson("/cpsess{$this->token}/databases/mongodb/mongo-express/toggle", ['running' => true])
+            ->postJson("/dpt{$this->token}/databases/mongodb/mongo-express/toggle", ['running' => true])
             ->assertNotFound();
         $this->request()
-            ->get("/cpsess{$this->token}/databases/mongodb/mongo-express")
+            ->get("/dpt{$this->token}/databases/mongodb/mongo-express")
             ->assertNotFound();
     }
 

@@ -6,10 +6,10 @@ use Illuminate\Http\Request;
 
 /**
  * Remembers where a user was inside the panel when their session ended
- * (explicit logout, inactivity expiry, or an old cpsess link) so the next
+ * (explicit logout, inactivity expiry, or an old dpt link) so the next
  * login lands back on that page instead of the dashboard.
  *
- * Only the part after "/cpsess{token}" is stored: the token rotates on every
+ * Only the part after "/dpt{token}" is stored: the token rotates on every
  * login, so it is re-prefixed with the new token when consumed. Query strings
  * are dropped because they can carry one-time tokens or other secrets.
  */
@@ -59,7 +59,7 @@ class PanelReturnPath
         $ownerMatches = $owner === null || $userId === null || (int) $owner === $userId;
 
         if ($token !== '' && $ownerMatches && is_string($path) && self::isSafeRelative($path)) {
-            return '/cpsess'.$token.$path;
+            return '/dpt'.$token.$path;
         }
 
         return route('dashboard', ['token' => $token], absolute: false);
@@ -68,7 +68,7 @@ class PanelReturnPath
     private static function remember(Request $request, string $fullPath, ?int $userId): void
     {
         if (! $request->hasSession()
-            || preg_match('#\A/cpsess[^/]+(/.*)\z#', $fullPath, $match) !== 1) {
+            || preg_match('#\A/dpt[^/]+(/.*)\z#', $fullPath, $match) !== 1) {
             return;
         }
 

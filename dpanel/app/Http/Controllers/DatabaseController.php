@@ -671,16 +671,16 @@ class DatabaseController extends Controller
             return $this->syncMongodbUser($payload);
         }
 
-        $apiUrl = trim((string) config('serverpanel.database_api_url', ''));
+        $apiUrl = trim((string) config('dpanel.database_api_url', ''));
         if ($apiUrl === '') {
-            return ['ran' => false, 'success' => false, 'output' => 'Database API is not configured. Set SERVERPANEL_DATABASE_API_URL.'];
+            return ['ran' => false, 'success' => false, 'output' => 'Database API is not configured. Set dPanel_DATABASE_API_URL.'];
         }
 
-        $token = trim((string) config('serverpanel.database_api_token', ''));
+        $token = trim((string) config('dpanel.database_api_token', ''));
 
         $request = Http::acceptJson()
             ->asJson()
-            ->timeout((int) config('serverpanel.execution_api_timeout', 60));
+            ->timeout((int) config('dpanel.execution_api_timeout', 60));
 
         if ($token !== '') {
             $request = $request->withToken($token);

@@ -9,7 +9,7 @@ use Illuminate\Console\Command;
 
 class PruneFilemanagerTrashCommand extends Command
 {
-    protected $signature = 'serverpanel:filemanager-trash-prune {--days=15}';
+    protected $signature = 'dpanel:filemanager-trash-prune {--days=15}';
 
     protected $description = 'Remove expired File Manager trash batches (cPanel-style .trash folder, no database)';
 

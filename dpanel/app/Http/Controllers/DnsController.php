@@ -28,7 +28,7 @@ use Inertia\Response;
 
 class DnsController extends Controller
 {
-    private const NAMESERVER_TABLE = 'serverpanel_dns_nameservers';
+    private const NAMESERVER_TABLE = 'dpanel_dns_nameservers';
 
     public function nameservers(DnsRegistryService $dnsRegistry): Response
     {
@@ -1318,7 +1318,7 @@ class DnsController extends Controller
         }
 
         $mailHost = app(\App\Services\Mail\MailDnsRecords::class)->forDomain($primaryDomain)->mailHost() ?: 'mail.'.$primaryDomain;
-        $selector = trim((string) config('serverpanel.mail.dkim_selector', 'default'));
+        $selector = trim((string) config('dpanel.mail.dkim_selector', 'default'));
         if ($selector === '') {
             $selector = 'default';
         }
@@ -1382,7 +1382,7 @@ class DnsController extends Controller
             $domains = $this->readWebsiteDomains();
         }
 
-        $domain = trim((string) config('serverpanel.mail.dkim_domain', ''));
+        $domain = trim((string) config('dpanel.mail.dkim_domain', ''));
         if ($domain === '') {
             $domain = (string) ($domains[0] ?? '');
         }
@@ -1390,12 +1390,12 @@ class DnsController extends Controller
             $domain = 'example.com';
         }
 
-        $selector = trim((string) config('serverpanel.mail.dkim_selector', 'default'));
+        $selector = trim((string) config('dpanel.mail.dkim_selector', 'default'));
         if ($selector === '') {
             $selector = 'default';
         }
 
-        $publicKey = trim((string) config('serverpanel.mail.dkim_public_key', ''));
+        $publicKey = trim((string) config('dpanel.mail.dkim_public_key', ''));
         $recordName = $selector.'._domainkey.'.$domain;
         $mailHost = app(\App\Services\Mail\MailDnsRecords::class)->forDomain($domain)->mailHost() ?: 'mail.'.$domain;
         $dkimValue = $publicKey !== ''

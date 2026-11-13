@@ -283,7 +283,7 @@ const applyTheme = (mode) => {
 
 const toggleTheme = () => {
     theme.value = theme.value === 'dark' ? 'light' : 'dark';
-    localStorage.setItem('serverpanel-theme', theme.value);
+    localStorage.setItem('dpanel-theme', theme.value);
     applyTheme(theme.value);
 };
 
@@ -570,7 +570,7 @@ const restoreSidebarScrollTop = async () => {
 };
 
 onMounted(() => {
-    const savedTheme = localStorage.getItem('serverpanel-theme');
+    const savedTheme = localStorage.getItem('dpanel-theme');
     const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
     theme.value = savedTheme ?? (prefersDark ? 'dark' : 'light');
     applyTheme(theme.value);

@@ -113,13 +113,13 @@ class LaravelQueueService
     /** @return array<string, mixed> */
     protected function call(Website $website, string $action, array $payload = [], int $timeout = 60): array
     {
-        $baseUrl = trim((string) config('serverpanel.execution_api_base_url', ''));
+        $baseUrl = trim((string) config('dpanel.execution_api_base_url', ''));
         if ($baseUrl === '') {
             throw new \RuntimeException('drust execution API is not configured.');
         }
 
         $request = Http::acceptJson()->asJson()->timeout($timeout);
-        $token = trim((string) config('serverpanel.execution_api_token', ''));
+        $token = trim((string) config('dpanel.execution_api_token', ''));
         if ($token !== '') {
             $request = $request->withToken($token);
         }

@@ -131,7 +131,7 @@ class TwoFactorChallengeController extends Controller
 
         $token = (string) $request->session()->get('panel_session_token', '');
         // Full page load: the challenge page's HTML carries Ziggy defaults without
-        // the new cpsess token, so an Inertia visit would build token-less URLs.
+        // the new dpt token, so an Inertia visit would build token-less URLs.
         $response = Inertia::location(PanelReturnPath::consume($request, $token, (int) $user->id));
         $response->headers->setCookie($panelCookie);
 
@@ -280,7 +280,7 @@ class TwoFactorChallengeController extends Controller
 
         $cookieToken = bin2hex(random_bytes(32));
         $lifetime = PanelSession::inactivityMinutes();
-        $cookieName = (string) config('serverpanel.panel_cookie_name', 'panel_session_proof');
+        $cookieName = (string) config('dpanel.panel_cookie_name', 'panel_session_proof');
 
         PanelSession::syncSingleSession(
             userId: (int) $request->user()->id,

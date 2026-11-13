@@ -509,7 +509,7 @@ class AiGatewayService
      */
     private function transcribeLocally(string $audio, string $filename, string $mime, array $options): ?array
     {
-        $url = (string) config('serverpanel.media_transcribe_api_url');
+        $url = (string) config('dpanel.media_transcribe_api_url');
         if ($url === '' || $audio === '') {
             return null;
         }
@@ -519,7 +519,7 @@ class AiGatewayService
         $language = $options['language'] ?? null;
 
         try {
-            $token = (string) config('serverpanel.execution_api_token');
+            $token = (string) config('dpanel.execution_api_token');
             $response = \Illuminate\Support\Facades\Http::timeout((int) config('aigateway.transcription_timeout', 180))->acceptJson()
                 ->when($token !== '', fn ($request) => $request->withToken($token))
                 ->post($url, array_filter([

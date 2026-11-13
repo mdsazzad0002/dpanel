@@ -11,7 +11,7 @@ use ZipArchive;
 
 class RestoreCpanelBackupCommand extends Command
 {
-    protected $signature = 'serverpanel:restore
+    protected $signature = 'dpanel:restore
         {archive : Path to a dPanel cPanel-style .tar.gz package}
         {--dry-run : Validate the archive without changing this server}
         {--force : Confirm replacement of panel data and database}';

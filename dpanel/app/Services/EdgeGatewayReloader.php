@@ -37,9 +37,9 @@ class EdgeGatewayReloader
 
         try {
             $response = Http::acceptJson()
-                ->withToken((string) config('serverpanel.execution_api_token'))
+                ->withToken((string) config('dpanel.execution_api_token'))
                 ->timeout(10)
-                ->post(rtrim((string) config('serverpanel.edge_gateway_internal_url'), '/').'/__admin/reload', $payload);
+                ->post(rtrim((string) config('dpanel.edge_gateway_internal_url'), '/').'/__admin/reload', $payload);
             $success = $response->successful() && (bool) $response->json('success');
             if (! $success) {
                 Log::warning('Edge gateway retained its previous snapshot.', ['response' => $response->json()]);
@@ -61,7 +61,7 @@ class EdgeGatewayReloader
             // the default one sends to "dpanel_database_edge:reload" and the
             // gateway, subscribed to the bare name, never hears it.
             $listeners = (int) Redis::connection('website_cache')->publish(
-                (string) config('serverpanel.edge_gateway_reload_channel', 'edge:reload'),
+                (string) config('dpanel.edge_gateway_reload_channel', 'edge:reload'),
                 json_encode($payload, JSON_THROW_ON_ERROR),
             );
             if ($listeners > 0) {

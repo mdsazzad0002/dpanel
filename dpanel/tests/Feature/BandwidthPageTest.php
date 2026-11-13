@@ -45,7 +45,7 @@ class BandwidthPageTest extends TestCase
 
         $this->dir = sys_get_temp_dir().'/bandwidth-test-'.uniqid();
         mkdir($this->dir);
-        config(['serverpanel.bandwidth_directory' => $this->dir]);
+        config(['dpanel.bandwidth_directory' => $this->dir]);
         file_put_contents($this->dir.'/2026-10.json', json_encode([
             'a.test' => ['upload_bytes' => 100, 'download_bytes' => 900, 'requests' => 10,
                 'days' => ['2026-10-01' => ['upload_bytes' => 100, 'download_bytes' => 900, 'requests' => 10]]],
@@ -74,7 +74,7 @@ class BandwidthPageTest extends TestCase
             ['id' => 'w3', 'domain' => 'alias-of-a.test', 'type' => 'alias', 'parent_id' => 'w1', 'assigned_user_id' => null],
         ]);
 
-        $this->as($admin)->get("/cpsess{$this->token}/bandwidth?month=2026-10")
+        $this->as($admin)->get("/dpt{$this->token}/bandwidth?month=2026-10")
             ->assertOk()
             ->assertInertia(fn ($page) => $page->component('Bandwidth/Index')
                 ->where('available', true)
@@ -120,7 +120,7 @@ class BandwidthPageTest extends TestCase
             ['id' => 'w2', 'domain' => 'b.test', 'type' => 'main', 'parent_id' => null, 'assigned_user_id' => null],
         ]);
 
-        $this->as($user)->get("/cpsess{$this->token}/bandwidth?month=2026-10")
+        $this->as($user)->get("/dpt{$this->token}/bandwidth?month=2026-10")
             ->assertOk()
             ->assertInertia(fn ($page) => $page->component('Bandwidth/Index')
                 ->has('rows', 1)
@@ -131,7 +131,7 @@ class BandwidthPageTest extends TestCase
 
     public function test_old_usage_url_redirects_to_bandwidth(): void
     {
-        $this->as(User::factory()->create())->get("/cpsess{$this->token}/dashboard/usage?month=2026-09")
+        $this->as(User::factory()->create())->get("/dpt{$this->token}/dashboard/usage?month=2026-09")
             ->assertRedirect(route('bandwidth.index', ['month' => '2026-09']));
     }
 

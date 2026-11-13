@@ -60,11 +60,11 @@ class McpOAuthTest extends TestCase
             ]));
 
         $authorize->assertRedirect();
-        $this->assertMatchesRegularExpression('#/cpsess'.$this->panelToken.'/settings/mcp/authorize/([A-Za-z0-9]{40})$#', $authorize->headers->get('Location'));
+        $this->assertMatchesRegularExpression('#/dpt'.$this->panelToken.'/settings/mcp/authorize/([A-Za-z0-9]{40})$#', $authorize->headers->get('Location'));
         $requestId = basename($authorize->headers->get('Location'));
 
         // 2. The admin approves.
-        $decision = $this->panel($admin)->postJson("/cpsess{$this->panelToken}/settings/mcp/authorize/{$requestId}", [
+        $decision = $this->panel($admin)->postJson("/dpt{$this->panelToken}/settings/mcp/authorize/{$requestId}", [
             'approve' => true,
             'scope' => 'full',
         ])->assertOk();
@@ -191,7 +191,7 @@ class McpOAuthTest extends TestCase
         $admin = User::factory()->create(['role' => 'admin']);
         $requestId = $this->startAuthorization($admin, $this->registerClient(), str_repeat('v', 64));
 
-        $redirect = $this->panel($admin)->postJson("/cpsess{$this->panelToken}/settings/mcp/authorize/{$requestId}", ['approve' => false])
+        $redirect = $this->panel($admin)->postJson("/dpt{$this->panelToken}/settings/mcp/authorize/{$requestId}", ['approve' => false])
             ->assertOk()->json('redirect');
 
         $this->assertStringContainsString('error=access_denied', $redirect);
@@ -203,7 +203,7 @@ class McpOAuthTest extends TestCase
         $requestId = $this->startAuthorization($admin, $this->registerClient(), str_repeat('v', 64));
         $user = User::factory()->create(['role' => 'general']);
 
-        $this->panel($user)->postJson("/cpsess{$this->panelToken}/settings/mcp/authorize/{$requestId}", ['approve' => true, 'scope' => 'full'])
+        $this->panel($user)->postJson("/dpt{$this->panelToken}/settings/mcp/authorize/{$requestId}", ['approve' => true, 'scope' => 'full'])
             ->assertForbidden();
     }
 
@@ -234,7 +234,7 @@ class McpOAuthTest extends TestCase
     private function approveAgain(User $admin, string $clientId, string $verifier): string
     {
         $requestId = $this->startAuthorization($admin, $clientId, $verifier);
-        $redirect = $this->panel($admin)->postJson("/cpsess{$this->panelToken}/settings/mcp/authorize/{$requestId}", [
+        $redirect = $this->panel($admin)->postJson("/dpt{$this->panelToken}/settings/mcp/authorize/{$requestId}", [
             'approve' => true, 'scope' => 'full',
         ])->json('redirect');
         parse_str((string) parse_url($redirect, PHP_URL_QUERY), $query);

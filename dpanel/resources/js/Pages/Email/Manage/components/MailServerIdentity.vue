@@ -16,7 +16,7 @@ const checks = computed(() => [
         ok: !!host.value && props.state.ptr === host.value,
         hint: props.state.ip
             ? `Set it in your server provider's panel (Hetzner, DigitalOcean, Vultr…), not in DNS: ${props.state.ip} → ${host.value || 'your mail hostname'}. One PTR covers every domain.`
-            : 'Server IP unknown; set SERVERPANEL_MAIL_SERVER_IP.',
+            : 'Server IP unknown; set dPanel_MAIL_SERVER_IP.',
     },
     {
         label: 'System hostname',

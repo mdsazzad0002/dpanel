@@ -842,7 +842,7 @@ class WordpressInstallService
                 ];
             }
 
-            $remoteArchive = rtrim($rootPath, '/').'/.serverpanel-wordpress-deploy.zip';
+            $remoteArchive = rtrim($rootPath, '/').'/.dpanel-wordpress-deploy.zip';
             try {
                 $this->filemanagerService->uploadFile($siteOwner, $remoteArchive, $deploymentArchive);
                 $this->filemanagerService->unzipFile($siteOwner, $remoteArchive, $rootPath);

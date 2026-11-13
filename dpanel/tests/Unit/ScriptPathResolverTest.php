@@ -18,7 +18,7 @@ class ScriptPathResolverTest extends TestCase
             'available' => true,
         ], JSON_THROW_ON_ERROR));
 
-        config()->set('serverpanel.installer_search_paths', [$repositoryRoot]);
+        config()->set('dpanel.installer_search_paths', [$repositoryRoot]);
 
         try {
             $this->assertSame($repositoryRoot, ScriptPathResolver::resolveRepositoryRoot());
@@ -39,7 +39,7 @@ class ScriptPathResolverTest extends TestCase
         $this->makeDirectory(dirname($runtimeScript));
         file_put_contents($runtimeScript, "#!/usr/bin/env bash\n");
 
-        config()->set('serverpanel.installer_search_paths', [$bootstrapRoot, $runtimeRoot]);
+        config()->set('dpanel.installer_search_paths', [$bootstrapRoot, $runtimeRoot]);
 
         try {
             $this->assertSame($runtimeScript, ScriptPathResolver::resolveScriptPath('filemanager-install'));
@@ -51,7 +51,7 @@ class ScriptPathResolverTest extends TestCase
     public function test_a_panel_on_a_drive_searches_only_beside_itself_with_forward_slashes(): void
     {
         $original = base_path();
-        config()->set('serverpanel.installer_search_paths', ['C:\\Program Files\\dPanel\\dscript']);
+        config()->set('dpanel.installer_search_paths', ['C:\\Program Files\\dPanel\\dscript']);
         $this->app->setBasePath('C:/Program Files/dPanel/panel');
 
         try {
@@ -67,7 +67,7 @@ class ScriptPathResolverTest extends TestCase
     public function test_a_panel_on_linux_keeps_the_server_search_paths(): void
     {
         $original = base_path();
-        config()->set('serverpanel.installer_search_paths', []);
+        config()->set('dpanel.installer_search_paths', []);
         $this->app->setBasePath('/var/www/panel/dpanel');
 
         try {
@@ -91,7 +91,7 @@ class ScriptPathResolverTest extends TestCase
         $this->makeDirectory(dirname($script));
         file_put_contents($script, "#!/usr/bin/env bash\n");
 
-        config()->set('serverpanel.installer_search_paths', [$root.'/dscript']);
+        config()->set('dpanel.installer_search_paths', [$root.'/dscript']);
 
         try {
             $this->assertSame($script, ScriptPathResolver::resolveScriptPath('filemanager-install'));

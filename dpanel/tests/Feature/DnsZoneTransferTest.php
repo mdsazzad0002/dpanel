@@ -41,7 +41,7 @@ class DnsZoneTransferTest extends TestCase
 
     private function url(string $path): string
     {
-        return "/cpsess{$this->token}/dns/{$path}";
+        return "/dpt{$this->token}/dns/{$path}";
     }
 
     /** @return array<string, list<string>> kind => contents */

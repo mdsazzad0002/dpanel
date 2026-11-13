@@ -4,13 +4,13 @@ set -euo pipefail
 usage() {
   echo "Usage: $0 [<ip> | --detect]"
   echo "  (no argument)  Show the configured and the detected public IP"
-  echo "  <ip>           Set SERVERPANEL_MAIL_SERVER_IP to this public IP"
+  echo "  <ip>           Set dPanel_MAIL_SERVER_IP to this public IP"
   echo "  --detect       Look up the current public IP and set it"
 }
 
 env_file="${PANEL_APP_ENV_FILE:-/var/www/dpanel/.env}"
 backup_dir="${PANEL_ENV_BACKUP_DIR:-$(dirname "$env_file")/storage/app/env-backups}"
-key="SERVERPANEL_MAIL_SERVER_IP"
+key="dPanel_MAIL_SERVER_IP"
 
 detect_ip() {
   local url ip

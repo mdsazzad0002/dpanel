@@ -56,8 +56,8 @@ class WebsiteEdgeCacheTest extends TestCase
             ['id' => '1', 'domain' => 'panel.test', 'scope' => 'system', 'assigned_reseller_id' => null],
         ]);
         config([
-            'serverpanel.edge_gateway_internal_url' => 'http://gateway.test',
-            'serverpanel.execution_api_token' => 'secret',
+            'dpanel.edge_gateway_internal_url' => 'http://gateway.test',
+            'dpanel.execution_api_token' => 'secret',
         ]);
     }
 
@@ -67,7 +67,7 @@ class WebsiteEdgeCacheTest extends TestCase
             ->withArgs(fn ($channel, $payload) => $channel === 'edge:reload' && json_decode($payload, true)['domains'] === ['shop.test'])
             ->andReturn(1);
 
-        $this->request()->putJson("/cpsess{$this->token}/websites/site-1/edge-cache", [
+        $this->request()->putJson("/dpt{$this->token}/websites/site-1/edge-cache", [
             'mode' => 'everything',
             'edge_ttl' => 7200,
             'browser_ttl' => 0,
@@ -88,7 +88,7 @@ class WebsiteEdgeCacheTest extends TestCase
     {
         Redis::shouldReceive('connection')->never();
 
-        $this->request()->putJson("/cpsess{$this->token}/websites/site-1/edge-cache", [
+        $this->request()->putJson("/dpt{$this->token}/websites/site-1/edge-cache", [
             'mode' => 'standard', 'edge_ttl' => 3600, 'bypass_paths' => 'wp-admin', 'bypass_cookies' => '',
             'ignore_query_string' => false, 'serve_stale' => true,
         ])->assertStatus(422)->assertJsonValidationErrors('bypass_paths');
@@ -97,7 +97,7 @@ class WebsiteEdgeCacheTest extends TestCase
 
     public function test_the_panel_site_cannot_be_cached(): void
     {
-        $this->request()->putJson("/cpsess{$this->token}/websites/1/edge-cache", [
+        $this->request()->putJson("/dpt{$this->token}/websites/1/edge-cache", [
             'mode' => 'everything', 'edge_ttl' => 3600, 'ignore_query_string' => false, 'serve_stale' => true,
         ])->assertStatus(422);
     }
@@ -106,7 +106,7 @@ class WebsiteEdgeCacheTest extends TestCase
     {
         Http::fake(['gateway.test/__admin/cache/purge' => Http::response(['success' => true, 'purged' => 2])]);
 
-        $this->request()->postJson("/cpsess{$this->token}/websites/site-1/edge-cache/purge", [
+        $this->request()->postJson("/dpt{$this->token}/websites/site-1/edge-cache/purge", [
             'type' => 'prefixes',
             'targets' => "/blog/\n\n/news/",
         ])->assertOk()->assertJsonPath('purged', 2);
@@ -121,7 +121,7 @@ class WebsiteEdgeCacheTest extends TestCase
     {
         $this->expectPublish()->andReturn(1);
 
-        $this->request()->postJson("/cpsess{$this->token}/websites/site-1/edge-cache/development-mode", ['enabled' => true])->assertOk();
+        $this->request()->postJson("/dpt{$this->token}/websites/site-1/edge-cache/development-mode", ['enabled' => true])->assertOk();
 
         $until = (int) WebsiteEdgeCache::query()->where('website_id', 'site-1')->value('development_mode_until');
         $this->assertEqualsWithDelta(time() + 3 * 3600, $until, 5);
@@ -133,7 +133,7 @@ class WebsiteEdgeCacheTest extends TestCase
         $reseller->assignRole('reseller');
 
         $this->withoutMiddleware()->actingAs($reseller)->withSession(['panel_session_token' => $this->token])
-            ->postJson("/cpsess{$this->token}/websites/site-1/edge-cache/purge", ['type' => 'everything'])
+            ->postJson("/dpt{$this->token}/websites/site-1/edge-cache/purge", ['type' => 'everything'])
             ->assertNotFound();
     }
 

@@ -31,7 +31,7 @@ class ApplyPanelRouteDefaults
         // on every request — including guest-facing pages like /login. The
         // forced-logout recovery below exists to catch an authenticated
         // session that's missing its panel token on an actual panel route
-        // (cpsess{token}/...); it must never fire on a route that isn't one,
+        // (dpt{token}/...); it must never fire on a route that isn't one,
         // or it can invalidate/regenerate the session and CSRF token out from
         // under a login page the browser already rendered, causing a
         // reproducible "CSRF token mismatch" on submit whenever the browser
@@ -39,7 +39,7 @@ class ApplyPanelRouteDefaults
         $isPanelRoute = $request->route()?->parameter('token') !== null;
 
         if ($isPanelRoute && Auth::check()) {
-            $cookieName = (string) config('serverpanel.panel_cookie_name', 'panel_session_proof');
+            $cookieName = (string) config('dpanel.panel_cookie_name', 'panel_session_proof');
 
             Log::info('DEBUG_PANEL_ROUTE_DEFAULTS force_logout', [
                 'scheme' => $request->getScheme(),

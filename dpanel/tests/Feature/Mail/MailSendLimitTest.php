@@ -106,7 +106,7 @@ class MailSendLimitTest extends TestCase
 
     private function url(string $path): string
     {
-        return "/cpsess{$this->token}{$path}";
+        return "/dpt{$this->token}{$path}";
     }
 
     public function test_the_maps_charge_mailboxes_domains_aliases_and_site_users_to_the_account(): void

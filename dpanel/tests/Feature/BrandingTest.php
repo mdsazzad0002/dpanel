@@ -37,7 +37,7 @@ class BrandingTest extends TestCase
     private function save(User $user, array $body)
     {
         return $this->withoutMiddleware()->actingAs($user)->withSession(['panel_session_token' => $this->token])
-            ->post("/cpsess{$this->token}/settings/branding", $body, ['Accept' => 'application/json']);
+            ->post("/dpt{$this->token}/settings/branding", $body, ['Accept' => 'application/json']);
     }
 
     public function test_a_reseller_and_their_customers_see_the_resellers_look_and_others_the_servers(): void

@@ -11,7 +11,7 @@ Artisan::command('inspire', function () {
 
 $backupSettings = app(BackupSettings::class)->read();
 if ((bool) ($backupSettings['schedule_enabled'] ?? true)) {
-    Schedule::command('serverpanel:backup')
+    Schedule::command('dpanel:backup')
         ->dailyAt((string) ($backupSettings['schedule_time'] ?? '02:30'))
         ->withoutOverlapping();
 }
@@ -25,7 +25,7 @@ if ($resticSettings['enabled'] && $resticSettings['repository'] !== '') {
         ->withoutOverlapping();
 }
 
-Schedule::command('serverpanel:ssl-reconcile')
+Schedule::command('dpanel:ssl-reconcile')
     ->twiceDaily(3, 15)
     ->withoutOverlapping();
 

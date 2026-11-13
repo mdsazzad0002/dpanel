@@ -54,7 +54,7 @@ class HandleInertiaRequests extends Middleware
             'csrf_token' => $request->hasSession() ? $request->session()->token() : null,
             'panel' => [
                 'token' => $panelToken,
-                'domain' => config('serverpanel.panel_domain'),
+                'domain' => config('dpanel.panel_domain'),
                 'serverBaseDir' => $user ? PathService::websiteBaseDirectory() : null,
             ],
             'phpmyadmin' => [

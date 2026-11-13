@@ -106,13 +106,13 @@ class DrustSecurityClient
      */
     private function request(string $method, string $path, ?array $payload, int $timeout): array
     {
-        $baseUrl = trim((string) config('serverpanel.execution_api_base_url', ''));
+        $baseUrl = trim((string) config('dpanel.execution_api_base_url', ''));
         if ($baseUrl === '') {
-            throw new \RuntimeException('drust API is not configured (SERVERPANEL_EXECUTION_API_BASE_URL).');
+            throw new \RuntimeException('drust API is not configured (dPanel_EXECUTION_API_BASE_URL).');
         }
 
         $request = Http::acceptJson()->asJson()->timeout($timeout);
-        $token = trim((string) config('serverpanel.execution_api_token', ''));
+        $token = trim((string) config('dpanel.execution_api_token', ''));
         if ($token !== '') {
             $request = $request->withToken($token);
         }

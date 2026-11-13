@@ -33,8 +33,8 @@ class WebsiteTerminalController extends Controller
             return response()->json(['message' => 'Website user or project root is unavailable.'], 422);
         }
         $client = Http::acceptJson()->asJson()->timeout(45);
-        if ($apiToken = trim((string) config('serverpanel.execution_api_token', ''))) $client = $client->withToken($apiToken);
-        $response = $client->post(rtrim((string) config('serverpanel.execution_api_base_url'), '/').'/api/v1/website-terminal', [
+        if ($apiToken = trim((string) config('dpanel.execution_api_token', ''))) $client = $client->withToken($apiToken);
+        $response = $client->post(rtrim((string) config('dpanel.execution_api_base_url'), '/').'/api/v1/website-terminal', [
             'site_owner' => (string) $website->site_owner,
             'project_root' => $this->terminalPath($website),
             'working_directory' => (string) ($validated['working_directory'] ?? $this->terminalPath($website)),
@@ -54,9 +54,9 @@ class WebsiteTerminalController extends Controller
         }
         $ticket = Str::random(64);
         $client = Http::acceptJson()->asJson()->timeout(5);
-        $apiToken = trim((string) config('serverpanel.execution_api_token', ''));
+        $apiToken = trim((string) config('dpanel.execution_api_token', ''));
         if ($apiToken !== '') $client = $client->withToken($apiToken);
-        $edgeUrl = rtrim((string) config('serverpanel.edge_gateway_internal_url', 'http://127.0.0.1'), '/');
+        $edgeUrl = rtrim((string) config('dpanel.edge_gateway_internal_url', 'http://127.0.0.1'), '/');
         $response = $client->post($edgeUrl.'/__admin/terminal-ticket', [
             'ticket' => $ticket,
             'site_owner' => (string) $website->site_owner,

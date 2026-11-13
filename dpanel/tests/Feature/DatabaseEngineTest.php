@@ -30,9 +30,9 @@ class DatabaseEngineTest extends TestCase
         $this->admin->assignRole('admin');
 
         config([
-            'serverpanel.database_api_url' => 'http://drust.test/api/v1/database-request',
-            'serverpanel.execution_api_base_url' => 'http://drust.test',
-            'serverpanel.execution_api_token' => 'secret',
+            'dpanel.database_api_url' => 'http://drust.test/api/v1/database-request',
+            'dpanel.execution_api_base_url' => 'http://drust.test',
+            'dpanel.execution_api_token' => 'secret',
             'postgresql.admin_username' => 'postgres',
             'postgresql.admin_password' => 'superpw',
             'mongodb.admin_username' => 'admin',
@@ -45,7 +45,7 @@ class DatabaseEngineTest extends TestCase
     {
         Http::fake(['drust.test/api/v1/database-request' => Http::response(['success' => true, 'message' => 'ok'])]);
 
-        $this->request()->post("/cpsess{$this->token}/databases", $this->payload())->assertRedirect();
+        $this->request()->post("/dpt{$this->token}/databases", $this->payload())->assertRedirect();
 
         $database = DatabaseRequest::query()->sole();
         $this->assertSame('mariadb', $database->engine);
@@ -58,7 +58,7 @@ class DatabaseEngineTest extends TestCase
         Http::fake(['drust.test/api/v1/database-request' => Http::response(['success' => true, 'message' => 'ok'])]);
 
         $this->request()
-            ->post("/cpsess{$this->token}/databases", $this->payload([
+            ->post("/dpt{$this->token}/databases", $this->payload([
                 'engine' => 'postgresql',
                 'database_host' => '203.0.113.10',
                 'charset' => 'latin1',
@@ -81,7 +81,7 @@ class DatabaseEngineTest extends TestCase
         Http::fake(['drust.test/api/v1/mongodb/admin' => Http::response(['success' => true, 'message' => 'ok'])]);
 
         $this->request()
-            ->post("/cpsess{$this->token}/databases", $this->payload([
+            ->post("/dpt{$this->token}/databases", $this->payload([
                 'engine' => 'mongodb',
                 'database_host' => '203.0.113.10',
             ]))
@@ -108,11 +108,11 @@ class DatabaseEngineTest extends TestCase
         $mongo = $this->createDatabase('mongodb');
 
         $this->request()
-            ->get("/cpsess{$this->token}/databases/{$mongo->id}/phpmyadmin/autologin")
+            ->get("/dpt{$this->token}/databases/{$mongo->id}/phpmyadmin/autologin")
             ->assertRedirectContains("/databases/mongodb/admin?scope={$mongo->id}");
 
         $this->request()
-            ->postJson("/cpsess{$this->token}/databases/mongodb/admin/run", ['op' => ['action' => 'overview'], 'scope' => $mongo->id])
+            ->postJson("/dpt{$this->token}/databases/mongodb/admin/run", ['op' => ['action' => 'overview'], 'scope' => $mongo->id])
             ->assertOk();
 
         Http::assertSent(fn ($request) => $request['connection']['username'] === 'siteowner_mongodb_user'
@@ -132,7 +132,7 @@ class DatabaseEngineTest extends TestCase
                 ->withoutMiddleware()
                 ->actingAs($user)
                 ->withSession(['panel_session_token' => $this->token])
-                ->postJson("/cpsess{$this->token}/databases/mongodb/admin/run", ['op' => ['action' => 'overview'], 'scope' => $database->id])
+                ->postJson("/dpt{$this->token}/databases/mongodb/admin/run", ['op' => ['action' => 'overview'], 'scope' => $database->id])
                 ->assertNotFound();
         }
         Http::assertNothingSent();
@@ -143,7 +143,7 @@ class DatabaseEngineTest extends TestCase
         Http::fake();
 
         $this->request()
-            ->post("/cpsess{$this->token}/databases", $this->payload(['engine' => 'oracle']))
+            ->post("/dpt{$this->token}/databases", $this->payload(['engine' => 'oracle']))
             ->assertSessionHasErrors('engine');
 
         $this->assertSame(0, DatabaseRequest::query()->count());
@@ -156,7 +156,7 @@ class DatabaseEngineTest extends TestCase
         $database = $this->createDatabase('postgresql');
 
         $this->request()
-            ->patch("/cpsess{$this->token}/databases/{$database->id}", $this->payload([
+            ->patch("/dpt{$this->token}/databases/{$database->id}", $this->payload([
                 'engine' => 'mariadb',
                 'database_name' => $database->database_name,
                 'database_user' => $database->database_user,
@@ -177,7 +177,7 @@ class DatabaseEngineTest extends TestCase
         $database = $this->createDatabase('postgresql');
 
         $this->request()
-            ->get("/cpsess{$this->token}/databases/{$database->id}/pgadmin/autologin")
+            ->get("/dpt{$this->token}/databases/{$database->id}/pgadmin/autologin")
             ->assertRedirect(url('/pgadmin4/dpanel-sso?ticket='.str_repeat('a', 64)));
 
         Http::assertSent(fn ($request) => $request->hasHeader('Authorization', 'Bearer secret')
@@ -193,10 +193,10 @@ class DatabaseEngineTest extends TestCase
         $mariadb = $this->createDatabase('mariadb');
 
         $this->request()
-            ->get("/cpsess{$this->token}/databases/{$postgres->id}/phpmyadmin/autologin")
+            ->get("/dpt{$this->token}/databases/{$postgres->id}/phpmyadmin/autologin")
             ->assertRedirectContains("/databases/{$postgres->id}/pgadmin/autologin");
         $this->request()
-            ->get("/cpsess{$this->token}/databases/{$mariadb->id}/pgadmin/autologin")
+            ->get("/dpt{$this->token}/databases/{$mariadb->id}/pgadmin/autologin")
             ->assertRedirectContains("/databases/{$mariadb->id}/phpmyadmin/autologin");
     }
 
@@ -206,7 +206,7 @@ class DatabaseEngineTest extends TestCase
         $database = $this->createDatabase('postgresql');
 
         $this->request()
-            ->get("/cpsess{$this->token}/databases/{$database->id}/pgadmin/autologin")
+            ->get("/dpt{$this->token}/databases/{$database->id}/pgadmin/autologin")
             ->assertRedirectContains('/databases')
             ->assertSessionHas('error', 'Could not open pgAdmin: Failed: pgAdmin is not installed.');
     }
@@ -219,7 +219,7 @@ class DatabaseEngineTest extends TestCase
         ])]);
 
         $this->request()
-            ->get("/cpsess{$this->token}/databases/postgresql/pgadmin")
+            ->get("/dpt{$this->token}/databases/postgresql/pgadmin")
             ->assertRedirect(url('/pgadmin4/dpanel-sso?ticket='.str_repeat('b', 64)));
 
         Http::assertSent(fn ($request) => $request['target'] === 'admin'
@@ -241,7 +241,7 @@ class DatabaseEngineTest extends TestCase
         ]);
 
         $this->request()
-            ->get("/cpsess{$this->token}/databases/list")
+            ->get("/dpt{$this->token}/databases/list")
             ->assertOk()
             ->assertInertia(fn ($page) => $page
                 ->component('Databases/List')
@@ -361,7 +361,7 @@ class DatabaseEngineTest extends TestCase
         $database = $this->createDatabase('postgresql');
 
         $this->request()
-            ->get("/cpsess{$this->token}/databases/{$database->id}/pgadmin/autologin")
+            ->get("/dpt{$this->token}/databases/{$database->id}/pgadmin/autologin")
             ->assertRedirectContains('/databases')
             ->assertSessionHas('error');
     }

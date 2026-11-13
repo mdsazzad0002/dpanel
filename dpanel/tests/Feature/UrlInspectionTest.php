@@ -109,6 +109,6 @@ class UrlInspectionTest extends TestCase
             ->withoutMiddleware()
             ->actingAs($this->admin)
             ->withSession(['panel_session_token' => $this->token])
-            ->postJson("/cpsess{$this->token}/seo/url-inspection", $body);
+            ->postJson("/dpt{$this->token}/seo/url-inspection", $body);
     }
 }

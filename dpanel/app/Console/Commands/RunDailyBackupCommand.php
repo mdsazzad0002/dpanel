@@ -12,7 +12,7 @@ use ZipArchive;
 
 class RunDailyBackupCommand extends Command
 {
-    protected $signature = 'serverpanel:backup {--only=all : all|db|files}';
+    protected $signature = 'dpanel:backup {--only=all : all|db|files}';
 
     protected $description = 'Create backup for database and application data';
 

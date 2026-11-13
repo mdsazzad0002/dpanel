@@ -130,7 +130,7 @@ class McpCommandExecutor
             }
         }
 
-        @set_time_limit((int) config('serverpanel.command_timeout', 300) + 60);
+        @set_time_limit((int) config('dpanel.command_timeout', 300) + 60);
 
         return $server === null
             ? $this->runLocal($command, $token, $outputLimit)
@@ -205,7 +205,7 @@ class McpCommandExecutor
         // A full token runs as root only where the host allows it; anything
         // else runs unprivileged (the script enforces this as well).
         $mode = $token->allowsMutations() && $this->localAccess->level() !== LocalHostAccess::READ ? 'full' : 'read';
-        $timeout = max(1, (int) config('serverpanel.command_timeout', 300));
+        $timeout = max(1, (int) config('dpanel.command_timeout', 300));
 
         $result = $this->scripts->withTimeout($timeout + 15)->execute('mcp-exec.sh', [$mode, (string) $timeout, $command]);
 

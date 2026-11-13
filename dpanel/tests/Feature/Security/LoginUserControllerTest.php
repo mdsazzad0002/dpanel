@@ -21,7 +21,7 @@ class LoginUserControllerTest extends TestCase
         parent::setUp();
         $this->token = str_repeat('e', 64);
         URL::defaults(['token' => $this->token]);
-        config(['serverpanel.execution_api_base_url' => 'http://drust.test', 'serverpanel.execution_api_token' => 'secret']);
+        config(['dpanel.execution_api_base_url' => 'http://drust.test', 'dpanel.execution_api_token' => 'secret']);
         $this->admin = User::factory()->create(['id' => 1]);
         $this->admin->assignRole('admin');
     }
@@ -38,7 +38,7 @@ class LoginUserControllerTest extends TestCase
             'data' => ['users' => [['name' => 'root', 'uid' => 0, 'can_login' => true]], 'shells' => ['/bin/bash']],
         ])]);
 
-        $this->asAdmin()->getJson("/cpsess{$this->token}/security/login-users/list")
+        $this->asAdmin()->getJson("/dpt{$this->token}/security/login-users/list")
             ->assertOk()
             ->assertJsonPath('users.0.name', 'root')
             ->assertJsonPath('shells.0', '/bin/bash');
@@ -48,7 +48,7 @@ class LoginUserControllerTest extends TestCase
     {
         Http::fake(['drust.test/api/v1/login-users' => Http::response(['success' => true, 'message' => 'site1 can no longer open a shell.'])]);
 
-        $this->asAdmin()->postJson("/cpsess{$this->token}/security/login-users", [
+        $this->asAdmin()->postJson("/dpt{$this->token}/security/login-users", [
             'action' => 'set_shell', 'user' => 'site1', 'shell' => '/usr/sbin/nologin',
         ])->assertOk()->assertJson(['ok' => true]);
 
@@ -61,7 +61,7 @@ class LoginUserControllerTest extends TestCase
     {
         Http::fake();
 
-        $this->asAdmin()->postJson("/cpsess{$this->token}/security/login-users", [
+        $this->asAdmin()->postJson("/dpt{$this->token}/security/login-users", [
             'action' => 'lock', 'user' => 'root; rm -rf /',
         ])->assertStatus(422);
 
@@ -75,10 +75,10 @@ class LoginUserControllerTest extends TestCase
         $other->assignRole('admin');
 
         $this->withoutMiddleware()->actingAs($other)->withSession(['panel_session_token' => $this->token])
-            ->getJson("/cpsess{$this->token}/security/login-users/list")
+            ->getJson("/dpt{$this->token}/security/login-users/list")
             ->assertForbidden();
         $this->withoutMiddleware()->actingAs($other)->withSession(['panel_session_token' => $this->token])
-            ->postJson("/cpsess{$this->token}/security/login-users", ['action' => 'lock', 'user' => 'site1'])
+            ->postJson("/dpt{$this->token}/security/login-users", ['action' => 'lock', 'user' => 'site1'])
             ->assertForbidden();
 
         Http::assertNothingSent();
@@ -88,7 +88,7 @@ class LoginUserControllerTest extends TestCase
     {
         Http::fake(['drust.test/api/v1/login-users' => Http::response(['success' => false, 'message' => 'root must keep a login shell'])]);
 
-        $this->asAdmin()->postJson("/cpsess{$this->token}/security/login-users", [
+        $this->asAdmin()->postJson("/dpt{$this->token}/security/login-users", [
             'action' => 'set_shell', 'user' => 'root', 'shell' => '/usr/sbin/nologin',
         ])->assertStatus(422)->assertJson(['message' => 'root must keep a login shell']);
     }

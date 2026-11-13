@@ -89,7 +89,7 @@ class AuthenticationTest extends TestCase
 
         $this->actingAs($user)
             ->withSession(['panel_session_token' => $oldToken])
-            ->withHeader('referer', url('/cpsess'.$oldToken.'/emails/create?secret=discarded'))
+            ->withHeader('referer', url('/dpt'.$oldToken.'/emails/create?secret=discarded'))
             ->post('/logout')
             ->assertSessionHas('panel.last_path', '/emails/create');
 
@@ -100,7 +100,7 @@ class AuthenticationTest extends TestCase
 
         $newToken = (string) session('panel_session_token');
         $this->assertNotSame($oldToken, $newToken);
-        $response->assertRedirect('/cpsess'.$newToken.'/emails/create');
+        $response->assertRedirect('/dpt'.$newToken.'/emails/create');
         $response->assertSessionMissing('panel.last_path');
     }
 

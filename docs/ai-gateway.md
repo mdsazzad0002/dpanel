@@ -169,4 +169,4 @@ prompt or added a caption, that text is in `revised_prompt`.
 | Setting | Default | Meaning |
 | --- | --- | --- |
 | `AIGATEWAY_IMAGE_TIMEOUT` | `180` | Seconds to wait for one image generation call |
-| `SERVERPANEL_MEDIA_OCR_API_URL` | drust `/api/v1/media/ocr` | Where OCR requests go |
+| `dPanel_MEDIA_OCR_API_URL` | drust `/api/v1/media/ocr` | Where OCR requests go |

@@ -17,7 +17,7 @@ class McpCommandPolicy
     private const PIPE_FILTERS = ['grep', 'egrep', 'fgrep', 'head', 'tail', 'wc', 'sort', 'uniq', 'cut', 'column'];
 
     /**
-     * Read-only diagnostics allowed over MCP on top of serverpanel.safe_patterns.
+     * Read-only diagnostics allowed over MCP on top of dpanel.safe_patterns.
      * Kept here rather than in that config, which also auto-approves commands
      * in the panel's own command runner.
      */
@@ -49,7 +49,7 @@ class McpCommandPolicy
 
     /**
      * Commands a Windows panel host refuses for every token, as the Linux list
-     * in serverpanel.blocked_commands does (rm -rf /, mkfs, reboot, passwd …).
+     * in dpanel.blocked_commands does (rm -rf /, mkfs, reboot, passwd …).
      * Matched lower case with forward slashes. A drive root is "c:", "c:/" or
      * "c:/*"; bash's "/c" is already caught by "rm -rf /".
      */
@@ -141,7 +141,7 @@ class McpCommandPolicy
      */
     public function readOnlyCommands(bool $panelHost = false): array
     {
-        $commands = array_values(array_unique([...(array) config('serverpanel.safe_patterns', []), ...self::READ_ONLY_EXTRA]));
+        $commands = array_values(array_unique([...(array) config('dpanel.safe_patterns', []), ...self::READ_ONLY_EXTRA]));
 
         return $panelHost
             ? array_values(array_filter($commands, fn (string $command) => $this->missingHostTool(mb_strtolower($command)) === null))
@@ -190,7 +190,7 @@ class McpCommandPolicy
             return true;
         }
 
-        foreach ((array) config('serverpanel.approval_required_patterns', []) as $pattern) {
+        foreach ((array) config('dpanel.approval_required_patterns', []) as $pattern) {
             if ($pattern !== '' && str_contains($normalized, mb_strtolower((string) $pattern))) {
                 return false;
             }

@@ -30,7 +30,7 @@ class ResticBackupTest extends TestCase
         parent::setUp();
         $this->token = str_repeat('a', 64);
         URL::defaults(['token' => $this->token]);
-        config(['serverpanel.execution_api_base_url' => 'http://drust.test', 'serverpanel.execution_api_token' => 'secret']);
+        config(['dpanel.execution_api_base_url' => 'http://drust.test', 'dpanel.execution_api_token' => 'secret']);
     }
 
     private function as(string $role): User
@@ -44,7 +44,7 @@ class ResticBackupTest extends TestCase
 
     private function url(string $path): string
     {
-        return "/cpsess{$this->token}/backups/incremental{$path}";
+        return "/dpt{$this->token}/backups/incremental{$path}";
     }
 
     private function website(string $domain, ?User $owner = null): Website
@@ -89,7 +89,7 @@ class ResticBackupTest extends TestCase
         $this->assertTrue($settings->keyAtRisk());
 
         $this->get($this->url(''))->assertInertia(fn ($page) => $page->component('Backups/Incremental/Index')->where('keyAtRisk', true)->where('newKey', $key));
-        $this->get("/cpsess{$this->token}/backups")->assertInertia(fn ($page) => $page->where('resticKeyAtRisk', true));
+        $this->get("/dpt{$this->token}/backups")->assertInertia(fn ($page) => $page->where('resticKeyAtRisk', true));
 
         $download = $this->get($this->url('/key'))->assertOk();
         $this->assertStringContainsString($key, $download->streamedContent());

@@ -43,8 +43,8 @@ class CloneShareController extends Controller
             return response()->json(['ok' => false, 'message' => 'The selected database does not belong to '.$target->domain.'.'], 422);
         }
 
-        $baseUrl = trim((string) config('serverpanel.execution_api_base_url', ''));
-        $apiToken = trim((string) config('serverpanel.execution_api_token', ''));
+        $baseUrl = trim((string) config('dpanel.execution_api_base_url', ''));
+        $apiToken = trim((string) config('dpanel.execution_api_token', ''));
         if ($baseUrl === '' || $apiToken === '') {
             return response()->json(['ok' => false, 'message' => 'dRust backup API is not configured.'], 503);
         }
@@ -64,8 +64,8 @@ class CloneShareController extends Controller
             return response()->json(['ok' => false, 'message' => 'Website account not found.'], 404);
         }
 
-        $baseUrl = trim((string) config('serverpanel.execution_api_base_url', ''));
-        $apiToken = trim((string) config('serverpanel.execution_api_token', ''));
+        $baseUrl = trim((string) config('dpanel.execution_api_base_url', ''));
+        $apiToken = trim((string) config('dpanel.execution_api_token', ''));
         if ($baseUrl === '' || $apiToken === '') {
             return response()->json(['ok' => false, 'message' => 'dRust backup API is not configured.'], 503);
         }

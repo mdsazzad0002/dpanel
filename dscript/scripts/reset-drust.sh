@@ -54,7 +54,7 @@ if [[ "$reset_secret" == true ]]; then
   command -v openssl >/dev/null 2>&1 || { echo '[ERROR] openssl is required.' >&2; exit 1; }
   new_secret="$(openssl rand -hex 32)"
   upsert_secret "$DRUST_ENV" DRUST_API_TOKEN "$new_secret"
-  upsert_secret "$PANEL_ENV" SERVERPANEL_EXECUTION_API_TOKEN "$new_secret"
+  upsert_secret "$PANEL_ENV" dPanel_EXECUTION_API_TOKEN "$new_secret"
   unset new_secret
   if [[ -x "$(dirname "$PANEL_ENV")/artisan" ]]; then
     (cd "$(dirname "$PANEL_ENV")" && php artisan config:clear >/dev/null 2>&1 || true)

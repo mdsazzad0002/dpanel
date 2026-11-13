@@ -64,7 +64,7 @@ class MailHostnameDetector
         $sources = [
             [$ptr, 'Reverse DNS (PTR) of '.($ip ?: 'server IP')],
             [$this->current(), 'Current Postfix hostname'],
-            [strtolower(trim((string) config('serverpanel.mail.hostname', ''))), 'SERVERPANEL_MAIL_HOSTNAME'],
+            [strtolower(trim((string) config('dpanel.mail.hostname', ''))), 'dPanel_MAIL_HOSTNAME'],
             [$panel !== '' ? 'mail.'.$panel : '', 'mail. + panel domain'],
             [$panel, 'Panel domain'],
         ];

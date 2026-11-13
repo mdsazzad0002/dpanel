@@ -7,7 +7,7 @@ use Illuminate\Console\Command;
 
 class UploadScanCommand extends Command
 {
-    protected $signature = 'serverpanel:upload-scan {state : on, off or status}';
+    protected $signature = 'dpanel:upload-scan {state : on, off or status}';
 
     protected $description = 'Turn antivirus scanning of uploads on or off, e.g. when ClamAV breaks and blocks uploads';
 

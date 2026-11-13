@@ -27,7 +27,7 @@ class BandwidthLimitTest extends TestCase
         parent::setUp();
         $this->dir = sys_get_temp_dir().'/dpanel-bw-'.Str::random(8);
         File::ensureDirectoryExists($this->dir);
-        config(['serverpanel.bandwidth_directory' => $this->dir]);
+        config(['dpanel.bandwidth_directory' => $this->dir]);
         $this->mock(EdgeGatewayReloader::class)->shouldReceive('reloadDomains')
             ->andReturnUsing(function (array $domains) {
                 $this->reloaded[] = $domains;

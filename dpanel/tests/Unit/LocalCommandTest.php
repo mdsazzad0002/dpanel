@@ -187,8 +187,8 @@ class LocalCommandTest extends TestCase
             $local->artisanCronLine(['schedule:run'], '/usr/bin/php8.3', '/var/www/dpanel'),
         );
         $this->assertSame(
-            'cd /var/www/dpanel && /usr/bin/php8.3 artisan serverpanel:trash-backups-prune --days=30 >> /dev/null 2>&1',
-            $local->artisanCronLine(['serverpanel:trash-backups-prune', '--days=30'], '/usr/bin/php8.3', '/var/www/dpanel'),
+            'cd /var/www/dpanel && /usr/bin/php8.3 artisan dpanel:trash-backups-prune --days=30 >> /dev/null 2>&1',
+            $local->artisanCronLine(['dpanel:trash-backups-prune', '--days=30'], '/usr/bin/php8.3', '/var/www/dpanel'),
         );
         $this->assertSame(
             'cd '.base_path().' && '.$local->panelPhpCli().' artisan schedule:run >> /dev/null 2>&1',

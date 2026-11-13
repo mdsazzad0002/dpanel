@@ -16,7 +16,7 @@ use Illuminate\Console\Command;
  */
 class InstallSchedulerCronCommand extends Command
 {
-    protected $signature = 'serverpanel:install-scheduler-cron';
+    protected $signature = 'dpanel:install-scheduler-cron';
     protected $description = 'Install the panel scheduler (schedule:run) as a root panel cron job';
 
     public function handle(CronSystemService $cronSystem): int

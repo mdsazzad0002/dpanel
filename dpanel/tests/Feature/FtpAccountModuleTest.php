@@ -147,7 +147,7 @@ class FtpAccountModuleTest extends TestCase
         $this->seed(RolePermissionSeeder::class);
         $admin = User::factory()->create();
         $admin->assignRole('admin');
-        config(['serverpanel.ftp.tls' => true, 'serverpanel.ftp.port' => 21]);
+        config(['dpanel.ftp.tls' => true, 'dpanel.ftp.port' => 21]);
         $account = $this->createAccount($this->createWebsite(['domain' => 'zilla-ftp.test']), 'ftp_zilla');
 
         $response = $this->as($admin)->get(route('ftp.filezilla', ['account' => $account->id]))->assertOk();
@@ -165,7 +165,7 @@ class FtpAccountModuleTest extends TestCase
         $this->seed(RolePermissionSeeder::class);
         $admin = User::factory()->create();
         $admin->assignRole('admin');
-        config(['serverpanel.ftp.tls' => true, 'serverpanel.ftp.config_path' => $this->vsftpdConfig("rsa_cert_file=/etc/ssl/certs/ssl-cert-snakeoil.pem\n")]);
+        config(['dpanel.ftp.tls' => true, 'dpanel.ftp.config_path' => $this->vsftpdConfig("rsa_cert_file=/etc/ssl/certs/ssl-cert-snakeoil.pem\n")]);
         $account = $this->createAccount($this->createWebsite(['domain' => 'code-ftp.test']), 'ftp_code');
 
         $response = $this->as($admin)->get(route('ftp.vscode', ['account' => $account->id]))->assertOk();
@@ -182,7 +182,7 @@ class FtpAccountModuleTest extends TestCase
 
     public function test_server_info_reads_the_passive_range_and_address_vsftpd_uses(): void
     {
-        config(['serverpanel.ftp.config_path' => $this->vsftpdConfig(
+        config(['dpanel.ftp.config_path' => $this->vsftpdConfig(
             "pasv_min_port=31000\npasv_max_port=31010\npasv_address=10.0.0.5\npasv_address=203.0.113.7\nrsa_cert_file=/etc/letsencrypt/live/x/fullchain.pem\n",
         )]);
 
@@ -220,7 +220,7 @@ class FtpAccountModuleTest extends TestCase
 
     private function as(User $user): static
     {
-        // Skip only the cpsess proof check; auth and role middleware still run.
+        // Skip only the dpt proof check; auth and role middleware still run.
         return $this->withoutMiddleware(EnsurePanelSessionIsValid::class)
             ->actingAs($user)
             ->withSession(['panel_session_token' => $this->token]);

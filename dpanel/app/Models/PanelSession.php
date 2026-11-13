@@ -46,25 +46,25 @@ class PanelSession extends Model
 
     public static function inactivityMinutes(): int
     {
-        return max(1, (int) config('serverpanel.panel_inactivity_timeout', 10));
+        return max(1, (int) config('dpanel.panel_inactivity_timeout', 10));
     }
 
     public static function maximumLifetimeMinutes(): int
     {
-        return max(self::inactivityMinutes(), (int) config('serverpanel.panel_token_lifetime', 60));
+        return max(self::inactivityMinutes(), (int) config('dpanel.panel_token_lifetime', 60));
     }
 
     public static function refreshThresholdMinutes(): int
     {
         return max(1, min(
             self::inactivityMinutes(),
-            (int) config('serverpanel.panel_token_refresh_threshold', 4)
+            (int) config('dpanel.panel_token_refresh_threshold', 4)
         ));
     }
 
     public static function refreshExtensionMinutes(): int
     {
-        return max(1, (int) config('serverpanel.panel_token_refresh_extension', 15));
+        return max(1, (int) config('dpanel.panel_token_refresh_extension', 15));
     }
 
     public static function initialExpiresAt(): Carbon

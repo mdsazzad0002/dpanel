@@ -1,7 +1,7 @@
 import { computed, onMounted, ref } from 'vue';
 
 // Theme and sidebar state for the standalone Mongo Admin app. The theme is
-// the panel's own setting (serverpanel-theme), as in dPanel Mail.
+// the panel's own setting (dpanel-theme), as in dPanel Mail.
 const read = (key) => {
     try {
         return localStorage.getItem(key);
@@ -26,7 +26,7 @@ export function useAppChrome() {
     const applyTheme = () => document.documentElement.classList.toggle('dark', isDark.value);
     const toggleTheme = () => {
         theme.value = isDark.value ? 'light' : 'dark';
-        write('serverpanel-theme', theme.value);
+        write('dpanel-theme', theme.value);
         applyTheme();
     };
     const toggleSidebar = () => {
@@ -36,7 +36,7 @@ export function useAppChrome() {
 
     onMounted(() => {
         const prefersDark = window.matchMedia?.('(prefers-color-scheme: dark)').matches;
-        theme.value = read('serverpanel-theme') ?? (prefersDark ? 'dark' : 'light');
+        theme.value = read('dpanel-theme') ?? (prefersDark ? 'dark' : 'light');
         applyTheme();
     });
 

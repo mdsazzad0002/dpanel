@@ -34,8 +34,8 @@ class WebsiteBulkExportController extends Controller
             return response()->json(['ok' => false, 'message' => 'Choose files, databases or both.'], 422);
         }
 
-        if (trim((string) config('serverpanel.execution_api_base_url', '')) === ''
-            || trim((string) config('serverpanel.execution_api_token', '')) === '') {
+        if (trim((string) config('dpanel.execution_api_base_url', '')) === ''
+            || trim((string) config('dpanel.execution_api_token', '')) === '') {
             return response()->json(['ok' => false, 'message' => 'dRust backup API is not configured.'], 503);
         }
 

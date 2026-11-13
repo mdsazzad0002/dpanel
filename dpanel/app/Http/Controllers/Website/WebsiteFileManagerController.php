@@ -78,7 +78,7 @@ class WebsiteFileManagerController extends WebsiteController
         }
 
         // Handing a multi-GB file to dRust blocks for as long as the execution API upload timeout allows.
-        set_time_limit((int) config('serverpanel.execution_api_upload_timeout', 3600));
+        set_time_limit((int) config('dpanel.execution_api_upload_timeout', 3600));
         try {
             $target = $staged['target'];
             $basePath = $this->resolveFileManagerBasePath($website, (string) ($target['root'] ?? ''));

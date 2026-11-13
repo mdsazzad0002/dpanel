@@ -112,7 +112,7 @@ class AiErrorResolverService
                 'risk_reason' => 'AI suggested fix: '.$classification['risk_reason'],
                 'status' => $classification['risk_level'] === 'blocked'
                     ? 'blocked'
-                    : ($classification['risk_level'] === 'safe' && config('serverpanel.auto_run_safe_fixes', false) ? 'queued' : 'pending_approval'),
+                    : ($classification['risk_level'] === 'safe' && config('dpanel.auto_run_safe_fixes', false) ? 'queued' : 'pending_approval'),
                 'requested_by' => $job->requested_by,
                 'tags' => ['ai_fix', 'signature:'.$this->errorSignature->signatureFrom((string) $job->error_output, (string) $job->command)],
             ]);

@@ -49,7 +49,7 @@ class RestoreDpanelMigrationImportJob implements ShouldQueue
             try {
                 $result = Process::path(base_path())
                     ->timeout($this->timeout - 60)
-                    ->run([PHP_BINARY, base_path('artisan'), 'serverpanel:restore', $import->archive_path, '--force']);
+                    ->run([PHP_BINARY, base_path('artisan'), 'dpanel:restore', $import->archive_path, '--force']);
                 if (! $result->successful()) {
                     throw new RuntimeException('DPanel restore failed: '.trim($result->errorOutput().' '.$result->output()));
                 }

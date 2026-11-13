@@ -30,7 +30,7 @@ class SsoController extends Controller
             return response()->json(['success' => false, 'message' => 'Invalid token'], 400);
         }
 
-        $key = 'serverpanel:webmail_sso:'.$token;
+        $key = 'dpanel:webmail_sso:'.$token;
         $payload = Cache::pull($key);
         if (! is_array($payload)) {
             return response()->json(['success' => false, 'message' => 'Not found'], 404);

@@ -7,7 +7,7 @@ use Illuminate\Support\Facades\DB;
 
 class MysqlPerformanceAuditCommand extends Command
 {
-    protected $signature = 'serverpanel:mysql-audit {--json : Print machine-readable JSON}';
+    protected $signature = 'dpanel:mysql-audit {--json : Print machine-readable JSON}';
     protected $description = 'Report MySQL cache, connection, temporary-table, and slow-query health';
 
     public function handle(): int

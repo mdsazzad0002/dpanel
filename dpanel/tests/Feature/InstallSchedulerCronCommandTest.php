@@ -18,7 +18,7 @@ class InstallSchedulerCronCommandTest extends TestCase
     {
         parent::setUp();
 
-        config(['serverpanel.execution_api_base_url' => 'http://drust.test']);
+        config(['dpanel.execution_api_base_url' => 'http://drust.test']);
         Http::fake(['drust.test/*' => Http::response(['success' => true, 'message' => 'System cron job panel-scheduler installed.'])]);
         Website::query()->forceCreate([
             'id' => '1',
@@ -32,7 +32,7 @@ class InstallSchedulerCronCommandTest extends TestCase
 
     public function test_it_lists_the_scheduler_under_the_root_panel_and_runs_it_as_www_data(): void
     {
-        $this->artisan('serverpanel:install-scheduler-cron')->assertSuccessful();
+        $this->artisan('dpanel:install-scheduler-cron')->assertSuccessful();
 
         $job = CronJob::query()->findOrFail('panel-scheduler');
         $this->assertSame('1', (string) $job->website_id);
@@ -47,10 +47,10 @@ class InstallSchedulerCronCommandTest extends TestCase
 
     public function test_a_rerun_keeps_an_admin_disabled_scheduler_disabled(): void
     {
-        $this->artisan('serverpanel:install-scheduler-cron')->assertSuccessful();
+        $this->artisan('dpanel:install-scheduler-cron')->assertSuccessful();
         CronJob::query()->whereKey('panel-scheduler')->update(['status' => 'disabled', 'expression' => '*/5 * * * *']);
 
-        $this->artisan('serverpanel:install-scheduler-cron')->assertSuccessful();
+        $this->artisan('dpanel:install-scheduler-cron')->assertSuccessful();
 
         $job = CronJob::query()->findOrFail('panel-scheduler');
         $this->assertSame('disabled', $job->status);
@@ -61,7 +61,7 @@ class InstallSchedulerCronCommandTest extends TestCase
     {
         $this->app->instance(LocalCommand::class, new LocalCommand('Linux'));
 
-        $this->artisan('serverpanel:install-scheduler-cron')->assertSuccessful();
+        $this->artisan('dpanel:install-scheduler-cron')->assertSuccessful();
 
         $this->assertSame(
             (new LocalCommand('Linux'))->shellLine([(new LocalCommand('Linux'))->panelPhpCli(), 'artisan', 'schedule:run'], base_path(), true),
@@ -74,7 +74,7 @@ class InstallSchedulerCronCommandTest extends TestCase
     {
         $this->app->instance(LocalCommand::class, new LocalCommand('Windows'));
 
-        $this->artisan('serverpanel:install-scheduler-cron')->assertSuccessful();
+        $this->artisan('dpanel:install-scheduler-cron')->assertSuccessful();
 
         $command = CronJob::query()->findOrFail('panel-scheduler')->command;
         $this->assertStringStartsWith('cd /d ', $command);

@@ -552,7 +552,7 @@ class AiGatewayProviderController extends Controller
             return null;
         }
 
-        // Item hrefs carry the user's live cpsess{token} session segment —
+        // Item hrefs carry the user's live dpt{token} session segment —
         // stripped here so it's never sent to a third-party AI provider or
         // persisted in AiGatewayRequestLog's payload logging. The model gets
         // the page's identity/location (label, group, path shape) to describe
@@ -574,13 +574,13 @@ class AiGatewayProviderController extends Controller
     }
 
     /**
-     * Panel nav/website links are built with a live cpsess{token} segment
+     * Panel nav/website links are built with a live dpt{token} segment
      * (see PanelSearchController) — replace it with a fixed placeholder
      * before any of this text reaches an AI provider or gets logged.
      */
     private function redactSessionToken(string $href): string
     {
-        return (string) preg_replace('#/cpsess[0-9a-fA-F]{64}#', '/cpsess{session}', $href);
+        return (string) preg_replace('#/dpt[0-9a-fA-F]{64}#', '/dpt{session}', $href);
     }
 
     /**

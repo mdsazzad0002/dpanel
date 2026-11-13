@@ -58,8 +58,8 @@ class EdgeCacheClient
     private function gateway(): PendingRequest
     {
         return Http::acceptJson()
-            ->withToken((string) config('serverpanel.execution_api_token'))
-            ->baseUrl(rtrim((string) config('serverpanel.edge_gateway_internal_url'), '/'))
+            ->withToken((string) config('dpanel.execution_api_token'))
+            ->baseUrl(rtrim((string) config('dpanel.edge_gateway_internal_url'), '/'))
             ->timeout(10);
     }
 }

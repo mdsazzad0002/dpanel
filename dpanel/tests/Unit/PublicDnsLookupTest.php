@@ -11,7 +11,7 @@ class PublicDnsLookupTest extends TestCase
     protected function setUp(): void
     {
         parent::setUp();
-        config(['serverpanel.execution_api_base_url' => 'http://drust.test', 'serverpanel.execution_api_token' => 'secret']);
+        config(['dpanel.execution_api_base_url' => 'http://drust.test', 'dpanel.execution_api_token' => 'secret']);
     }
 
     public function test_answers_come_from_drust_in_one_call_and_are_reused(): void

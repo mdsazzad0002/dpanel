@@ -98,8 +98,8 @@ install_mail_services() {
   fi
 
   # Keep the legacy file only as a rollback artifact; it is never included by Dovecot.
-  if [[ -f /etc/dovecot/serverpanel-users && ! -f /etc/dovecot/serverpanel-users.pre-sql.bak ]]; then
-    cp -p /etc/dovecot/serverpanel-users /etc/dovecot/serverpanel-users.pre-sql.bak
+  if [[ -f /etc/dovecot/dpanel-users && ! -f /etc/dovecot/dpanel-users.pre-sql.bak ]]; then
+    cp -p /etc/dovecot/dpanel-users /etc/dovecot/dpanel-users.pre-sql.bak
   fi
 
   panel_configure_dovecot_sql || return 1

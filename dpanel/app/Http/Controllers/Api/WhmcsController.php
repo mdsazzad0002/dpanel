@@ -112,7 +112,7 @@ class WhmcsController extends Controller
         $panelToken = bin2hex(random_bytes(32)); $cookieToken = bin2hex(random_bytes(32));
         $request->session()->put('panel_session_token', $panelToken);
         PanelSession::syncSingleSession((int) $user->id, $panelToken, $cookieToken, (string) $request->ip(), (string) $request->userAgent(), PanelSession::initialExpiresAt(), now());
-        $cookie = cookie(config('serverpanel.panel_cookie_name', 'panel_session_proof'), $cookieToken, PanelSession::inactivityMinutes(), config('session.path', '/'), config('session.domain'), (bool) config('session.secure'), true, false, 'Lax');
+        $cookie = cookie(config('dpanel.panel_cookie_name', 'panel_session_proof'), $cookieToken, PanelSession::inactivityMinutes(), config('session.path', '/'), config('session.domain'), (bool) config('session.secure'), true, false, 'Lax');
         Cookie::queue($cookie);
         return redirect()->route('dashboard', ['token' => $panelToken])->withCookie($cookie);
     }

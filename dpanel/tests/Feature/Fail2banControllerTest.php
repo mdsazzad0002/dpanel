@@ -60,8 +60,8 @@ class Fail2banControllerTest extends TestCase
         $this->admin->assignRole('admin');
 
         config([
-            'serverpanel.execution_api_base_url' => 'http://drust.test',
-            'serverpanel.execution_api_token' => 'secret',
+            'dpanel.execution_api_base_url' => 'http://drust.test',
+            'dpanel.execution_api_token' => 'secret',
         ]);
     }
 
@@ -69,7 +69,7 @@ class Fail2banControllerTest extends TestCase
     {
         foreach (['' => 'SshLogins', '/whitelist' => 'Whitelist', '/blocklist' => 'Blocklist'] as $path => $component) {
             $this->request()
-                ->get("/cpsess{$this->token}/security/fail2ban{$path}")
+                ->get("/dpt{$this->token}/security/fail2ban{$path}")
                 ->assertOk()
                 ->assertInertia(fn ($page) => $page->component("Security/Fail2ban/{$component}"));
         }
@@ -80,7 +80,7 @@ class Fail2banControllerTest extends TestCase
         Http::fake(['drust.test/api/v1/fail2ban' => Http::response(['success' => true, 'data' => $this->status])]);
 
         $this->request()
-            ->getJson("/cpsess{$this->token}/security/fail2ban/status")
+            ->getJson("/dpt{$this->token}/security/fail2ban/status")
             ->assertOk()
             ->assertJsonPath('data.jails.0.banned_ips.0', '203.0.113.7');
     }
@@ -90,7 +90,7 @@ class Fail2banControllerTest extends TestCase
         Http::fake(['drust.test/api/v1/fail2ban' => Http::response(['success' => true, 'data' => $this->status])]);
 
         $this->request()
-            ->postJson("/cpsess{$this->token}/security/fail2ban/unban", ['ip' => '203.0.113.7'])
+            ->postJson("/dpt{$this->token}/security/fail2ban/unban", ['ip' => '203.0.113.7'])
             ->assertOk()
             ->assertJsonPath('message', '203.0.113.7 unblocked.');
 
@@ -106,7 +106,7 @@ class Fail2banControllerTest extends TestCase
         Http::fake(['drust.test/api/v1/fail2ban' => Http::response(['success' => true, 'data' => $this->status])]);
 
         $this->request()
-            ->deleteJson("/cpsess{$this->token}/security/fail2ban/whitelist", ['ip' => '198.51.100.4'])
+            ->deleteJson("/dpt{$this->token}/security/fail2ban/whitelist", ['ip' => '198.51.100.4'])
             ->assertOk();
 
         Http::assertSent(fn ($request) => $request['action'] === 'whitelist_remove' && $request['ip'] === '198.51.100.4');
@@ -117,7 +117,7 @@ class Fail2banControllerTest extends TestCase
         Http::fake(['drust.test/api/v1/fail2ban' => Http::response(['success' => false, 'message' => "Failed: '0.0.0.0/0' is too wide"])]);
 
         $this->request()
-            ->postJson("/cpsess{$this->token}/security/fail2ban/whitelist", ['ip' => '0.0.0.0/0'])
+            ->postJson("/dpt{$this->token}/security/fail2ban/whitelist", ['ip' => '0.0.0.0/0'])
             ->assertStatus(422)
             ->assertJsonPath('message', "'0.0.0.0/0' is too wide");
         $this->assertSame(0, ActivityLog::query()->count());
@@ -132,7 +132,7 @@ class Fail2banControllerTest extends TestCase
         }]);
 
         $this->request()
-            ->postJson("/cpsess{$this->token}/security/fail2ban/bulk", ['action' => 'ban', 'ips' => ['203.0.113.7', '203.0.113.8', '198.51.100.4', '203.0.113.7']])
+            ->postJson("/dpt{$this->token}/security/fail2ban/bulk", ['action' => 'ban', 'ips' => ['203.0.113.7', '203.0.113.8', '198.51.100.4', '203.0.113.7']])
             ->assertOk()
             ->assertJsonPath('message', '2 IPs blocked from SSH. Not changed: 198.51.100.4 (198.51.100.4 is whitelisted.)');
 
@@ -147,7 +147,7 @@ class Fail2banControllerTest extends TestCase
         Http::fake();
 
         $this->request()
-            ->postJson("/cpsess{$this->token}/security/fail2ban/bulk", ['action' => 'whitelist_remove', 'ips' => ['203.0.113.7']])
+            ->postJson("/dpt{$this->token}/security/fail2ban/bulk", ['action' => 'whitelist_remove', 'ips' => ['203.0.113.7']])
             ->assertStatus(422);
         Http::assertNothingSent();
     }
@@ -157,7 +157,7 @@ class Fail2banControllerTest extends TestCase
         Http::fake(['drust.test/api/v1/fail2ban' => Http::response(['success' => true, 'data' => $this->status])]);
 
         $this->request()
-            ->postJson("/cpsess{$this->token}/security/fail2ban/bulk", ['action' => 'whitelist_add', 'ips' => ['198.51.100.4', '198.51.100.5']])
+            ->postJson("/dpt{$this->token}/security/fail2ban/bulk", ['action' => 'whitelist_add', 'ips' => ['198.51.100.4', '198.51.100.5']])
             ->assertOk()
             ->assertJsonPath('message', '2 IPs whitelisted.');
 
@@ -176,10 +176,10 @@ class Fail2banControllerTest extends TestCase
         Http::fake(['drust.test/api/v1/fail2ban/ssh-history' => function () use (&$events) {
             return Http::response(['success' => true, 'data' => ['events' => $events, 'limit' => 500]]);
         }]);
-        $history = fn () => $this->request()->getJson("/cpsess{$this->token}/security/fail2ban/ssh-history")->assertOk();
+        $history = fn () => $this->request()->getJson("/dpt{$this->token}/security/fail2ban/ssh-history")->assertOk();
 
         $this->request()
-            ->postJson("/cpsess{$this->token}/security/fail2ban/ssh-history/delete", ['ips' => ['203.0.113.7']])
+            ->postJson("/dpt{$this->token}/security/fail2ban/ssh-history/delete", ['ips' => ['203.0.113.7']])
             ->assertOk()
             ->assertJsonPath('message', '1 IP removed from the login history.');
         $history()->assertJsonCount(1, 'data.events')
@@ -190,10 +190,10 @@ class Fail2banControllerTest extends TestCase
         $history()->assertJsonCount(2, 'data.events')->assertJsonPath('data.events.0.time', 2500);
 
         Carbon::setTestNow(Carbon::createFromTimestamp(3000));
-        $this->request()->postJson("/cpsess{$this->token}/security/fail2ban/ssh-history/clear")->assertOk();
+        $this->request()->postJson("/dpt{$this->token}/security/fail2ban/ssh-history/clear")->assertOk();
         $history()->assertJsonCount(0, 'data.events')->assertJsonPath('data.hidden', 3);
 
-        $this->request()->postJson("/cpsess{$this->token}/security/fail2ban/ssh-history/restore")->assertOk();
+        $this->request()->postJson("/dpt{$this->token}/security/fail2ban/ssh-history/restore")->assertOk();
         $history()->assertJsonCount(3, 'data.events')->assertJsonPath('data.hidden', 0);
 
         $this->assertEqualsCanonicalizing(
@@ -206,7 +206,7 @@ class Fail2banControllerTest extends TestCase
     public function test_history_delete_rejects_invalid_ips(): void
     {
         $this->request()
-            ->postJson("/cpsess{$this->token}/security/fail2ban/ssh-history/delete", ['ips' => ['1.2.3.4; rm -rf /']])
+            ->postJson("/dpt{$this->token}/security/fail2ban/ssh-history/delete", ['ips' => ['1.2.3.4; rm -rf /']])
             ->assertStatus(422);
     }
 
@@ -215,7 +215,7 @@ class Fail2banControllerTest extends TestCase
         Http::fake();
 
         $this->request()
-            ->postJson("/cpsess{$this->token}/security/fail2ban/unban", [])
+            ->postJson("/dpt{$this->token}/security/fail2ban/unban", [])
             ->assertStatus(422);
         Http::assertNothingSent();
     }

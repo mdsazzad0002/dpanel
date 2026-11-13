@@ -16,7 +16,7 @@ use RuntimeException;
  *
  *  - website: the Clone & Share / Push to Live package (files.zip + database.sql);
  *  - files:   a .tar.gz of only the given files (Push to Live "files only");
- *  - panel:   the full `serverpanel:backup` archive (…_dpanel.tar.gz), the same
+ *  - panel:   the full `dpanel:backup` archive (…_dpanel.tar.gz), the same
  *             file the "DPanel to DPanel" upload takes.
  */
 class PanelPackageBuilder
@@ -73,7 +73,7 @@ class PanelPackageBuilder
     {
         $backupRoot = storage_path('app/backups');
         $before = is_dir($backupRoot) ? File::directories($backupRoot) : [];
-        $exitCode = Artisan::call('serverpanel:backup', ['--only' => 'all']);
+        $exitCode = Artisan::call('dpanel:backup', ['--only' => 'all']);
         $output = trim(Artisan::output());
 
         $archive = null;

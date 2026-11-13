@@ -230,8 +230,8 @@ class BackupController extends Controller
             'website_id' => ['nullable', 'string', 'required_if:filter,website'],
         ]);
 
-        $baseUrl = trim((string) config('serverpanel.execution_api_base_url', ''));
-        $token = trim((string) config('serverpanel.execution_api_token', ''));
+        $baseUrl = trim((string) config('dpanel.execution_api_base_url', ''));
+        $token = trim((string) config('dpanel.execution_api_token', ''));
         if ($baseUrl === '' || $token === '') {
             return response()->json(['ok' => false, 'message' => 'dRust backup API is not configured.'], 503);
         }
@@ -239,7 +239,7 @@ class BackupController extends Controller
         // php.ini's default max_execution_time (30s) would otherwise kill this
         // worker mid-mysqldump/zip on any non-trivial site — this call blocks on
         // dRust for as long as that same execution API timeout allows.
-        set_time_limit((int) config('serverpanel.execution_api_upload_timeout', 3600));
+        set_time_limit((int) config('dpanel.execution_api_upload_timeout', 3600));
 
         try {
             if ($validated['filter'] === 'website') {
@@ -294,8 +294,8 @@ class BackupController extends Controller
             return response()->json(['ok' => false, 'message' => 'Website account not found.'], 404);
         }
 
-        $baseUrl = trim((string) config('serverpanel.execution_api_base_url', ''));
-        $apiToken = trim((string) config('serverpanel.execution_api_token', ''));
+        $baseUrl = trim((string) config('dpanel.execution_api_base_url', ''));
+        $apiToken = trim((string) config('dpanel.execution_api_token', ''));
         if ($baseUrl === '' || $apiToken === '') {
             return response()->json(['ok' => false, 'message' => 'dRust backup API is not configured.'], 503);
         }
@@ -449,9 +449,9 @@ class BackupController extends Controller
 
         try {
             $response = Http::acceptJson()->asJson()
-                ->withToken((string) config('serverpanel.execution_api_token', ''))
+                ->withToken((string) config('dpanel.execution_api_token', ''))
                 ->timeout(120)
-                ->post(rtrim((string) config('serverpanel.execution_api_base_url', ''), '/').'/api/v1/backup/delete', [
+                ->post(rtrim((string) config('dpanel.execution_api_base_url', ''), '/').'/api/v1/backup/delete', [
                     'run_path' => $runPath,
                 ]);
         } catch (\Throwable $e) {
@@ -485,8 +485,8 @@ class BackupController extends Controller
             return response()->json(['ok' => false, 'message' => 'Restorable website archive not found.'], 404);
         }
 
-        $baseUrl = trim((string) config('serverpanel.execution_api_base_url', ''));
-        $apiToken = trim((string) config('serverpanel.execution_api_token', ''));
+        $baseUrl = trim((string) config('dpanel.execution_api_base_url', ''));
+        $apiToken = trim((string) config('dpanel.execution_api_token', ''));
         if ($baseUrl === '' || $apiToken === '') {
             return response()->json(['ok' => false, 'message' => 'dRust backup API is not configured.'], 503);
         }

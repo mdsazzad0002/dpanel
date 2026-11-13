@@ -63,7 +63,7 @@ export function useFileManager(props) {
     const treeOpenState = ref({});
     const saveInProgress = ref(false);
     const renameInProgress = ref(false);
-    const INTERNAL_MOVE_MIME = 'application/x-serverpanel-item-paths';
+    const INTERNAL_MOVE_MIME = 'application/x-dpanel-item-paths';
     const toasts = ref([]);
     let toastSeq = 0;
 

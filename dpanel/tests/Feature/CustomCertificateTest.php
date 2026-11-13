@@ -31,7 +31,7 @@ class CustomCertificateTest extends TestCase
         parent::setUp();
         $this->token = str_repeat('b', 64);
         URL::defaults(['token' => $this->token]);
-        config(['serverpanel.execution_api_base_url' => 'http://drust.test', 'serverpanel.execution_api_token' => 'secret']);
+        config(['dpanel.execution_api_base_url' => 'http://drust.test', 'dpanel.execution_api_token' => 'secret']);
     }
 
     private function website(User $owner, string $domain = 'shop.example.com', array $extra = []): Website
@@ -72,7 +72,7 @@ class CustomCertificateTest extends TestCase
 
     private function upload(Website $site, array $body): \Illuminate\Testing\TestResponse
     {
-        return $this->postJson("/cpsess{$this->token}/websites/{$site->id}/ssl/custom", $body);
+        return $this->postJson("/dpt{$this->token}/websites/{$site->id}/ssl/custom", $body);
     }
 
     public function test_an_upload_goes_to_drust_and_turns_ssl_on_without_keeping_the_key(): void

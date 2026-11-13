@@ -20,7 +20,7 @@ class EdgeGatewayReloaderTest extends TestCase
 
     public function test_it_requests_an_authenticated_live_reload(): void
     {
-        config(['serverpanel.edge_gateway_internal_url' => 'http://127.0.0.1', 'serverpanel.execution_api_token' => 'test-token']);
+        config(['dpanel.edge_gateway_internal_url' => 'http://127.0.0.1', 'dpanel.execution_api_token' => 'test-token']);
         Http::fake(['http://127.0.0.1/__admin/reload' => Http::response(['success' => true])]);
         $this->expectPublish()->andReturn(0);
 

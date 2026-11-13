@@ -44,7 +44,7 @@ class PanelSessionMiddlewareTest extends TestCase
             ->get('/confirm-password');
 
         $response->assertOk();
-        $response->assertCookie((string) config('serverpanel.panel_cookie_name', 'panel_session_proof'));
+        $response->assertCookie((string) config('dpanel.panel_cookie_name', 'panel_session_proof'));
 
         $session = PanelSession::query()
             ->where('token_hash', hash('sha256', $token))
@@ -57,10 +57,10 @@ class PanelSessionMiddlewareTest extends TestCase
 
     public function test_panel_session_expiry_slides_but_never_exceeds_the_absolute_limit(): void
     {
-        config()->set('serverpanel.panel_inactivity_timeout', 10);
-        config()->set('serverpanel.panel_token_lifetime', 60);
-        config()->set('serverpanel.panel_token_refresh_threshold', 4);
-        config()->set('serverpanel.panel_token_refresh_extension', 10);
+        config()->set('dpanel.panel_inactivity_timeout', 10);
+        config()->set('dpanel.panel_token_lifetime', 60);
+        config()->set('dpanel.panel_token_refresh_threshold', 4);
+        config()->set('dpanel.panel_token_refresh_extension', 10);
 
         $session = new PanelSession(['expires_at' => now()->addMinutes(8)]);
         $session->created_at = now()->subMinutes(20);
@@ -99,8 +99,8 @@ class PanelSessionMiddlewareTest extends TestCase
 
         $this->actingAs($user)
             ->withSession(['panel_session_token' => $token])
-            ->withHeader('referer', url("/cpsess{$token}/websites"))
-            ->getJson("/cpsess{$token}/notifications")
+            ->withHeader('referer', url("/dpt{$token}/websites"))
+            ->getJson("/dpt{$token}/notifications")
             ->assertRedirect(route('login'));
 
         $this->assertGuest();
@@ -110,7 +110,7 @@ class PanelSessionMiddlewareTest extends TestCase
 
     public function test_malformed_panel_token_redirects_to_login_instead_of_404(): void
     {
-        $this->get('/cpsess-invalid-token/dashboard')
+        $this->get('/dpt-invalid-token/dashboard')
             ->assertRedirect(route('login'));
     }
 
@@ -132,7 +132,7 @@ class PanelSessionMiddlewareTest extends TestCase
 
         $this->actingAs($user)
             ->withSession(['panel_session_token' => $currentToken])
-            ->get("/cpsess{$wrongToken}/dashboard")
+            ->get("/dpt{$wrongToken}/dashboard")
             ->assertRedirect(route('login'));
     }
 
@@ -143,7 +143,7 @@ class PanelSessionMiddlewareTest extends TestCase
 
         $this->actingAs($user)
             ->withSession(['panel_session_token' => $token])
-            ->get("/cpsess{$token}/not-a-real-panel-page")
+            ->get("/dpt{$token}/not-a-real-panel-page")
             ->assertNotFound();
     }
 }

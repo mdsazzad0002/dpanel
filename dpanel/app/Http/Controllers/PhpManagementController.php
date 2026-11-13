@@ -401,7 +401,7 @@ class PhpManagementController extends Controller
             }
         }
 
-        $versions = collect((array) config('serverpanel.php_versions', self::CANDIDATE_VERSIONS))
+        $versions = collect((array) config('dpanel.php_versions', self::CANDIDATE_VERSIONS))
             ->map(fn ($version) => trim((string) $version))
             ->filter(fn ($version) => preg_match('/^\d+\.\d+$/', $version) === 1)
             ->values()
@@ -830,7 +830,7 @@ class PhpManagementController extends Controller
         $result = $this->runScript(
             [
                 base_path('scripts/php-detect-versions.sh'),
-                '/usr/local/bin/serverpanel-php-detect-versions.sh',
+                '/usr/local/bin/dpanel-php-detect-versions.sh',
             ],
             ['--full'],
         );
@@ -867,7 +867,7 @@ class PhpManagementController extends Controller
         $result = $this->runScript(
             [
                 base_path('scripts/php-detect-extensions.sh'),
-                '/usr/local/bin/serverpanel-php-detect-extensions.sh',
+                '/usr/local/bin/dpanel-php-detect-extensions.sh',
             ],
             ['--version', $version],
         );
@@ -893,7 +893,7 @@ class PhpManagementController extends Controller
         $result = $this->runScript(
             [
                 base_path('scripts/php-detect-config.sh'),
-                '/usr/local/bin/serverpanel-php-detect-config.sh',
+                '/usr/local/bin/dpanel-php-detect-config.sh',
             ],
             ['--version', $version],
         );
@@ -981,7 +981,7 @@ class PhpManagementController extends Controller
             ];
         }
 
-        $baseUrl = trim((string) config('serverpanel.execution_api_base_url', ''));
+        $baseUrl = trim((string) config('dpanel.execution_api_base_url', ''));
         $apiUrl = $baseUrl !== '' ? rtrim($baseUrl, '/').'/api/v1/php/config' : '';
         if ($apiUrl === '') {
             return [
@@ -990,8 +990,8 @@ class PhpManagementController extends Controller
             ];
         }
 
-        $request = Http::acceptJson()->asJson()->timeout((int) config('serverpanel.execution_api_timeout', 60));
-        $token = trim((string) config('serverpanel.execution_api_token', ''));
+        $request = Http::acceptJson()->asJson()->timeout((int) config('dpanel.execution_api_timeout', 60));
+        $token = trim((string) config('dpanel.execution_api_token', ''));
         if ($token !== '') {
             $request = $request->withToken($token);
         }

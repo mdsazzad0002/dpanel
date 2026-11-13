@@ -30,7 +30,7 @@ class AiGatewayImagesTest extends TestCase
         parent::setUp();
 
         Storage::fake('local');
-        config(['serverpanel.media_ocr_api_url' => 'http://drust.test/api/v1/media/ocr']);
+        config(['dpanel.media_ocr_api_url' => 'http://drust.test/api/v1/media/ocr']);
         $this->session = str_repeat('a', 64);
         $this->withoutMiddleware(EnsurePanelSessionIsValid::class)->withSession(['panel_session_token' => $this->session]);
     }
