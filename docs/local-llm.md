@@ -74,10 +74,23 @@ The runner is opt-in, because building llama.cpp takes several minutes:
 sudo DRUST_INSTALL_LLM=1 bash /var/www/drust/deploy/install-service.sh
 ```
 
-This builds `drust/llm`, creates the `drust-llm` system user and
+This builds `drust-llm` from `drust/src/llm/`, creates the `drust-llm` system user and
 `/var/lib/drust/llm`, writes `/etc/drust/llm.env` with a random API key, and
 starts `drust-llm.service`. After that, every run of the installer rebuilds
 it automatically.
+
+The runner's code lives in `drust/src/llm/`, inside drust's own crate but in
+its own folder. It builds as a separate `drust-llm` binary behind the opt-in
+`llm` feature, so a loaded model's memory stays out of the main drust service.
+It shares `drust/Cargo.lock` and `drust/target/`, so the dependencies it has in
+common with drust (tokio, axum, reqwest and others) compile only once. A plain
+`cargo build` in `drust/` builds drust only. To build the runner by hand:
+
+```bash
+cd /var/www/drust && cargo build --release --features llm --bin drust-llm
+```
+
+Use `--features llm-vulkan` for GPU offload.
 
 ```bash
 sudo systemctl status drust-llm
@@ -164,7 +177,7 @@ Every route needs `Authorization: Bearer <DRUST_LLM_API_KEY>`.
 
 - **GPU detection.** When the server has a GPU (`/dev/dri/renderD*` or
   NVIDIA), `install-service.sh` installs the Vulkan build tools and builds
-  drust-llm with `--features vulkan`. Vulkan covers AMD, Intel and NVIDIA,
+  drust-llm with `--features llm-vulkan`. Vulkan covers AMD, Intel and NVIDIA,
   built-in graphics included. `DRUST_LLM_GPU=0` forces a CPU-only build.
   `GET /admin/status` lists the GPUs it found under `gpus`.
 - **Self-test.** The first time drust-llm sees a model (after a download, or

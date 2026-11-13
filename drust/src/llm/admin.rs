@@ -96,7 +96,7 @@ async fn status(State(state): State<Arc<AppState>>, headers: HeaderMap) -> Respo
             "max_tokens": config.max_tokens,
             "threads": config.threads,
             "gpu_layers": config.gpu_layers,
-            "gpu_backend": if cfg!(feature = "vulkan") { Some("vulkan") } else { None },
+            "gpu_backend": if cfg!(feature = "llm-vulkan") { Some("vulkan") } else { None },
             "parallel": config.parallel,
             "max_loaded": config.max_loaded,
             "idle_unload_secs": config.idle_unload.as_secs(),

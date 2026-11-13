@@ -53,11 +53,24 @@ ring = "0.17"
 rcgen = "0.14"
 x509-parser = "0.18"
 
+# drust-llm only (feature `llm`).
+llama-cpp-2 = { version = "0.1.160", optional = true }
+# Only named to switch on its GPU backend (feature `llm-vulkan`).
+llama-cpp-sys-2 = { version = "0.1.160", optional = true }
+# The models' own Jinja chat templates (tools, thinking), as llama-server --jinja.
+minijinja = { version = "=2.24.0", features = ["loop_controls", "json", "preserve_order"], optional = true }
+minijinja-contrib = { version = "=2.24.0", features = ["pycompat"], optional = true }
+
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"
 
 [target.'cfg(windows)'.dependencies]
 windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_Security", "Win32_Security_Authorization", "Win32_Security_Cryptography", "Win32_Storage_FileSystem", "Win32_System_JobObjects", "Win32_System_Threading"] }
+
+[[bin]]
+name = "drust-llm"
+path = "src/llm/main.rs"
+required-features = ["llm"]
 
 [features]
 # Linux keeps both. Windows and macOS builds pass --no-default-features: Cargo
@@ -68,6 +81,14 @@ default = ["ocr", "speech"]
 ocr = ["dep:tesseract"]
 # Voice note transcription. Builds the bundled whisper.cpp (cmake, clang).
 speech = ["dep:whisper-rs", "dep:hound"]
+# The local LLM runner (src/llm/), a separate drust-llm binary so a loaded
+# model's memory stays out of the main service. Opt-in, because llama.cpp adds
+# minutes to the build: `cargo build --release --features llm --bin drust-llm`.
+# It shares drust's Cargo.lock, target/ and dependencies.
+llm = ["dep:llama-cpp-2", "dep:minijinja", "dep:minijinja-contrib", "serde_json/preserve_order"]
+# GPU offload through Vulkan (AMD/Intel/NVIDIA, integrated GPUs included).
+# Needs libvulkan-dev and glslc at build time.
+llm-vulkan = ["llm", "dep:llama-cpp-sys-2", "llama-cpp-sys-2/vulkan"]
 
 [dev-dependencies]
 webpki-roots = "1.0.9"

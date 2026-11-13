@@ -515,7 +515,7 @@ if [[ "${DRUST_INSTALL_LLM:-0}" == "1" || -f /etc/drust/llm.env ]]; then
   # graphics too). With a GPU present, the build tools are installed here;
   # DRUST_LLM_GPU=0 forces a CPU-only build. drust-llm then tests each model
   # itself and keeps whatever is faster on this machine.
-  LLM_FEATURES=()
+  LLM_FEATURES=(--features llm)
   if [[ "${DRUST_LLM_GPU:-auto}" != "0" ]] && { compgen -G '/dev/dri/renderD*' >/dev/null || [[ -e /dev/nvidia0 ]]; }; then
     if ! command -v glslc >/dev/null 2>&1 || [[ ! -f /usr/include/vulkan/vulkan.h ]]; then
       echo "[drust] GPU found: installing Vulkan build tools..."
@@ -529,13 +529,15 @@ if [[ "${DRUST_INSTALL_LLM:-0}" == "1" || -f /etc/drust/llm.env ]]; then
     fi
     if command -v glslc >/dev/null 2>&1 && [[ -f /usr/include/vulkan/vulkan.h ]]; then
       echo "[drust] Building drust-llm with GPU (Vulkan) support."
-      LLM_FEATURES=(--features vulkan)
+      LLM_FEATURES=(--features llm-vulkan)
     fi
   fi
-  cargo build --release "${LLM_FEATURES[@]}" --manifest-path "${DRUST_ROOT}/llm/Cargo.toml" || {
+  # drust-llm is a second binary of the drust crate (src/llm/): it reuses the
+  # dependencies the drust build above already compiled, in the same target/.
+  cargo build --release --bin drust-llm "${LLM_FEATURES[@]}" --manifest-path "${DRUST_ROOT}/Cargo.toml" || {
     echo "[drust] drust-llm build failed; the rest of drust is unaffected." >&2
   }
-  if [[ -x "${DRUST_ROOT}/llm/target/release/drust-llm" ]]; then
+  if [[ -x "${DRUST_ROOT}/target/release/drust-llm" ]]; then
     id drust-llm >/dev/null 2>&1 || useradd --system --no-create-home --shell /usr/sbin/nologin drust-llm
     # GPU device access (/dev/dri, NVIDIA); only groups this system has.
     for group in render video; do
@@ -546,7 +548,7 @@ if [[ "${DRUST_INSTALL_LLM:-0}" == "1" || -f /etc/drust/llm.env ]]; then
       install -m 0640 -g drust-llm "${DRUST_ROOT}/deploy/drust-llm.env.example" /etc/drust/llm.env
       sed -i "s/^DRUST_LLM_API_KEY=.*/DRUST_LLM_API_KEY=$(openssl rand -hex 32)/" /etc/drust/llm.env
     fi
-    install -m 0755 "${DRUST_ROOT}/llm/target/release/drust-llm" /usr/local/bin/drust-llm
+    install -m 0755 "${DRUST_ROOT}/target/release/drust-llm" /usr/local/bin/drust-llm
     # The panel's Local Models page talks to drust-llm with the same key.
     LLM_KEY="$(awk -F= '$1 == "DRUST_LLM_API_KEY" {print substr($0, index($0, "=") + 1); exit}' /etc/drust/llm.env)"
     if [[ -f "${LARAVEL_ENV}" && -n "${LLM_KEY}" ]]; then
