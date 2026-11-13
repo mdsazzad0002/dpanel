@@ -1,15 +1,19 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-DRUST_BIN="/var/www/drust/target/release/drust"
-DEBUG_BIN="/var/www/drust/target/debug/drust"
-if [[ -x "$DEBUG_BIN" && ( ! -x "$DRUST_BIN" || "$DEBUG_BIN" -nt "$DRUST_BIN" ) ]]; then
-  # During an incremental update a verified debug build may be newer while a
-  # release build is temporarily unavailable. The next release build takes
-  # precedence automatically because it becomes the newest binary.
-  DRUST_BIN="$DEBUG_BIN"
-elif [[ ! -x "$DRUST_BIN" ]]; then
-  DRUST_BIN="/var/www/drust/target/debug/drust"
+# Run the newest drust binary. install-service.sh copies each release build to
+# /usr/local/bin/drust and then removes target/ on a server; a development
+# checkout keeps target/, so a fresh cargo build there wins until the next install.
+DRUST_BIN=""
+for candidate in /usr/local/bin/drust /var/www/drust/target/release/drust /var/www/drust/target/debug/drust; do
+  [[ -x "$candidate" ]] || continue
+  if [[ -z "$DRUST_BIN" || "$candidate" -nt "$DRUST_BIN" ]]; then
+    DRUST_BIN="$candidate"
+  fi
+done
+if [[ -z "$DRUST_BIN" ]]; then
+  echo "drust binary not found; rebuild it with: sudo bash /var/www/drust/deploy/install-service.sh" >&2
+  exit 1
 fi
 
 exec "$DRUST_BIN" \

@@ -244,7 +244,8 @@ default_install_sequence() {
   PANEL_DEFER_FINALIZE=true dscript_cli chain install php mariadb redis postgresql mongodb clamav supervisor
   # Drust runs dPanel's migrations, which need Composer's vendor/ in place.
   panel_install_app_dependencies
-  install_drust_service
+  # Keep target/ for now: the finalize step rebuilds drust and cleans it up.
+  DRUST_KEEP_BUILD=1 install_drust_service
   PANEL_DEFER_FINALIZE=true dscript_cli chain install firewall dns fail2ban ssl
   install_mail_services
   install_node_runtime

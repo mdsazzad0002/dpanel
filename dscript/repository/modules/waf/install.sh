@@ -88,14 +88,16 @@ CONF
   chmod 0640 "${WAF_DIR}/modsecurity.conf" "${WAF_DIR}/main.conf" "${WAF_DIR}/crs-setup.conf"
 }
 
-# The binary the gateway runs (deploy/drust-edge-gateway picks the newer build).
+# The binary the gateway runs: the newest one, as deploy/drust-edge-gateway picks it.
 waf_drust_binary() {
-  local release=/var/www/drust/target/release/drust debug=/var/www/drust/target/debug/drust
-  if [[ -x "$debug" && ( ! -x "$release" || "$debug" -nt "$release" ) ]]; then
-    printf '%s' "$debug"
-  else
-    printf '%s' "$release"
-  fi
+  local candidate binary=/usr/local/bin/drust
+  for candidate in /usr/local/bin/drust /var/www/drust/target/release/drust /var/www/drust/target/debug/drust; do
+    [[ -x "$candidate" ]] || continue
+    if [[ ! -x "$binary" || "$candidate" -nt "$binary" ]]; then
+      binary="$candidate"
+    fi
+  done
+  printf '%s' "$binary"
 }
 
 waf_check() {

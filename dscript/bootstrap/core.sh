@@ -2486,7 +2486,32 @@ panel_finalize_default_install() {
   # Runs last: composer, migrations, npm and the config cache all create files as
   # root, so repairing before them leaves root-owned files under storage/.
   panel_fix_app_permissions
+  panel_cleanup_install_caches
 
+}
+
+# Leave a light server behind: the package, npm and Composer download caches
+# and the panel's node_modules are only needed while installing (about 1.2 GB).
+# The next update downloads them again. A development checkout (git) keeps
+# node_modules, and DPANEL_KEEP_CACHES=1 skips the whole cleanup.
+panel_cleanup_install_caches() {
+  [[ "${DPANEL_KEEP_CACHES:-0}" == "1" ]] && return 0
+  local app_dir="${PANEL_APP_DIR:-/var/www/dpanel}"
+
+  panel_info_log "Removing installer download caches."
+  if command -v apt-get >/dev/null 2>&1; then
+    apt-get clean >/dev/null 2>&1 || true
+  elif command -v dnf >/dev/null 2>&1; then
+    dnf clean packages >/dev/null 2>&1 || true
+  fi
+  command -v npm >/dev/null 2>&1 && npm cache clean --force >/dev/null 2>&1 || true
+  command -v composer >/dev/null 2>&1 && COMPOSER_ALLOW_SUPERUSER=1 composer clear-cache >/dev/null 2>&1 || true
+
+  # The built assets live in public/build; node_modules only serves the build.
+  if [[ -d "${app_dir}/node_modules" && -f "${app_dir}/public/build/manifest.json" ]] \
+    && ! git -C "$app_dir" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+    rm -rf -- "${app_dir}/node_modules"
+  fi
 }
 
 # Issue the panel domain's certificate once drust is running, then switch the
@@ -2663,6 +2688,7 @@ panel_bootstrap() {
       panel_record_release_version
       panel_refresh_app_config_cache
       panel_fix_app_permissions
+      panel_cleanup_install_caches
       ;;
     info)
       panel_info

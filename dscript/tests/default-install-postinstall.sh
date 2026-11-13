@@ -49,7 +49,28 @@ panel_refresh_drust_service() { :; }
 panel_refresh_app_config_cache() { :; }
 panel_fix_app_permissions() { :; }
 
+# The cache cleanup must never reach this machine's real apt, npm or Composer
+# caches: record the calls instead.
+mkdir -p "$TEST_ROOT/fakebin" "$TEST_ROOT/app/node_modules/pkg" "$TEST_ROOT/app/public/build"
+printf '{}\n' > "$TEST_ROOT/app/public/build/manifest.json"
+for tool in apt-get npm composer; do
+  printf '#!/usr/bin/env bash\nprintf "%%s %%s\\n" "%s" "$*" >> "$TEST_ROOT/cache-calls"\n' "$tool" > "$TEST_ROOT/fakebin/$tool"
+  chmod +x "$TEST_ROOT/fakebin/$tool"
+done
+PATH="$TEST_ROOT/fakebin:$PATH"
+
 panel_finalize_default_install
+
+for expected in 'apt-get clean' 'npm cache clean --force' 'composer clear-cache'; do
+  if ! grep -Fxq "$expected" "$TEST_ROOT/cache-calls"; then
+    echo "install cache cleanup did not run: $expected" >&2
+    exit 1
+  fi
+done
+if [[ -d "$TEST_ROOT/app/node_modules" ]]; then
+  echo 'node_modules was kept after the frontend build' >&2
+  exit 1
+fi
 
 [[ -f "$TEST_ROOT/app/.env" ]]
 if ! grep -q '^dPanel_EXECUTION_API_BASE_URL=http://127.0.0.1:9500$' "$TEST_ROOT/app/.env"; then

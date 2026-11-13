@@ -417,6 +417,25 @@ install_powerdns() {
   echo "[drust] PowerDNS is serving ${listen_address}:53 over UDP and TCP."
 }
 
+# A server only needs the installed binaries. target/ (about 2.5 GB) and
+# Cargo's download cache (about 0.4 GB) come back on the next update, which
+# then builds from scratch. A development checkout (git) keeps them for
+# incremental builds, and so does DRUST_KEEP_BUILD=1.
+cleanup_build_artifacts() {
+  if [[ "${DRUST_KEEP_BUILD:-0}" == "1" ]] \
+    || git -C "${DRUST_ROOT}" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+    return 0
+  fi
+  if ! systemctl is-active --quiet drust.service; then
+    echo "[drust] drust is not running; keeping ${DRUST_ROOT}/target for diagnosis." >&2
+    return 0
+  fi
+  local size
+  size="$(du -sch "${DRUST_ROOT}/target" "${CARGO_HOME}/registry" "${CARGO_HOME}/git" 2>/dev/null | tail -n1 | cut -f1)"
+  echo "[drust] Removing build artifacts and the Cargo download cache (${size:-unknown size})."
+  rm -rf -- "${DRUST_ROOT}/target" "${CARGO_HOME}/registry" "${CARGO_HOME}/git"
+}
+
 prepare_distribution_repositories
 ensure_rust_toolchain
 ensure_build_dependencies
@@ -566,6 +585,11 @@ if [[ "${DRUST_INSTALL_LLM:-0}" == "1" || -f /etc/drust/llm.env ]]; then
   fi
 fi
 
+# The services run this copy, not target/release/drust, so target/ can be
+# removed after the build. Replace it by rename: the running daemon keeps the
+# old inode until the restart below.
+install -m 0755 "${DRUST_ROOT}/target/release/drust" /usr/local/bin/.drust.new
+mv -f /usr/local/bin/.drust.new /usr/local/bin/drust
 install -m 0755 "${DRUST_ROOT}/deploy/drust-start" /usr/local/bin/drust-start
 install -m 0755 "${DRUST_ROOT}/deploy/drust-edge-gateway" /usr/local/bin/drust-edge-gateway
 install -m 0755 "${DRUST_ROOT}/deploy/serverinstaller-site" /usr/local/bin/serverinstaller-site
@@ -578,5 +602,6 @@ systemctl enable drust.service
 systemctl enable edge-gateway.service
 systemctl restart drust.service
 systemctl restart edge-gateway.service
+cleanup_build_artifacts
 systemctl --no-pager --full status drust.service
 systemctl --no-pager --full status pdns.service
