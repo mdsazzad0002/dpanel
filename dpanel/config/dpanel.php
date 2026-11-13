@@ -1,5 +1,19 @@
 <?php
 
+// Servers installed before the rename still have SERVERPANEL_* keys in .env;
+// read them as the dPanel_* key of the same name unless that one is set.
+foreach ([$_ENV, $_SERVER] as $source) {
+    foreach ($source as $key => $value) {
+        if (! is_string($key) || ! str_starts_with($key, 'SERVERPANEL_')) {
+            continue;
+        }
+        $renamed = 'dPanel_'.substr($key, strlen('SERVERPANEL_'));
+        if (! array_key_exists($renamed, $_ENV) && ! array_key_exists($renamed, $_SERVER)) {
+            $_ENV[$renamed] = $_SERVER[$renamed] = $value;
+        }
+    }
+}
+
 return [
     'bandwidth_directory' => env('DRUST_BANDWIDTH_DIR', '/var/lib/drust/bandwidth'),
     'panel_domain' => env('PANEL_DOMAIN', ''),

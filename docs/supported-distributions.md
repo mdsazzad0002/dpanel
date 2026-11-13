@@ -14,7 +14,9 @@ families:
 | Fedora Server | DNF / RPM | Supported |
 
 Use a currently maintained release with `systemd`, a working package
-repository, root access, and at least 4 GB RAM. Minimal cloud/server images are
+repository, and root access. The server needs at least 1 GB RAM and 20 GB of
+free disk; 4 GB RAM is recommended. See
+[hardware requirements](installation.md#hardware). Minimal cloud/server images are
 recommended. Derivatives are not accepted merely because they provide `apt`
 or `dnf`; the installer checks `/etc/os-release` and stops before modifying an
 unsupported host.

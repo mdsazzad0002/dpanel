@@ -93,6 +93,9 @@ Supported hosts are Ubuntu, Debian, RHEL, Rocky Linux, AlmaLinux, CentOS
 Stream, and Fedora. See the [support matrix](docs/supported-distributions.md)
 before installing.
 
+Minimum hardware: 1 vCPU, 1 GB RAM and 20 GB of free disk. 2 vCPU and 4 GB RAM
+are recommended. See [hardware requirements](docs/installation.md#hardware).
+
 ```bash
 curl -fsSL https://raw.githubusercontent.com/mdsazzad0002/dpanel/main/installer.sh -o installer.sh
 chmod +x installer.sh

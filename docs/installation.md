@@ -19,6 +19,38 @@ supported way to set up and repair website file permissions.
 - Ports `80` and `443` open to the internet
 - A domain name for the panel (for example `panel.example.com`)
 - Ubuntu 22.04 or newer, Debian 12, or a RHEL-family distribution
+- A 64-bit CPU: `x86_64` or `arm64`
+
+### Hardware
+
+| | Minimum | Recommended |
+| --- | --- | --- |
+| CPU | 1 vCPU | 2 vCPU or more |
+| RAM | 1 GB | 4 GB or more |
+| Swap | 2 GB; the installer creates it if needed | 2 GB |
+| Free disk on `/` | 20 GB | 40 GB or more, plus space for your websites, mail and backups |
+
+The install itself needs more memory than the running panel. Composer, the
+frontend build and the Rust build of drust are the peaks. The installer adapts
+to a small server:
+
+- **Below 2 GB RAM and under 1 GB swap**, it creates a 2 GB `/swapfile`. It
+  needs 3 GB of free disk for this. If it cannot create swap, for example inside
+  a container, the install continues, but the build may be killed for lack of
+  memory.
+- **Below 2 GB RAM**, it builds drust with one job. The build still finishes,
+  but it is much slower.
+- **Below 4 GB RAM**, it limits the Node.js heap for the frontend build to half
+  of the RAM.
+- **Below about 1 GB RAM**, it does not install the Rspamd spam filter. Install
+  it later with `sudo dpanel module rspamd install`.
+
+MariaDB and Redis are sized from the RAM: MariaDB's buffer pool gets about 25%
+and Redis about 25%, within fixed limits.
+
+A 1 GB server installs and runs the panel and a few small sites. For mail with
+spam filtering, several PHP sites, or Docker, use 2 GB or more. On 1 vCPU, the
+first install can take a long time, mostly in the Rust build.
 
 No extra configuration is needed for Ubuntu 22.04. Its packages are too old in
 five places, and the installer handles each one:
