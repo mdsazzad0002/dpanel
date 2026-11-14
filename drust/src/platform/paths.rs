@@ -301,6 +301,43 @@ fn python_places(os: Os, runtime_dir: &Path, version: &str) -> Vec<PathBuf> {
     }
 }
 
+fn list_dir(dir: &Path) -> Vec<PathBuf> {
+    std::fs::read_dir(dir)
+        .map(|entries| entries.filter_map(Result::ok).map(|entry| entry.path()).collect())
+        .unwrap_or_default()
+}
+
+/// The versions of `name` drust installed itself (backlog F3), newest first,
+/// as `runtime_dir\php\8.4`. Windows only; the other systems have a package
+/// manager. Half-finished installs (`.staging-8.3`) are not versions.
+fn own_installs(os: Os, runtime_dir: &Path, name: &str, list_dir: impl Fn(&Path) -> Vec<PathBuf>) -> Vec<PathBuf> {
+    if os != Os::Windows {
+        return Vec::new();
+    }
+    let version = |dir: &Path| {
+        let (major, minor) = dir.file_name()?.to_str()?.split_once('.')?;
+        Some((major.parse::<u32>().ok()?, minor.parse::<u32>().ok()?))
+    };
+    let mut found: Vec<((u32, u32), PathBuf)> = list_dir(&runtime_dir.join(name))
+        .into_iter()
+        .filter_map(|dir| version(&dir).map(|version| (version, dir)))
+        .collect();
+    found.sort_by(|a, b| b.cmp(a));
+    found.into_iter().map(|(_, dir)| dir).collect()
+}
+
+/// Folders searched before `PATH`: the MariaDB client tools come from the
+/// newest MariaDB drust installed.
+fn own_tool_dirs(os: Os, runtime_dir: &Path, tool: Tool, list_dir: impl Fn(&Path) -> Vec<PathBuf>) -> Vec<PathBuf> {
+    match tool {
+        Tool::Mariadb | Tool::Mysql | Tool::Mysqldump => own_installs(os, runtime_dir, "mariadb", list_dir)
+            .into_iter()
+            .map(|dir| dir.join("bin"))
+            .collect(),
+        _ => Vec::new(),
+    }
+}
+
 /// Where `tool` is, given what exists on disk and the `PATH` directories.
 fn locate(
     os: Os,
@@ -489,7 +526,8 @@ impl Paths {
 
     pub fn binary(&self, tool: Tool) -> Result<PathBuf, PlatformError> {
         let path_var = env::var_os("PATH").unwrap_or_default();
-        locate(self.os, tool, env::split_paths(&path_var), Path::is_file).ok_or_else(|| {
+        let own = own_tool_dirs(self.os, &self.runtime_dir, tool, list_dir);
+        locate(self.os, tool, own.into_iter().chain(env::split_paths(&path_var)), Path::is_file).ok_or_else(|| {
             PlatformError::NotFound {
                 what: format!("{} is not installed", tool.name()),
             }
@@ -514,7 +552,9 @@ impl Paths {
     /// Every place a PHP CLI can be, best first. `None` is the system's own PHP.
     pub fn php_candidates(&self, version: Option<&str>) -> Vec<PathBuf> {
         let path_var = env::var_os("PATH").unwrap_or_default();
-        php_places(self.os, &self.runtime_dir, version, env::split_paths(&path_var))
+        // drust's own versions go before PATH, newest first, for the default PHP.
+        let own = own_installs(self.os, &self.runtime_dir, "php", list_dir);
+        php_places(self.os, &self.runtime_dir, version, own.into_iter().chain(env::split_paths(&path_var)))
     }
 
     /// The PHP CLI to run. It may not exist, which the caller reports.
@@ -525,11 +565,6 @@ impl Paths {
     /// The php-cgi of `version`, which is already validated, like `8.3`.
     pub fn php_cgi(&self, version: &str) -> Result<PathBuf, PlatformError> {
         let path_var = env::var_os("PATH").unwrap_or_default();
-        let list_dir = |dir: &Path| {
-            std::fs::read_dir(dir)
-                .map(|entries| entries.filter_map(Result::ok).map(|entry| entry.path()).collect())
-                .unwrap_or_default()
-        };
         php_cgi_places(self.os, &self.runtime_dir, version, env::split_paths(&path_var), Path::is_file, list_dir)
             .into_iter()
             .find(|path| path.is_file())
@@ -831,6 +866,30 @@ mod tests {
         let on_path = Path::new("/second").join("php.exe");
         assert_eq!(chosen_php(Os::Windows, places.clone(), |path| path == on_path), on_path);
         assert_eq!(chosen_php(Os::Windows, places.clone(), |_| false), places[0]);
+    }
+
+    #[test]
+    fn windows_uses_the_newest_runtime_drust_installed() {
+        let runtime = Path::new("/runtime");
+        let listing = |dir: &Path| {
+            ["8.2", "8.10", ".staging-8.4", "8.4", "notes"].map(|name| dir.join(name)).to_vec()
+        };
+        assert_eq!(
+            own_installs(Os::Windows, runtime, "php", listing),
+            ["8.10", "8.4", "8.2"].map(|version| runtime.join("php").join(version))
+        );
+        assert!(own_installs(Os::Linux, runtime, "php", listing).is_empty());
+        assert!(own_installs(Os::Macos, runtime, "php", listing).is_empty());
+
+        let dirs = own_tool_dirs(Os::Windows, runtime, Tool::Mysqldump, listing);
+        assert_eq!(dirs[0], runtime.join("mariadb").join("8.10").join("bin"));
+        assert!(own_tool_dirs(Os::Windows, runtime, Tool::Git, listing).is_empty());
+        let mysqldump = dirs[1].join("mysqldump.exe");
+        let elsewhere = Path::new("/first").join("mysqldump.exe");
+        let chosen = locate(Os::Windows, Tool::Mysqldump, dirs.clone().into_iter().chain([PathBuf::from("/first")]), |path| {
+            path == mysqldump || path == elsewhere
+        });
+        assert_eq!(chosen, Some(mysqldump));
     }
 
     #[test]

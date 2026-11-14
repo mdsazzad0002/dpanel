@@ -16,6 +16,7 @@ mod php;
 mod platform;
 mod pgadmin_sso;
 mod php_config;
+mod runtimes;
 mod mongo_admin;
 mod mongodb;
 mod service_toggle;
@@ -45,6 +46,9 @@ fn main() -> std::process::ExitCode {
         };
     }
     tracing_subscriber::fmt::init();
+    if args.first().map(String::as_str) == Some("runtime") {
+        return runtimes::cli(&args[1..]);
+    }
     if args.first().map(String::as_str) == Some("edge-gateway") {
         // DRUST_HTTP_BIND is the canonical public listener. Keep the old
         // variable as a fallback for existing installations during upgrades.

@@ -171,7 +171,7 @@ impl Paths {
 
 Local profile-এ (Windows) `DPANEL_PANEL_ROOT` `panel_root` বদলায়, কারণ developer-এর panel তার checkout-এ থাকে। Linux এটা দেখে না।
 
-`uv` অন্য tool-এর মতো `binary(Tool::Uv)` দিয়ে পাওয়া যায়। Windows-এর `runtime_dir\php` ও `runtime_dir\python` এখন শুধু নাম; F3 সেখানে install করলে এই table মিলিয়ে নিতে হবে।
+`uv` অন্য tool-এর মতো `binary(Tool::Uv)` দিয়ে পাওয়া যায়। Windows-এর `runtime_dir\php\{v}` ও `runtime_dir\mariadb\{v}`-এ F3 (§6.16) install করে। Version ছাড়া PHP: `runtime_dir\php\php.exe`, তারপর drust-এর install করা version-গুলো (নতুনটা আগে), তারপর `PATH`। `binary(Tool::Mariadb | Mysql | Mysqldump)` Windows-এ `PATH`-এর আগে সবচেয়ে নতুন `runtime_dir\mariadb\{v}\bin` দেখে। `.staging-8.3`-এর মতো অর্ধেক install version নয়। `runtime_dir\python` এখনও শুধু নাম।
 
 `platform::paths()` দিয়ে পাওয়া যায়। Trait নয়, কারণ OS-ভেদে শুধু মান আলাদা, আচরণ নয়; তাই পুরো table সব OS-এ test করা যায়। Linux profile দেখে না।
 
@@ -537,6 +537,17 @@ public function routeSource(string $destination): string;           // Linux-এ
 - Test-এ অন্য OS: `new LocalCommand('Windows')` container-এ bind করা।
 - MCP (D5): managed server SSH দিয়ে, তাই সবসময় Linux-এর নিয়ম। Panel host-এ (`server_id=local`, `mcp-exec.sh`, Windows-এ Git bash) `McpCommandPolicy::evaluate(..., panelHost: true)` host-এর OS মানে: read-only token-এর `systemctl`/`journalctl`/`hostnamectl` লাগে `SYSTEMD`, `free`/`lscpu`/`nproc`/`vmstat`/`cat /etc/` ইত্যাদি `LINUX_TOOLS`, `uptime`/`ps aux` `UNIX_TOOLS`; না থাকলে refuse। Windows-এ আরও: `\` কে `/` ধরে sensitive path (`dpanel/config`, `drust.env`, `system32/config`, Windows credential), আর সব token-এর জন্য blocked: drive root মোছা (`rm`/`rd`/`del`/`Remove-Item` `C:\`), `format C:`, `diskpart`, `bcdedit`, `vssadmin`, `net user`, `reg delete`, firewall বন্ধ, drive root-এ `icacls`। `get_service_status`, `restart_service`, `read_service_logs` panel host-এ `SYSTEMD` ছাড়া error দেয় (`McpCommandExecutor::requireHostTools`)। Windows-এ `read_log_file` drive path নেয়, `mcp.windows_log_roots` (খালি হলে `%ProgramData%\dPanel\logs`)। Opt-in file `LocalHostAccess::configPath()`: Linux `/etc/dpanel/mcp-local.conf`, Windows `%ProgramData%\dPanel\config\mcp-local.conf`, macOS `/Library/dPanel/config/mcp-local.conf`।
 
+### 6.16 Runtime install (F3)
+
+যে OS-এ ভরসা করার মতো package manager নেই (এখন Windows), সেখানে drust নিজে PHP ও MariaDB বসায়: `drust/src/runtimes/`।
+
+- Manifest: `drust/src/runtimes/manifest.json`, binary-তে embedded; `DRUST_RUNTIME_MANIFEST` অন্য file দিলে সেটা। প্রতি package-এ `name` (`php`, `mariadb`), `version` (`8.3`, folder-এর নাম), `release`, `os`, `arch` (`std::env::consts`), `sha256`, `root` (archive-এর ভেতরের folder, খালি হলে উপরেই), `check` (থাকতেই হবে এমন file), `probe` (install-এর পরে একবার চালানো program ও argument), `urls` (mirror, শুধু `https`)। অজানা key, ভুল hash format, `..` বা absolute path থাকলে পুরো manifest বাতিল।
+- PHP: windows.php.net-এর NTS x64 zip (7.4-8.5), releases ও archives দুই mirror। MariaDB: mariadb.org-এর `winx64.zip` (11.4, 11.8 LTS), archive.mariadb.org আগে।
+- Install: download stream করার সময়েই SHA-256; মিললে তবেই unpack। **না মিললে থামে**: অন্য mirror চেষ্টা করে না, কিছু unpack হয় না, download file মোছে, আগের install থাকে। Mirror উত্তর না দিলে (network, 4xx/5xx) পরেরটায় যায়। সর্বোচ্চ 1 GiB।
+- Unpack `runtime_dir\<name>\.staging-<v>`-এ, `archive::extract_all` দিয়ে (link, absolute, `..` refuse); তারপর `check`, তারপর `probe` (30 সেকেন্ড; DLL না পেলে, `0xC0000135`, বার্তায় Visual C++ Redistributable বলে), তারপর `.dpanel-runtime.json` (`release`, `sha256`)। আগের folder `.old-<v>`-এ সরে, নতুনটা জায়গায় যায়, তারপর পুরোনোটা মোছে; নতুনটা না গেলে পুরোনোটা ফেরে। একই hash আগেই থাকলে কিছু download করে না।
+- CLI: `drust runtime list`, `drust runtime install <name> <version>` (installer-এর জন্য)।
+- php.ini, MariaDB-র data folder ও service এখানে নয় (E2/F4)।
+
 ## 7. Data model
 
 সব migration additive। পুরোনো server-এ data হারাবে না।
@@ -618,6 +629,8 @@ Alias row-এর নিজের `website_guard_settings` বা protected direc
 | `GET /sites/logs?kind=access\|waf\|php&domain=&owner=&lines=` | Site-এর access log, WAF-এর match (S2) বা account-এর PHP error log-এর শেষ অংশ (S4) |
 | `POST /api/v1/wordpress` | নির্দিষ্ট wp-cli action, site user হিসেবে: `info`, `update_core`, `update_plugins`, `update_themes`, `security`, `fix`, `home_url`, `search_replace` (W1-W4) |
 | `GET /system/overview?services=`, `GET /system/services?services=` | Machine-এর সংখ্যা ও service-এর অবস্থা (D3) |
+| `GET /api/v1/runtimes` | এই OS-এর manifest package: `{runtimes: [{name, version, release, installed, update_available, path, job}]}`; `job` চলমান বা শেষ install-এর `state` (`downloading` `received`/`total`, `unpacking`, `installed`, `failed` `error`), drust-এর memory-তে (F3, §6.16) |
+| `POST /api/v1/runtimes/install` | `{name, version}`: background install, `202`; এই OS-এ নেই তো `404`, একই package চলছে তো `409` (F3) |
 | `GET /system/addresses` | Interface-এর ব্যবহারযোগ্য IP ঠিকানা `{addresses: [{interface, address, prefix, family, public}]}`; Windows-এ `501` (U5, §6.14) |
 | `GET`, `POST /api/v1/panel-update/runs` | Panel update-এর run-এর তালিকা `{active, runs}`; `POST` `{"action": "update", "target_ref", "repo"}` বা `{"action": "rollback", "from_run", "restore_database"}` `dscript/scripts/panel-update.sh`-কে `run_detached` দিয়ে `dpanel-update-<id>` unit-এ চালায়। একটা চলার সময় `409`, git checkout-এ `400`, systemd ছাড়া `501` (U6) |
 | `GET /api/v1/panel-update/runs/{id}?offset=` | একটা run-এর `state` আর `offset` থেকে log (সর্বোচ্চ 256 KB); unit না থাকলে চলমান run `interrupted` (U6) |

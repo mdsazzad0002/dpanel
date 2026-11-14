@@ -1,0 +1,203 @@
+{
+    "schema": 1,
+    "packages": [
+        {
+            "name": "php",
+            "version": "7.4",
+            "release": "7.4.33",
+            "os": "windows",
+            "arch": "x86_64",
+            "sha256": "14ae3250d4447c8ccfc4c45a70d90adfbcd61e728d85f0be56a7ddf8f9c8aace",
+            "root": "",
+            "check": [
+                "php.exe",
+                "php-cgi.exe"
+            ],
+            "probe": [
+                "php.exe",
+                "-n",
+                "-v"
+            ],
+            "urls": [
+                "https://downloads.php.net/~windows/releases/php-7.4.33-nts-Win32-vc15-x64.zip",
+                "https://downloads.php.net/~windows/releases/archives/php-7.4.33-nts-Win32-vc15-x64.zip"
+            ]
+        },
+        {
+            "name": "php",
+            "version": "8.0",
+            "release": "8.0.30",
+            "os": "windows",
+            "arch": "x86_64",
+            "sha256": "dfb70498ffa2c617f2f655a155564697e3c9cca41709938fd1a5997d1d5b0785",
+            "root": "",
+            "check": [
+                "php.exe",
+                "php-cgi.exe"
+            ],
+            "probe": [
+                "php.exe",
+                "-n",
+                "-v"
+            ],
+            "urls": [
+                "https://downloads.php.net/~windows/releases/php-8.0.30-nts-Win32-vs16-x64.zip",
+                "https://downloads.php.net/~windows/releases/archives/php-8.0.30-nts-Win32-vs16-x64.zip"
+            ]
+        },
+        {
+            "name": "php",
+            "version": "8.1",
+            "release": "8.1.34",
+            "os": "windows",
+            "arch": "x86_64",
+            "sha256": "9cfe246cb144076c16f5913a3ef88a474c3dd7e60f0f0c8bb95faf68674016cc",
+            "root": "",
+            "check": [
+                "php.exe",
+                "php-cgi.exe"
+            ],
+            "probe": [
+                "php.exe",
+                "-n",
+                "-v"
+            ],
+            "urls": [
+                "https://downloads.php.net/~windows/releases/php-8.1.34-nts-Win32-vs16-x64.zip",
+                "https://downloads.php.net/~windows/releases/archives/php-8.1.34-nts-Win32-vs16-x64.zip"
+            ]
+        },
+        {
+            "name": "php",
+            "version": "8.2",
+            "release": "8.2.35-1",
+            "os": "windows",
+            "arch": "x86_64",
+            "sha256": "ebe75134c03869826cb1714d31fd5eb96afefa6d9fd35d786971c03020e7bce2",
+            "root": "",
+            "check": [
+                "php.exe",
+                "php-cgi.exe"
+            ],
+            "probe": [
+                "php.exe",
+                "-n",
+                "-v"
+            ],
+            "urls": [
+                "https://downloads.php.net/~windows/releases/php-8.2.35-1-nts-Win32-vs16-x64.zip",
+                "https://downloads.php.net/~windows/releases/archives/php-8.2.35-1-nts-Win32-vs16-x64.zip"
+            ]
+        },
+        {
+            "name": "php",
+            "version": "8.3",
+            "release": "8.3.36-1",
+            "os": "windows",
+            "arch": "x86_64",
+            "sha256": "1a097d52b7a68622cdc723073b61cc70caf79c941218ff65b2d8441dbc6b10d4",
+            "root": "",
+            "check": [
+                "php.exe",
+                "php-cgi.exe"
+            ],
+            "probe": [
+                "php.exe",
+                "-n",
+                "-v"
+            ],
+            "urls": [
+                "https://downloads.php.net/~windows/releases/php-8.3.36-1-nts-Win32-vs16-x64.zip",
+                "https://downloads.php.net/~windows/releases/archives/php-8.3.36-1-nts-Win32-vs16-x64.zip"
+            ]
+        },
+        {
+            "name": "php",
+            "version": "8.4",
+            "release": "8.4.27-1",
+            "os": "windows",
+            "arch": "x86_64",
+            "sha256": "dbae154a0a89791f36c3d48e68bae797878333e7d6cb5721e74617de59b63ab7",
+            "root": "",
+            "check": [
+                "php.exe",
+                "php-cgi.exe"
+            ],
+            "probe": [
+                "php.exe",
+                "-n",
+                "-v"
+            ],
+            "urls": [
+                "https://downloads.php.net/~windows/releases/php-8.4.27-1-nts-Win32-vs17-x64.zip",
+                "https://downloads.php.net/~windows/releases/archives/php-8.4.27-1-nts-Win32-vs17-x64.zip"
+            ]
+        },
+        {
+            "name": "php",
+            "version": "8.5",
+            "release": "8.5.12-1",
+            "os": "windows",
+            "arch": "x86_64",
+            "sha256": "2a36a2edcb7a5b9252f638fd5e4cf84d7f6e066092654220dc0b63e5cf4e9723",
+            "root": "",
+            "check": [
+                "php.exe",
+                "php-cgi.exe"
+            ],
+            "probe": [
+                "php.exe",
+                "-n",
+                "-v"
+            ],
+            "urls": [
+                "https://downloads.php.net/~windows/releases/php-8.5.12-1-nts-Win32-vs17-x64.zip",
+                "https://downloads.php.net/~windows/releases/archives/php-8.5.12-1-nts-Win32-vs17-x64.zip"
+            ]
+        },
+        {
+            "name": "mariadb",
+            "version": "11.8",
+            "release": "11.8.9",
+            "os": "windows",
+            "arch": "x86_64",
+            "sha256": "830c46727d9278eae212ae3eca44eeb9e71b2a68704e95f344a64fba7b1963f5",
+            "root": "mariadb-11.8.9-winx64",
+            "check": [
+                "bin/mariadbd.exe",
+                "bin/mariadb.exe",
+                "bin/mariadb-dump.exe"
+            ],
+            "probe": [
+                "bin/mariadbd.exe",
+                "--version"
+            ],
+            "urls": [
+                "https://archive.mariadb.org/mariadb-11.8.9/winx64-packages/mariadb-11.8.9-winx64.zip",
+                "https://downloads.mariadb.org/rest-api/mariadb/11.8.9/mariadb-11.8.9-winx64.zip"
+            ]
+        },
+        {
+            "name": "mariadb",
+            "version": "11.4",
+            "release": "11.4.13",
+            "os": "windows",
+            "arch": "x86_64",
+            "sha256": "d62986d433eeebfde218560b276103831604a61e929e87f1a17f5aebd80257e2",
+            "root": "mariadb-11.4.13-winx64",
+            "check": [
+                "bin/mariadbd.exe",
+                "bin/mariadb.exe",
+                "bin/mariadb-dump.exe"
+            ],
+            "probe": [
+                "bin/mariadbd.exe",
+                "--version"
+            ],
+            "urls": [
+                "https://archive.mariadb.org/mariadb-11.4.13/winx64-packages/mariadb-11.4.13-winx64.zip",
+                "https://downloads.mariadb.org/rest-api/mariadb/11.4.13/mariadb-11.4.13-winx64.zip"
+            ]
+        }
+    ]
+}

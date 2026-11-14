@@ -46,6 +46,7 @@ mod python;
 mod restic;
 mod restic_restore;
 mod restic_verify;
+mod runtimes;
 mod redis_config;
 mod script;
 mod security;
@@ -169,6 +170,7 @@ pub fn build_router(state: ApiState) -> Router {
         .merge(restic::routes())
         .merge(restic_restore::routes())
         .merge(restic_verify::routes())
+        .merge(runtimes::routes())
         .merge(laravel_queue::routes())
         .with_state(Arc::new(state))
 }
