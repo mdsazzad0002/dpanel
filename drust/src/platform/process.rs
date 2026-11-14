@@ -75,6 +75,35 @@ pub fn end_with_drust(child: &tokio::process::Child) -> Result<(), String> {
     }
 }
 
+/// [`end_with_drust`] for a `std` child, as the supervisor runs them.
+pub fn end_child_with_drust(child: &std::process::Child) -> Result<(), String> {
+    #[cfg(unix)]
+    {
+        let _ = child;
+        Ok(())
+    }
+    #[cfg(windows)]
+    {
+        use std::os::windows::io::AsRawHandle;
+        super::windows::job::end_with_this_process(child.as_raw_handle())
+    }
+}
+
+/// Keeps a console program from opening a window of its own when drust
+/// itself has none (a service, or started at logon). Nothing on Unix.
+pub fn without_console(command: &mut Command) -> &mut Command {
+    #[cfg(unix)]
+    {
+        command
+    }
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+        command.creation_flags(CREATE_NO_WINDOW)
+    }
+}
+
 /// Gives up root for good, becoming `nobody`, once a process has read what
 /// only root may (the WAF worker after loading its rules). Does nothing when
 /// not root, or where there is no such thing.

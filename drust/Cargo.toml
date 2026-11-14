@@ -65,7 +65,7 @@ minijinja-contrib = { version = "=2.24.0", features = ["pycompat"], optional = t
 libc = "0.2"
 
 [target.'cfg(windows)'.dependencies]
-windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_Security", "Win32_Security_Authorization", "Win32_Security_Cryptography", "Win32_Storage_FileSystem", "Win32_System_JobObjects", "Win32_System_Threading"] }
+windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_Security", "Win32_Security_Authorization", "Win32_Security_Cryptography", "Win32_Storage_FileSystem", "Win32_System_JobObjects", "Win32_System_Registry", "Win32_System_Services", "Win32_System_Threading"] }
 
 [[bin]]
 name = "drust-llm"

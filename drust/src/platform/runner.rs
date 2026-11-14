@@ -21,7 +21,7 @@ pub trait IsolatedRunner: Send + Sync + std::fmt::Debug {
     fn command(&self, owner: &str, program: &OsStr) -> Result<Command, PlatformError>;
 }
 
-fn clean_environment(command: &mut Command, lookup: impl Fn(&str) -> Option<std::ffi::OsString>) {
+pub(super) fn clean_environment(command: &mut Command, lookup: impl Fn(&str) -> Option<std::ffi::OsString>) {
     command.env_clear();
     for name in INHERITED_ENV {
         if let Some(value) = lookup(name) {

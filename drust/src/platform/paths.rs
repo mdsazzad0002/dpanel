@@ -545,6 +545,12 @@ impl Paths {
         self.config_dir.join("waf")
     }
 
+    /// drust's settings where no systemd reads them for it (F4): `KEY=value`
+    /// lines, loaded by `drust supervise` and the Windows service.
+    pub fn env_file(&self) -> PathBuf {
+        self.config_dir.join("drust.env")
+    }
+
     pub fn tls_dir(&self) -> PathBuf {
         self.config_dir.join("tls")
     }
@@ -571,6 +577,11 @@ impl Paths {
             .ok_or_else(|| PlatformError::NotFound {
                 what: format!("php-cgi for PHP {version} is not installed"),
             })
+    }
+
+    /// The newest copy of `name` (`php`, `mariadb`) drust installed itself.
+    pub fn newest_own_install(&self, name: &str) -> Option<PathBuf> {
+        own_installs(self.os, &self.runtime_dir, name, list_dir).into_iter().next()
     }
 
     /// Every place an installed Python `version` can be, best first.

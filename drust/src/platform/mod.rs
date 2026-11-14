@@ -5,7 +5,9 @@
 
 pub mod account;
 pub mod acme;
+pub mod autostart;
 pub mod capabilities;
+pub mod env_file;
 pub mod fastcgi;
 pub mod firewall;
 pub mod fs;
@@ -17,6 +19,7 @@ pub mod process;
 pub mod runner;
 pub mod scheduler;
 pub mod service;
+pub mod supervisor;
 pub mod waf;
 #[cfg(unix)]
 mod unix;
@@ -31,7 +34,11 @@ use paths::Paths;
 use runner::{IsolatedRunner, NoRunner, RunuserRunner, SameUserRunner};
 use scheduler::{CronDirScheduler, Scheduler, TimerScheduler};
 use service::{NoServices, ServiceManager, SystemdServices};
-use std::{env, fmt, io, path::Path, sync::OnceLock};
+use std::{
+    env, fmt, io,
+    path::Path,
+    sync::{Arc, OnceLock},
+};
 
 #[cfg(unix)]
 use unix::{fs::NativeFileAccess, random::fill};
@@ -96,6 +103,7 @@ pub struct Platform {
     paths: Paths,
     accounts: Box<dyn AccountManager>,
     services: Box<dyn ServiceManager>,
+    supervisor: Option<Arc<supervisor::Supervisor>>,
     runner: Box<dyn IsolatedRunner>,
     scheduler: Box<dyn Scheduler>,
     disk_quota: Box<dyn DiskQuota>,
@@ -194,7 +202,7 @@ pub fn current() -> &'static Platform {
         let profile = Profile::parse(env::var("DPANEL_PROFILE").ok().as_deref());
         let paths = Paths::for_system(os, profile, |name| env::var(name).ok());
         let accounts = accounts_for(os, profile, &paths);
-        let services = services_for(os);
+        let (services, supervisor) = services_for(os, &paths);
         let runner = runner_for(os, profile);
         let scheduler = scheduler_for(os, &paths);
         let disk_quota = disk_quota_for(os, profile, &paths);
@@ -205,6 +213,7 @@ pub fn current() -> &'static Platform {
             paths,
             accounts,
             services,
+            supervisor,
             runner,
             scheduler,
             disk_quota,
@@ -223,10 +232,24 @@ fn accounts_for(os: Os, profile: Profile, paths: &Paths) -> Box<dyn AccountManag
     }
 }
 
-fn services_for(os: Os) -> Box<dyn ServiceManager> {
+/// systemd on Linux; drust's own supervisor on Windows (F4). macOS gets it in E2.
+fn services_for(os: Os, paths: &Paths) -> (Box<dyn ServiceManager>, Option<Arc<supervisor::Supervisor>>) {
     match os {
-        Os::Linux => Box::new(SystemdServices),
-        _ => Box::new(NoServices),
+        Os::Linux => (Box::new(SystemdServices), None),
+        Os::Windows => {
+            let units = supervisor::LocalUnits {
+                paths: paths.clone(),
+                drust: env::current_exe().unwrap_or_else(|_| "drust.exe".into()),
+            };
+            let supervisor = supervisor::Supervisor::new(
+                Box::new(units),
+                paths.state_dir().join("supervisor.json"),
+                paths.data_dir().join("logs").join("services"),
+                supervisor::Timing::default(),
+            );
+            (Box::new(supervisor::SupervisorServices(supervisor.clone())), Some(supervisor))
+        }
+        Os::Macos => (Box::new(NoServices), None),
     }
 }
 
@@ -287,6 +310,11 @@ pub fn files() -> &'static dyn FileAccess {
 /// Shorthand for `current().accounts()`.
 pub fn accounts() -> &'static dyn AccountManager {
     current().accounts()
+}
+
+/// The supervisor behind `services()`, where drust is its own service manager.
+pub fn supervisor() -> Option<&'static std::sync::Arc<supervisor::Supervisor>> {
+    current().supervisor.as_ref()
 }
 
 /// Shorthand for `current().services()`.
