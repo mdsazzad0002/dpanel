@@ -20,6 +20,7 @@ pub mod runner;
 pub mod scheduler;
 pub mod service;
 pub mod supervisor;
+pub mod terminal;
 pub mod waf;
 #[cfg(unix)]
 mod unix;

@@ -331,6 +331,7 @@ pub trait IsolatedRunner {
 
 - Environment সবসময় `INHERITED_ENV` allowlist থেকে বানানো হয়। `DRUST_API_TOKEN` কখনো child-এ যাবে না। Allowlist-এ কিছু যোগ করার আগে ভাবুন: site owner npm, composer, build script ও git hook-এ সব পড়তে পারে।
 - Web terminal `runuser` সরাসরি চালায়, কারণ সেটা PTY-তে চলে; তার environment `bwrap --clearenv` পরিষ্কার করে।
+- Web terminal-এর shell `platform::terminal::shell` বাছে (F5): Linux-এ উপরের sandbox; local profile-এ sandbox ছাড়া logged-in user-এর shell, `portable_pty`-তে (Windows-এ ConPTY): Windows-এ `pwsh.exe` (`PATH`-এ থাকলে) নয়তো `%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe`, `-NoLogo -NoProfile -NoExit`; macOS-এ `/bin/zsh -i`। Environment শুধু `INHERITED_ENV`, তারপর `USERPROFILE` (macOS-এ `HOME`) = site home, `TERM=xterm-256color`, আর `PATH`-এর আগে site-এর PHP version-এর folder (থাকলে; Windows-এ symlink নয়)। শুরু ticket-এর folder-এ, `\\?\` ছাড়া। macOS ও Windows server-এ terminal নেই (`Unsupported`): site-এর account হিসেবে চালানোর পথ না থাকায় SYSTEM বা root shell হত। ConPTY শুরুতে `ESC[6n` পাঠিয়ে উত্তরের অপেক্ষা করে; browser-এর xterm.js দেয়। Shell বেঁচে থাকতে ConPTY বন্ধ করলে Windows 10-এ প্রায় এক মিনিট আটকে থাকে, তাই session শেষে আগে shell kill।
 - Time limit ও resource limit এখনও এখানে নেই। J2 ও P4 যোগ করবে।
 
 ### 6.6 ResourceLimiter

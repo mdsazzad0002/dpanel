@@ -23,11 +23,12 @@ pub trait IsolatedRunner: Send + Sync + std::fmt::Debug {
 
 pub(super) fn clean_environment(command: &mut Command, lookup: impl Fn(&str) -> Option<std::ffi::OsString>) {
     command.env_clear();
-    for name in INHERITED_ENV {
-        if let Some(value) = lookup(name) {
-            command.env(name, value);
-        }
-    }
+    command.envs(inherited(lookup));
+}
+
+/// The allowlisted variables that are set.
+pub(super) fn inherited(lookup: impl Fn(&str) -> Option<std::ffi::OsString>) -> Vec<(String, std::ffi::OsString)> {
+    INHERITED_ENV.iter().filter_map(|name| lookup(name).map(|value| (name.to_string(), value))).collect()
 }
 
 /// `runuser`, which keeps the environment it is given but for `HOME`, `SHELL`,

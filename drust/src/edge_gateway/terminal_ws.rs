@@ -219,7 +219,43 @@ async fn run_terminal(mut socket: WebSocket, ticket: TerminalTicket) {
     let _ = sender
         .send(Message::Close(Some(CloseFrame { code: 1000, reason: reason.into() })))
         .await;
-    let _ = fs::remove_dir_all(identity_dir);
+    if let Some(identity_dir) = identity_dir {
+        let _ = fs::remove_dir_all(identity_dir);
+    }
+}
+
+type Spawned = (
+    Box<dyn portable_pty::Child + Send + Sync>,
+    Box<dyn Read + Send>,
+    Box<dyn Write + Send>,
+    Box<dyn portable_pty::MasterPty + Send>,
+    // The sandbox's identity files, removed when the session ends.
+    Option<PathBuf>,
+);
+
+fn open_pty() -> Result<portable_pty::PtyPair, String> {
+    native_pty_system()
+        .openpty(PtySize { rows: 30, cols: 120, pixel_width: 0, pixel_height: 0 })
+        .map_err(|e| e.to_string())
+}
+
+/// A plain shell as the logged-in user (local profile, F5): PowerShell in a
+/// ConPTY on Windows. Only the allowlisted environment goes in, so the
+/// gateway's `DRUST_API_TOKEN` stays out.
+fn spawn_direct(ticket: &TerminalTicket, shell: &platform::terminal::DirectShell) -> Result<Spawned, String> {
+    let pty = open_pty()?;
+    let mut cmd = CommandBuilder::new(&shell.program);
+    cmd.args(&shell.args);
+    cmd.env_clear();
+    for (name, value) in platform::terminal::allowed_environment().into_iter().chain(shell.env.iter().cloned()) {
+        cmd.env(name, value);
+    }
+    let start = ticket.working_directory.as_deref().unwrap_or(&ticket.project_root);
+    cmd.cwd(platform::paths::plain_path(Path::new(start)));
+    let child = pty.slave.spawn_command(cmd).map_err(|e| format!("{}: {e}", shell.program.display()))?;
+    let reader = pty.master.try_clone_reader().map_err(|e| e.to_string())?;
+    let writer = pty.master.take_writer().map_err(|e| e.to_string())?;
+    Ok((child, reader, writer, pty.master, None))
 }
 
 #[derive(Deserialize)]
@@ -282,18 +318,13 @@ fn ensure_protected_mountpoint(owner: &str, root: &Path, name: &str) -> Result<(
     platform::files().set_owner(&path, &owner).map_err(|e| e.to_string())
 }
 
-fn spawn_pty(
-    ticket: &TerminalTicket,
-) -> Result<
-    (
-        Box<dyn portable_pty::Child + Send + Sync>,
-        Box<dyn Read + Send>,
-        Box<dyn Write + Send>,
-        Box<dyn portable_pty::MasterPty + Send>,
-        PathBuf,
-    ),
-    String,
-> {
+fn spawn_pty(ticket: &TerminalTicket) -> Result<Spawned, String> {
+    match platform::terminal::shell(Path::new(&ticket.project_root), ticket.php_version.as_deref())
+        .map_err(|e| e.to_string())?
+    {
+        platform::terminal::Shell::Direct(shell) => return spawn_direct(ticket, &shell),
+        platform::terminal::Shell::Sandboxed => {}
+    }
     let owner = platform::accounts()
         .lookup(&ticket.site_owner)
         .map_err(|_| "invalid owner".to_string())?;
@@ -316,14 +347,7 @@ fn spawn_pty(
     let protected_dpanel_target = format!("{}/.dpanel", ticket.project_root);
     let prompt = format!("[{}@dpanel ${{PWD}}]\\$ ", ticket.site_owner);
     let (php_pin, path) = crate::php::cli::sandbox_pin(ticket.php_version.as_deref());
-    let pty = native_pty_system()
-        .openpty(PtySize {
-            rows: 30,
-            cols: 120,
-            pixel_width: 0,
-            pixel_height: 0,
-        })
-        .map_err(|e| e.to_string())?;
+    let pty = open_pty()?;
     // Drop to the site owner's real uid/gid *before* bubblewrap runs, so the
     // unprivileged user namespace bubblewrap creates (--unshare-user) maps
     // that one real uid to itself. Unprivileged user namespaces still get
@@ -464,5 +488,83 @@ fn spawn_pty(
     };
     let reader = pty.master.try_clone_reader().map_err(|e| e.to_string())?;
     let writer = pty.master.take_writer().map_err(|e| e.to_string())?;
-    Ok((child, reader, writer, pty.master, identity_dir))
+    Ok((child, reader, writer, pty.master, Some(identity_dir)))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::platform::{Os, terminal::DirectShell};
+
+    /// Waits up to 30 s for `done` on what the shell printed so far.
+    fn wait_for(output: &std::sync::Mutex<Vec<u8>>, done: impl Fn(&str) -> bool) -> bool {
+        let deadline = std::time::Instant::now() + Duration::from_secs(30);
+        while std::time::Instant::now() < deadline {
+            if done(&String::from_utf8_lossy(&output.lock().unwrap())) {
+                return true;
+            }
+            std::thread::sleep(Duration::from_millis(50));
+        }
+        false
+    }
+
+    /// F5: a real PowerShell in a real ConPTY answers what is typed, starts
+    /// in the site, and does not see variables outside the allowlist.
+    #[test]
+    fn powershell_runs_in_a_conpty_with_a_clean_environment() {
+        if crate::platform::current().os() != Os::Windows {
+            return;
+        }
+        // Cargo sets this for the test run; it must not reach the shell.
+        assert!(std::env::var_os("CARGO_PKG_NAME").is_some());
+        let site = tempfile::tempdir().unwrap();
+        let root = std::env::var_os("SystemRoot").unwrap_or_else(|| r"C:\Windows".into());
+        let shell = DirectShell {
+            program: PathBuf::from(root).join(r"System32\WindowsPowerShell\v1.0\powershell.exe"),
+            args: ["-NoLogo", "-NoProfile", "-NoExit"].map(String::from).to_vec(),
+            env: vec![("TERM".into(), "xterm-256color".into())],
+        };
+        let ticket = TerminalTicket {
+            ticket: "t".repeat(48),
+            site_owner: "shop".into(),
+            project_root: site.path().to_string_lossy().into_owned(),
+            expires_at: now() + 60,
+            host: "localhost".into(),
+            php_version: None,
+            working_directory: None,
+        };
+
+        let (mut child, mut reader, mut writer, _master, identity_dir) = spawn_direct(&ticket, &shell).unwrap();
+        let output = Arc::new(std::sync::Mutex::new(Vec::new()));
+        let sink = output.clone();
+        std::thread::spawn(move || {
+            let mut buffer = [0u8; 4096];
+            while let Ok(n) = reader.read(&mut buffer) {
+                if n == 0 {
+                    break;
+                }
+                sink.lock().unwrap().extend_from_slice(&buffer[..n]);
+            }
+        });
+        // ConPTY first asks where the cursor is (`ESC[6n`) and waits for the
+        // answer; xterm.js in the browser gives it, here the test does.
+        let asked = wait_for(&output, |text| text.contains("\x1b[6n"));
+        let _ = writer.write_all(b"\x1b[1;1R");
+        // The typed text differs from the answers, so an answer proves
+        // PowerShell ran it.
+        let _ = writer.write_all(b"echo \"sum-$(6*7)\"; echo \"[x$env:CARGO_PKG_NAME]\"; echo \"in-$((Get-Location).Path)\"\r\n");
+        let _ = writer.flush();
+        let answered = wait_for(&output, |text| text.contains("sum-42") && text.contains("in-"));
+        // Before any assertion: closing the console while the shell lives
+        // blocks for a minute on Windows 10.
+        let _ = child.kill();
+        let seen = String::from_utf8_lossy(&output.lock().unwrap()).into_owned();
+
+        assert!(identity_dir.is_none());
+        assert!(asked, "ConPTY never asked for the cursor:\n{seen}");
+        assert!(answered, "no answer from PowerShell:\n{seen}");
+        assert!(seen.contains("[x]"), "the shell saw drust's environment:\n{seen}");
+        let folder = site.path().file_name().unwrap().to_string_lossy().into_owned();
+        assert!(seen.contains(&folder), "the shell did not start in the site:\n{seen}");
+    }
 }
