@@ -254,7 +254,17 @@ pub trait ServiceManager {
 
 `run_detached` Linux-এ `systemd-run --unit <unit> --collect --quiet -- <program> <args>`: transient service, drust-এর environment (API token) পায় না; চলছে কিনা `status(unit)` বলে। Panel update (U6) এটা দিয়ে চলে, কারণ update drust-কেই restart করে।
 
-`platform::services()` দিয়ে পাওয়া যায়। Linux-এ `SystemdServices` (`systemctl` ও `journalctl`)। Windows ও macOS-এ এখন `NoServices`, সব call `Unsupported`, আর `services` capability বন্ধ; E2 ও F4-এ `supervisor.rs` আসবে। OS service শুধু supervisor-কে চালাবে।
+`platform::services()` দিয়ে পাওয়া যায়। Linux-এ `SystemdServices` (`systemctl` ও `journalctl`)। Windows-এ `SupervisorServices` (F4), macOS-এ এখনও `NoServices` (E2)। `services` capability Windows-এ এখনও বন্ধ, কারণ PostgreSQL, MongoDB ও Local LLM-এর unit supervisor-এ নেই।
+
+**Supervisor (F4, `platform/supervisor/`)।** OS-নিরপেক্ষ; প্রতি program-এর একটা thread child চালায়। Program-এর তালিকা `Catalog`; Windows-এ `LocalUnits`: `edge-gateway` (`drust edge-gateway`, drust-এর environment), `mariadb` (F3-এর সবচেয়ে নতুন `runtime_dir\mariadb\{v}`; প্রথমবার `mariadb-install-db --datadir=data_dir\mariadb --port=3306`, তারপর `mariadbd --defaults-file=…\my.ini --console --bind-address=127.0.0.1`; environment শুধু §6.5-এর allowlist; `root`-এর password নেই, শুধু এই PC থেকে), `dpanel-queue` (`php artisan queue:work --max-time=3600`, `panel_root`-এ)। না থাকলে (MariaDB install হয়নি) program `failed`, কারণ log-এ।
+- অবস্থা systemd-এর শব্দে: `inactive`, `activating` (শুরু বা restart-এর অপেক্ষা), `active`, `failed`; অজানা নাম `not-found`, `installed: false`।
+- মরে গেলে আবার চালায়: অপেক্ষা 1 সেকেন্ড থেকে দ্বিগুণ হয়ে 30 পর্যন্ত; 60 সেকেন্ডের কম চলে পরপর 5 বার মরলে `failed`, আর চালায় না, যতক্ষণ না কেউ `start`/`restart` করে (systemd-এর start limit)। চাওয়া `restart` গোনা হয় না।
+- Enabled-এর তালিকা `state_dir\supervisor.json`; প্রথম boot-এ (file নেই) যা চলতে পারে সব enabled। `boot()` enabled-গুলো চালায়, তাই reboot-এর পরে ফেরে। `stop_all` সব থামায়, enabled বদলায় না।
+- Output `data_dir\logs\services\<name>.log`-এ (5 MB-এর বেশি হলে পরের start-এ `.log.1`), সঙ্গে supervisor-এর নিজের line (`[time drust] starting …`, `exited (…)`)। `logs()` শেষ N line; `LogStyle` এখানে আলাদা নয়।
+- Child drust-এর Job Object-এ (drust শেষ হলে child-ও), console window ছাড়া। Stop মানে kill (`TerminateProcess`); MariaDB-কে আলাদা করে থামানোর অনুরোধ এখনও নেই।
+- `reload` মানে restart; `reload_definitions` কিছু করে না; `set_runtime_properties` ও `run_detached` `Unsupported`।
+
+**OS-এর সাথে শুরু (`platform/autostart.rs`)।** `drust supervise [--env-file p] [--port n]` API চালায় ও `boot()` করে; API port ব্যস্ত হলে "already running" বলে থামে। drust-এর setting `config_dir\drust.env` (`KEY=value`, `#` comment, `export`, quote; আগে থেকে থাকা variable জেতে), কারণ service ও logon-এ shell-এর environment নেই। Local: `drust autostart enable|disable|status` `HKCU\Software\Microsoft\Windows\CurrentVersion\Run`-এ `drust supervise --background --env-file …` লেখে; user হিসেবে, administrator ছাড়া (Task Scheduler-এর logon task বানাতে administrator লাগে)। `--background` নিজেকে console ছাড়া, Job Object-এর বাইরে আবার চালিয়ে বেরিয়ে যায়। Server: `drust service install|uninstall|status` (administrator) `dPanel` Windows Service বানায়: LocalSystem, boot-এ auto start, ব্যর্থ হলে 5 s ও 30 s পরে restart; SCM `drust service run --env-file …` চালায়, যা stop বা shutdown-এ `stop_all` (10 s) করে।
 
 ### 6.4 AccountManager
 

@@ -28,6 +28,7 @@ mod login_users;
 mod security;
 mod security_scan;
 mod ssl;
+mod supervise;
 mod upload_scan;
 mod vhost;
 mod vhost_ops;
@@ -48,6 +49,12 @@ fn main() -> std::process::ExitCode {
     tracing_subscriber::fmt::init();
     if args.first().map(String::as_str) == Some("runtime") {
         return runtimes::cli(&args[1..]);
+    }
+    match args.first().map(String::as_str) {
+        Some("supervise") => return supervise::supervise(&args[1..]),
+        Some("service") => return supervise::service(&args[1..]),
+        Some("autostart") => return supervise::autostart(&args[1..]),
+        _ => {}
     }
     if args.first().map(String::as_str) == Some("edge-gateway") {
         // DRUST_HTTP_BIND is the canonical public listener. Keep the old

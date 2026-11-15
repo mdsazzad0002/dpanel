@@ -91,7 +91,7 @@ pub fn end_child_with_drust(child: &std::process::Child) -> Result<(), String> {
 
 /// Keeps a console program from opening a window of its own when drust
 /// itself has none (a service, or started at logon). Nothing on Unix.
-pub fn without_console(command: &mut Command) -> &mut Command {
+pub fn without_console(command: &mut std::process::Command) -> &mut std::process::Command {
     #[cfg(unix)]
     {
         command

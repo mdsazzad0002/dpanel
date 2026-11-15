@@ -10,6 +10,7 @@ use super::{PlatformError, capabilities::Capability};
 #[cfg(windows)]
 use super::windows::{autostart as logon, service};
 
+#[cfg_attr(windows, allow(dead_code))]
 fn unsupported<T>() -> Result<T, PlatformError> {
     Err(PlatformError::Unsupported { capability: Capability::Services })
 }
