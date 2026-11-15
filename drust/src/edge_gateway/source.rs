@@ -778,7 +778,7 @@ fn certificate_files(
         return uploaded;
     }
     let own = in_tls_dir(domain);
-    if own.0.is_file() && (engine == SslEngine::Acme || wildcard_of(&own, domain)) {
+    if own.0.is_file() && (matches!(engine, SslEngine::Acme | SslEngine::LocalCa) || wildcard_of(&own, domain)) {
         return own;
     }
     if let Some(files) = certbot(domain) {
@@ -795,7 +795,7 @@ fn certificate_files(
     }
     if let Some(main) = domain.strip_prefix("www.") {
         let of_main = in_tls_dir(main);
-        if engine == SslEngine::Acme && of_main.0.is_file() {
+        if matches!(engine, SslEngine::Acme | SslEngine::LocalCa) && of_main.0.is_file() {
             return of_main;
         }
         if let Some(files) = certbot(main) {

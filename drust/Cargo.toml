@@ -50,7 +50,9 @@ mongodb = "3"
 # The ACME client (task I5): account and certificate keys, the CSR, and
 # reading a certificate's names and expiry without the openssl program.
 ring = "0.17"
-rcgen = "0.14"
+rcgen = { version = "0.14", features = ["x509-parser"] }
+# rcgen's validity dates; also the local CA's (F6).
+time = "0.3"
 x509-parser = "0.18"
 
 # drust-llm only (feature `llm`).
@@ -65,7 +67,7 @@ minijinja-contrib = { version = "=2.24.0", features = ["pycompat"], optional = t
 libc = "0.2"
 
 [target.'cfg(windows)'.dependencies]
-windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_Security", "Win32_Security_Authorization", "Win32_Security_Cryptography", "Win32_Storage_FileSystem", "Win32_System_JobObjects", "Win32_System_Registry", "Win32_System_Services", "Win32_System_Threading"] }
+windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_Security", "Win32_Security_Authorization", "Win32_Security_Cryptography", "Win32_Storage_FileSystem", "Win32_System_JobObjects", "Win32_System_Registry", "Win32_System_Services", "Win32_System_Threading", "Win32_UI_Shell"] }
 
 [[bin]]
 name = "drust-llm"

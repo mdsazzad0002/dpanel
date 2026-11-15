@@ -11,6 +11,7 @@ mod filemanager;
 mod health;
 mod installer;
 mod laravel_queue;
+mod local_dev;
 mod local_llm;
 mod php;
 mod platform;
@@ -54,6 +55,8 @@ fn main() -> std::process::ExitCode {
         Some("supervise") => return supervise::supervise(&args[1..]),
         Some("service") => return supervise::service(&args[1..]),
         Some("autostart") => return supervise::autostart(&args[1..]),
+        Some("hosts") => return local_dev::hosts_cli(&args[1..]),
+        Some("local-ca") => return local_dev::local_ca_cli(&args[1..]),
         _ => {}
     }
     if args.first().map(String::as_str) == Some("edge-gateway") {

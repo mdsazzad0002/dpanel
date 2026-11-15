@@ -385,6 +385,21 @@ fn ensure_issued(
             .to_socket_addrs()
             .map(|mut addresses| addresses.next().is_some())
             .unwrap_or(false);
+    // A PC (F6): the local CA signs, through the same validity and renew
+    // checks; there is no certbot to keep.
+    if acme::engine() == SslEngine::LocalCa {
+        let local = AcmeEnsure { certbot: None, ..at() };
+        return ensure_with_acme(
+            &platform::local_ca::LocalCa::for_system(platform::paths()),
+            &local,
+            &domain,
+            include_www,
+            None,
+            renew_before_days,
+            force,
+            trigger_gateway_reload,
+        );
+    }
     if acme::engine() == SslEngine::Acme {
         return ensure_with_acme(
             &acme::client(),

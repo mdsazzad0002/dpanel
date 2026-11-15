@@ -551,6 +551,11 @@ impl Paths {
         self.config_dir.join("drust.env")
     }
 
+    /// The local profile's certificate authority (F6): `ca.crt`, `ca.key`.
+    pub fn local_ca_dir(&self) -> PathBuf {
+        self.config_dir.join("local-ca")
+    }
+
     pub fn tls_dir(&self) -> PathBuf {
         self.config_dir.join("tls")
     }

@@ -37,6 +37,19 @@ class Website extends Model
         };
         static::saved($reload);
         static::deleted($reload);
+        // A PC resolves its sites through the hosts file (F6).
+        $hosts = static function (): void {
+            if (\App\Services\Local\LocalHostsSync::enabled()) {
+                DB::afterCommit(static fn () => \App\Jobs\SyncLocalHostsJob::dispatch());
+            }
+        };
+        static::created($hosts);
+        static::updated(static function (self $website) use ($hosts): void {
+            if ($website->wasChanged('domain')) {
+                $hosts();
+            }
+        });
+        static::deleted($hosts);
         // A deleted Docker site must not leave its container serving on its port.
         static::deleted(static function (self $website): void {
             if ($website->isDockerRuntime()) {

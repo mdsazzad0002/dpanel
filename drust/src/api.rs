@@ -27,6 +27,7 @@ mod wordpress;
 mod ftp;
 mod git_deploy;
 mod laravel_queue;
+mod local;
 mod local_llm;
 mod login_users;
 mod health;
@@ -171,6 +172,7 @@ pub fn build_router(state: ApiState) -> Router {
         .merge(restic_restore::routes())
         .merge(restic_verify::routes())
         .merge(runtimes::routes())
+        .merge(local::routes())
         .merge(laravel_queue::routes())
         .with_state(Arc::new(state))
 }
