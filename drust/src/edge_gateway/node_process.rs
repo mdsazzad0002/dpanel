@@ -1,12 +1,14 @@
 use std::{
-    fs,
     net::SocketAddr,
     path::{Path, PathBuf},
     sync::{Mutex, OnceLock},
     time::Duration,
 };
 
-use crate::platform;
+use crate::platform::{
+    self,
+    apps::{AppCommand, AppUnit},
+};
 use tokio::{net::TcpStream, time::timeout};
 
 use super::python_process::{mark_live, recently_live};
@@ -94,15 +96,7 @@ pub fn stop_node_process(site_id: &str) -> Result<(), String> {
 
 /// Stops the app and deletes its unit, for a deleted project.
 pub fn remove_node_process(site_id: &str) -> Result<(), String> {
-    let unit = unit_name(site_id);
-    if !unit_file_exists(&unit) {
-        return Ok(());
-    }
-    let _ = platform::services().switch(&[&unit], false);
-    fs::remove_file(format!("/etc/systemd/system/{unit}.service"))
-        .map_err(|error| format!("cannot remove systemd unit {unit}: {error}"))?;
-    let _ = platform::services().reset_failed(&unit);
-    platform::services().reload_definitions().map_err(|e| e.to_string())
+    platform::apps().remove(&unit_name(site_id)).map(drop).map_err(|e| e.to_string())
 }
 
 /// Rewrites the unit from the current settings, then restarts it, so an
@@ -174,7 +168,7 @@ pub async fn node_process_status(site_id: &str, port: u16) -> NodeProcessStatus 
 }
 
 fn unit_file_exists(unit: &str) -> bool {
-    Path::new(&format!("/etc/systemd/system/{unit}.service")).is_file()
+    platform::apps().exists(unit)
 }
 
 fn ensure_unit_provisioned(
@@ -200,59 +194,28 @@ fn ensure_unit_provisioned(
     }
 
     let node_binary = resolve_node_binary(node_version)?;
-    let exec_start = match start_command {
-        Some(command) if !command.trim().is_empty() => {
-            format!("/bin/bash -lc {}", shell_quote(command.trim()))
-        }
+    let command = match start_command {
+        Some(command) if !command.trim().is_empty() => AppCommand::Shell(command.trim().to_string()),
         _ => {
             let entry = entry_file.unwrap_or("server.js").trim();
             if entry.is_empty() {
                 return Err("node entry file is not configured".to_string());
             }
-            format!(
-                "{} {}",
-                node_binary.display(),
-                shell_quote(&project_root.join(entry).to_string_lossy())
-            )
+            AppCommand::Program { program: node_binary, args: vec![project_root.join(entry).to_string_lossy().into_owned()] }
         }
     };
-
-    let unit_name = unit_name(site_id);
-    let unit_path = PathBuf::from(format!("/etc/systemd/system/{unit_name}.service"));
-    let content = format!(
-        "; Managed dynamically by drust edge gateway. Do not edit by hand.\n\
-         [Unit]\n\
-         Description=dPanel Node.js site {site_id}\n\
-         After=network.target\n\
-         \n\
-         [Service]\n\
-         Type=simple\n\
-         User={owner}\n\
-         Group={owner}\n\
-         WorkingDirectory={workdir}\n\
-         Environment=PORT={port}\n\
-         Environment=NODE_ENV=production\n\
-         Environment=HOST=127.0.0.1\n\
-         ExecStart={exec_start}\n\
-         Restart=always\n\
-         RestartSec=3\n\
-         StandardOutput=journal\n\
-         StandardError=journal\n\
-         \n\
-         [Install]\n\
-         WantedBy=multi-user.target\n",
-        workdir = project_root.display(),
-    );
-
-    let existing = fs::read_to_string(&unit_path).ok();
-    let needs_write = existing.as_deref() != Some(content.as_str());
-    if needs_write {
-        fs::write(&unit_path, &content)
-            .map_err(|error| format!("cannot write systemd unit {}: {error}", unit_path.display()))?;
-        platform::services().reload_definitions().map_err(|e| e.to_string())?;
-    }
-
-    platform::services().switch(&[&unit_name], true).map_err(|e| e.to_string())
+    let unit = AppUnit {
+        name: unit_name(site_id),
+        description: format!("dPanel Node.js site {site_id}"),
+        owner: owner.to_string(),
+        workdir: project_root.to_path_buf(),
+        env: [("PORT", port.to_string()), ("NODE_ENV", "production".into()), ("HOST", "127.0.0.1".into())]
+            .map(|(name, value)| (name.to_string(), value))
+            .to_vec(),
+        command,
+    };
+    platform::apps().define(&unit).map_err(|e| e.to_string())?;
+    platform::services().switch(&[&unit.name], true).map_err(|e| e.to_string())
 }
 
 fn resolve_node_binary(version: Option<&str>) -> Result<PathBuf, String> {
@@ -273,6 +236,7 @@ fn resolve_node_binary(version: Option<&str>) -> Result<PathBuf, String> {
         .map_err(|_| "no node binary found on this server; install Node.js or configure DRUST_NODE_BIN".to_string())
 }
 
+#[cfg(test)]
 fn shell_quote(value: &str) -> String {
     format!("'{}'", value.replace('\'', "'\\''"))
 }

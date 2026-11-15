@@ -25,6 +25,7 @@ impl LocalUnits {
             args: vec!["edge-gateway".into()],
             cwd: None,
             env: EnvPolicy::Inherit,
+            vars: Vec::new(),
             setup: None,
         }
     }
@@ -49,6 +50,7 @@ impl LocalUnits {
             args: vec![defaults_arg, "--console".into(), "--bind-address=127.0.0.1".into()],
             cwd: Some(home.clone()),
             env: EnvPolicy::Clean,
+            vars: Vec::new(),
             setup: Some(Setup {
                 program: home.join("bin").join("mariadb-install-db.exe"),
                 args: vec![data_arg, "--port=3306".into()],
@@ -76,6 +78,7 @@ impl LocalUnits {
             ],
             cwd: Some(panel.to_path_buf()),
             env: EnvPolicy::Inherit,
+            vars: Vec::new(),
             setup: None,
         })
     }

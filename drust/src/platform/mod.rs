@@ -5,6 +5,7 @@
 
 pub mod account;
 pub mod acme;
+pub mod apps;
 pub mod autostart;
 pub mod capabilities;
 pub mod elevate;
@@ -108,6 +109,7 @@ pub struct Platform {
     accounts: Box<dyn AccountManager>,
     services: Box<dyn ServiceManager>,
     supervisor: Option<Arc<supervisor::Supervisor>>,
+    apps: Box<dyn apps::AppManager>,
     runner: Box<dyn IsolatedRunner>,
     scheduler: Box<dyn Scheduler>,
     disk_quota: Box<dyn DiskQuota>,
@@ -207,6 +209,7 @@ pub fn current() -> &'static Platform {
         let paths = Paths::for_system(os, profile, |name| env::var(name).ok());
         let accounts = accounts_for(os, profile, &paths);
         let (services, supervisor) = services_for(os, &paths);
+        let apps = apps_for(os, profile, supervisor.as_ref());
         let runner = runner_for(os, profile);
         let scheduler = scheduler_for(os, &paths);
         let disk_quota = disk_quota_for(os, profile, &paths);
@@ -218,6 +221,7 @@ pub fn current() -> &'static Platform {
             accounts,
             services,
             supervisor,
+            apps,
             runner,
             scheduler,
             disk_quota,
@@ -247,6 +251,7 @@ fn services_for(os: Os, paths: &Paths) -> (Box<dyn ServiceManager>, Option<Arc<s
             };
             let supervisor = supervisor::Supervisor::new(
                 Box::new(units),
+                paths.state_dir().join("apps"),
                 paths.state_dir().join("supervisor.json"),
                 paths.data_dir().join("logs").join("services"),
                 supervisor::Timing::default(),
@@ -254,6 +259,22 @@ fn services_for(os: Os, paths: &Paths) -> (Box<dyn ServiceManager>, Option<Arc<s
             (Box::new(supervisor::SupervisorServices(supervisor.clone())), Some(supervisor))
         }
         Os::Macos => (Box::new(NoServices), None),
+    }
+}
+
+/// Where a site's own program is defined (C3): systemd on Linux, the
+/// supervisor on a Windows PC, nowhere on other servers yet.
+fn apps_for(os: Os, profile: Profile, supervisor: Option<&Arc<supervisor::Supervisor>>) -> Box<dyn apps::AppManager> {
+    match (os, profile, supervisor) {
+        (Os::Linux, _, _) => Box::new(apps::SystemdApps),
+        (_, Profile::Local, Some(supervisor)) => Box::new(apps::SupervisorApps {
+            supervisor: supervisor.clone(),
+            shell: match os {
+                Os::Windows => (env::var_os("ComSpec").map_or_else(|| "cmd.exe".into(), Into::into), ["/D", "/S", "/C"].map(String::from).to_vec()),
+                _ => ("/bin/sh".into(), vec!["-c".to_string()]),
+            },
+        }),
+        _ => Box::new(apps::NoApps),
     }
 }
 
@@ -314,6 +335,11 @@ pub fn files() -> &'static dyn FileAccess {
 /// Shorthand for `current().accounts()`.
 pub fn accounts() -> &'static dyn AccountManager {
     current().accounts()
+}
+
+/// Sites' own programs (C3); see `apps.rs`.
+pub fn apps() -> &'static dyn apps::AppManager {
+    current().apps.as_ref()
 }
 
 /// The supervisor behind `services()`, where drust is its own service manager.

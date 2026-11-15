@@ -7,7 +7,7 @@ use std::{
     time::{Duration, Instant},
 };
 
-use crate::platform::{self, service::LogStyle};
+use crate::platform::{self, Os, service::LogStyle};
 use tokio::{net::TcpStream, time::timeout};
 
 /// Gunicorn's own default is one sync worker, which handles a single request
@@ -181,6 +181,11 @@ async fn provision(
     port: u16,
     force: bool,
 ) -> Result<(), String> {
+    // gunicorn and the unit below are Unix's; a Windows server for Python
+    // apps (waitress, uvicorn) is still to be chosen (C3).
+    if platform::current().os() != Os::Linux {
+        return Err("Python apps run on Linux only for now: they are served by gunicorn under systemd".to_string());
+    }
     let owner = validate_system_user(owner)?;
     let site_id = site_id.to_string();
     let project_root = project_root.to_path_buf();

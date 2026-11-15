@@ -31,7 +31,7 @@ fn prints_environment() -> (PathBuf, Vec<OsString>) {
 }
 
 fn spec((program, args): (PathBuf, Vec<OsString>)) -> ProgramSpec {
-    ProgramSpec { program, args, cwd: None, env: EnvPolicy::Inherit, setup: None }
+    ProgramSpec { program, args, cwd: None, env: EnvPolicy::Inherit, vars: Vec::new(), setup: None }
 }
 
 #[derive(Debug)]
@@ -72,6 +72,7 @@ impl Fixture {
         let catalog = TestCatalog(programs.into_iter().map(|(name, spec)| (name.to_string(), spec)).collect());
         Supervisor::new(
             Box::new(catalog),
+            self.dir.path().join("state").join("apps"),
             self.dir.path().join("state").join("supervisor.json"),
             self.dir.path().join("logs"),
             timing(),
@@ -277,4 +278,141 @@ fn star_matches_any_run_of_characters() {
     assert!(!glob_matches("mariadb", "mariadb2"));
     assert!(!glob_matches("dpanel-*", "edge-gateway"));
     assert!(!glob_matches("a*a", "a"));
+}
+
+/// C3: a site's app, defined at runtime, with its own variables and none of
+/// drust's.
+fn app_printing(variable: &str) -> ProgramSpec {
+    let line = if cfg!(windows) {
+        format!("echo value=%{variable}% token=[%CARGO_PKG_NAME%]& ping -n 600 127.0.0.1 >NUL")
+    } else {
+        format!("echo value=${variable} token=[$CARGO_PKG_NAME]; exec sleep 600")
+    };
+    let mut app = spec(shell(&line));
+    app.env = EnvPolicy::Clean;
+    app.vars = vec![(variable.to_string(), "3000".to_string())];
+    app
+}
+
+#[test]
+fn an_app_defined_at_runtime_runs_and_comes_back_after_a_restart() {
+    let fixture = Fixture::new();
+    let first = fixture.supervisor(vec![("web", Ok(spec(long_running())))]);
+
+    assert!(first.define_app("dpanel-node-shop", &app_printing("PORT")).unwrap());
+    assert!(!first.define_app("dpanel-node-shop", &app_printing("PORT")).unwrap(), "unchanged");
+    assert_eq!(first.names("dpanel-node-*"), ["dpanel-node-shop"]);
+    assert!(first.is_app("dpanel-node-shop") && !first.is_app("web"));
+
+    first.set_enabled("dpanel-node-shop", true).unwrap();
+    first.start("dpanel-node-shop").unwrap();
+    wait_for("the app", || first.logs("dpanel-node-shop", 20).unwrap().contains("value=3000"));
+    let log = first.logs("dpanel-node-shop", 20).unwrap();
+    assert!(!log.contains("token=[drust]"), "drust's environment reached the app:\n{log}");
+    first.stop_all(Duration::from_secs(5));
+
+    // A new supervisor, as after a reboot, finds the app and starts it.
+    let second = fixture.supervisor(vec![("web", Ok(spec(long_running())))]);
+    second.boot();
+    wait_for("the app after a restart", || second.status("dpanel-node-shop").active);
+
+    assert!(second.remove_app("dpanel-node-shop").unwrap());
+    assert!(!second.status("dpanel-node-shop").installed);
+    assert!(!second.remove_app("dpanel-node-shop").unwrap());
+    assert!(second.names("*").iter().all(|name| name != "dpanel-node-shop"));
+    second.stop_all(Duration::from_secs(5));
+}
+
+#[test]
+fn apps_cannot_take_a_built_in_name_or_a_path() {
+    let fixture = Fixture::new();
+    let supervisor = fixture.supervisor(vec![("mariadb", Ok(spec(long_running())))]);
+    for name in ["mariadb", "", "../evil", "a/b", "a b", "a.json"] {
+        assert!(supervisor.define_app(name, &app_printing("PORT")).is_err(), "{name:?}");
+    }
+    assert!(!supervisor.remove_app("mariadb").unwrap());
+}
+
+#[test]
+fn the_app_manager_on_a_pc_defines_through_the_supervisor() {
+    use crate::platform::apps::{AppCommand, AppManager, AppUnit, SupervisorApps};
+    let fixture = Fixture::new();
+    let supervisor = fixture.supervisor(vec![]);
+    let shell = if cfg!(windows) {
+        (PathBuf::from("cmd"), vec!["/D".to_string(), "/C".to_string()])
+    } else {
+        (PathBuf::from("sh"), vec!["-c".to_string()])
+    };
+    let apps = SupervisorApps { supervisor: supervisor.clone(), shell };
+    let line = if cfg!(windows) { "echo port=%PORT%& ping -n 600 127.0.0.1 >NUL" } else { "echo port=$PORT; exec sleep 600" };
+    let unit = AppUnit {
+        name: "dpanel-rust-api".into(),
+        description: "dPanel Rust app api".into(),
+        owner: "me".into(),
+        workdir: fixture.dir.path().to_path_buf(),
+        env: vec![("PORT".into(), "8123".into())],
+        command: AppCommand::Shell(line.into()),
+    };
+
+    assert!(apps.define(&unit).unwrap());
+    assert!(apps.exists("dpanel-rust-api"));
+    let services = SupervisorServices(supervisor.clone());
+    services.switch(&["dpanel-rust-api"], true).unwrap();
+    wait_for("the app's output", || supervisor.logs("dpanel-rust-api", 20).unwrap().contains("port=8123"));
+
+    assert!(apps.remove("dpanel-rust-api").unwrap());
+    assert!(!apps.exists("dpanel-rust-api"));
+}
+
+/// C3 for real: a Node app, defined as a site's app, serves on its `PORT`
+/// under the supervisor, and is gone once removed. Needs Node on `PATH`.
+#[test]
+fn a_real_node_app_serves_under_the_supervisor() {
+    use crate::platform::apps::{AppCommand, AppManager, AppUnit, SupervisorApps};
+    use std::io::{Read, Write as _};
+    let Ok(node) = crate::platform::paths().binary(crate::platform::paths::Tool::Node) else {
+        eprintln!("skipped: no node on PATH");
+        return;
+    };
+    let fixture = Fixture::new();
+    let app_dir = fixture.dir.path().join("app");
+    fs::create_dir_all(&app_dir).unwrap();
+    fs::write(
+        app_dir.join("server.js"),
+        "require('http').createServer((q, s) => s.end('hello ' + process.env.PORT)).listen(process.env.PORT, process.env.HOST);\n",
+    )
+    .unwrap();
+    let port = std::net::TcpListener::bind("127.0.0.1:0").unwrap().local_addr().unwrap().port();
+    let supervisor = fixture.supervisor(vec![]);
+    let apps = SupervisorApps { supervisor: supervisor.clone(), shell: (PathBuf::from("unused"), Vec::new()) };
+    let unit = AppUnit {
+        name: "dpanel-node-real".into(),
+        description: "dPanel Node.js site real".into(),
+        owner: "me".into(),
+        workdir: app_dir.clone(),
+        env: vec![("PORT".into(), port.to_string()), ("HOST".into(), "127.0.0.1".into())],
+        command: AppCommand::Program { program: node, args: vec![app_dir.join("server.js").to_string_lossy().into_owned()] },
+    };
+    apps.define(&unit).unwrap();
+    SupervisorServices(supervisor.clone()).switch(&["dpanel-node-real"], true).unwrap();
+
+    let get = || -> Option<String> {
+        let mut stream = std::net::TcpStream::connect(("127.0.0.1", port)).ok()?;
+        stream.write_all(b"GET / HTTP/1.0\r\nHost: x\r\n\r\n").ok()?;
+        let mut answer = String::new();
+        stream.read_to_string(&mut answer).ok()?;
+        Some(answer)
+    };
+    let deadline = Instant::now() + Duration::from_secs(20);
+    let answer = loop {
+        if let Some(answer) = get() {
+            break answer;
+        }
+        assert!(Instant::now() < deadline, "the app never answered:\n{}", supervisor.logs("dpanel-node-real", 30).unwrap());
+        std::thread::sleep(Duration::from_millis(100));
+    };
+    assert!(answer.ends_with(&format!("hello {port}")), "{answer}");
+
+    assert!(apps.remove("dpanel-node-real").unwrap());
+    wait_for("the port to close", || std::net::TcpStream::connect(("127.0.0.1", port)).is_err());
 }

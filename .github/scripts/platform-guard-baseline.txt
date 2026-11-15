@@ -6,11 +6,11 @@
 1 app/admin/options.rs
 1 app/support/system.rs
 4 docker/stack.rs
-6 edge_gateway/node_process.rs
+2 edge_gateway/node_process.rs
 3 edge_gateway/php_fpm_master.rs
 4 edge_gateway/php.rs
 4 edge_gateway/python_process.rs
-4 edge_gateway/rust_process.rs
+1 edge_gateway/rust_process.rs
 20 edge_gateway/terminal_ws.rs
 2 fail2ban.rs
 1 filemanager/artisan.rs

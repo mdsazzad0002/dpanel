@@ -1,7 +1,7 @@
 use std::{fs, net::SocketAddr, path::{Path, PathBuf}, time::Duration};
 use tokio::{net::TcpStream, time::timeout};
 
-use crate::platform::{self, service::LogStyle};
+use crate::platform::{self, Os, apps::{AppCommand, AppUnit}, service::LogStyle};
 
 fn valid_site_id(site: &str) -> bool { !site.is_empty() && site.chars().all(|c| c.is_ascii_alphanumeric() || matches!(c, '_'|'-')) }
 fn unit(site: &str) -> String { format!("dpanel-rust-{site}") }
@@ -11,13 +11,7 @@ pub async fn control_rust(site: &str, action: &str, owner: Option<&str>, root: O
     let name = unit(site);
     match action {
         "stop" => platform::services().switch(&[&name], false).map_err(|e| e.to_string()),
-        "remove" => {
-            let _ = platform::services().switch(&[&name], false);
-            let path = format!("/etc/systemd/system/{name}.service");
-            if !Path::new(&path).is_file() { return Ok(()); }
-            fs::remove_file(path).map_err(|e| format!("cannot remove Rust unit: {e}"))?;
-            let _ = platform::services().reset_failed(&name); platform::services().reload_definitions().map_err(|e| e.to_string())
-        }
+        "remove" => platform::apps().remove(&name).map(drop).map_err(|e| format!("cannot remove Rust app: {e}")),
         "restart" | "start" => {
             let owner = owner.ok_or("site_owner is required")?.trim();
             if owner.is_empty() || !owner.chars().all(|c| c.is_ascii_alphanumeric() || matches!(c, '_'|'-')) { return Err("invalid site owner".into()); }
@@ -47,13 +41,15 @@ pub async fn control_rust(site: &str, action: &str, owner: Option<&str>, root: O
             if !binary.starts_with(&root) || !binary.is_file() { return Err("Rust binary must be a file inside the project directory".into()); }
             let metadata = fs::metadata(&binary).map_err(|e| e.to_string())?;
             if platform::files().mode_bits(&metadata).is_some_and(|mode| mode & 0o111 == 0) { return Err("Rust binary is not executable".into()); }
-            let exec_start = std::iter::once(binary.display().to_string()).chain(args.into_iter().map(str::to_string)).collect::<Vec<_>>().join(" ");
-            let content = format!("[Unit]\nDescription=dPanel Rust app {site}\nAfter=network.target\n[Service]\nType=simple\nUser={owner}\nGroup={owner}\nWorkingDirectory={}\nEnvironment=PORT={port}\nEnvironment=HOST=127.0.0.1\nExecStart={}\nRestart=always\nRestartSec=3\nStandardOutput=journal\nStandardError=journal\n[Install]\nWantedBy=multi-user.target\n", root.display(), exec_start);
-            let path = format!("/etc/systemd/system/{name}.service");
-            if fs::read_to_string(&path).ok().as_deref() != Some(content.as_str()) {
-                fs::write(&path, content).map_err(|e| format!("cannot write systemd unit: {e}"))?;
-                platform::services().reload_definitions().map_err(|e| e.to_string())?;
-            }
+            let unit = AppUnit {
+                name: name.clone(),
+                description: format!("dPanel Rust app {site}"),
+                owner: owner.to_string(),
+                workdir: platform::paths::plain_path(&root),
+                env: vec![("PORT".into(), port.to_string()), ("HOST".into(), "127.0.0.1".into())],
+                command: AppCommand::Program { program: platform::paths::plain_path(&binary), args: args.into_iter().map(str::to_string).collect() },
+            };
+            platform::apps().define(&unit).map_err(|e| format!("cannot define the Rust app: {e}"))?;
             if action == "restart" { platform::services().restart(&name).map_err(|e| e.to_string())?; } else { platform::services().switch(&[&name], true).map_err(|e| e.to_string())?; }
             for _ in 0..120 { if listening(port).await { return Ok(()); } tokio::time::sleep(Duration::from_millis(250)).await; }
             // Show why: the app's own output usually names the problem.
@@ -67,7 +63,7 @@ pub async fn control_rust(site: &str, action: &str, owner: Option<&str>, root: O
 pub async fn rust_status(site: &str, port: u16) -> (bool, String, bool) {
     if !valid_site_id(site) { return (false, "invalid-id".into(), false); }
     let name = unit(site);
-    let exists = Path::new(&format!("/etc/systemd/system/{name}.service")).is_file();
+    let exists = platform::apps().exists(&name);
     let active = platform::services().status(&name).map_or_else(|_| "unknown".to_string(), |status| status.state);
     (exists, active, listening(port).await)
 }
@@ -121,10 +117,13 @@ fn cargo_binary_name(owner: &str, root: &Path) -> Result<String, String> {
 fn cargo(owner: &str, root: &Path, args: &[&str]) -> Result<std::process::Output, String> { run_as(owner, root, "cargo", args) }
 
 fn run_as(owner: &str, root: &Path, program: &str, args: &[&str]) -> Result<std::process::Output, String> {
-    platform::run_as(owner, program)?.args(args)
+    let mut command = platform::run_as(owner, program)?;
+    if platform::current().os() == Os::Linux {
+        command.env("PATH", "/usr/local/bin:/usr/bin:/bin");
+    }
+    command.args(args)
         .current_dir(root)
         .env("HOME", crate::platform::paths().site_home(owner))
-        .env("PATH", "/usr/local/bin:/usr/bin:/bin")
         .env("CARGO_TERM_COLOR", "never")
         .output().map_err(|e| format!("unable to run {program}: {e}"))
 }

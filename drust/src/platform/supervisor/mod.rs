@@ -20,6 +20,8 @@ use std::{
     time::{Duration, Instant},
 };
 
+use serde::{Deserialize, Serialize};
+
 use super::{
     PlatformError,
     capabilities::Capability,
@@ -34,23 +36,26 @@ pub use units::LocalUnits;
 
 /// What a program needs to run. `setup` runs once first, until `creates`
 /// exists, like MariaDB's data folder.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ProgramSpec {
     pub program: PathBuf,
     pub args: Vec<OsString>,
     pub cwd: Option<PathBuf>,
     pub env: EnvPolicy,
+    /// Set after `env`, such as an app's `PORT`.
+    #[serde(default)]
+    pub vars: Vec<(String, String)>,
     pub setup: Option<Setup>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Setup {
     pub program: PathBuf,
     pub args: Vec<OsString>,
     pub creates: PathBuf,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum EnvPolicy {
     /// drust's own environment, for drust's own parts (the gateway, the panel's queue).
     Inherit,
@@ -139,6 +144,8 @@ impl Unit {
 #[derive(Debug)]
 pub struct Supervisor {
     catalog: Box<dyn Catalog>,
+    /// Programs defined at runtime, such as a site's Node app (C3): `<name>.json`.
+    apps_dir: PathBuf,
     /// Which programs are enabled: `{"enabled": [...]}`.
     state_file: PathBuf,
     log_dir: PathBuf,
@@ -151,9 +158,10 @@ pub struct Supervisor {
 const MAX_LOG_BYTES: u64 = 5 * 1024 * 1024;
 
 impl Supervisor {
-    pub fn new(catalog: Box<dyn Catalog>, state_file: PathBuf, log_dir: PathBuf, timing: Timing) -> Arc<Self> {
+    pub fn new(catalog: Box<dyn Catalog>, apps_dir: PathBuf, state_file: PathBuf, log_dir: PathBuf, timing: Timing) -> Arc<Self> {
         Arc::new(Self {
             catalog,
+            apps_dir,
             state_file,
             log_dir,
             timing,
@@ -169,10 +177,9 @@ impl Supervisor {
             Some(enabled) => enabled,
             None => {
                 let ready: BTreeSet<String> = self
-                    .catalog
-                    .names()
+                    .all_names()
                     .into_iter()
-                    .filter(|name| matches!(self.catalog.spec(name), Some(Ok(_))))
+                    .filter(|name| matches!(self.spec(name), Some(Ok(_))))
                     .collect();
                 let _ = self.write_enabled(&ready);
                 ready
@@ -204,6 +211,77 @@ impl Supervisor {
                 state = unit.wake.wait_timeout(state, left).unwrap_or_else(|poisoned| poisoned.into_inner()).0;
             }
         }
+    }
+
+    /// A built-in program, else one defined at runtime.
+    fn spec(&self, name: &str) -> Option<Result<ProgramSpec, String>> {
+        self.catalog.spec(name).or_else(|| {
+            if !valid_app_name(name) {
+                return None;
+            }
+            let text = fs::read_to_string(self.apps_dir.join(format!("{name}.json"))).ok()?;
+            Some(serde_json::from_str(&text).map_err(|error| format!("unreadable definition: {error}")))
+        })
+    }
+
+    fn all_names(&self) -> Vec<String> {
+        let mut names = self.catalog.names();
+        let apps = fs::read_dir(&self.apps_dir).into_iter().flatten().flatten().filter_map(|entry| {
+            let file = entry.file_name().to_string_lossy().into_owned();
+            file.strip_suffix(".json").filter(|name| valid_app_name(name)).map(str::to_string)
+        });
+        names.extend(apps);
+        names.sort();
+        names.dedup();
+        names
+    }
+
+    /// Saves (or replaces) a program defined at runtime; `true` when it
+    /// changed. Starting it is the caller's choice, as with systemd.
+    pub fn define_app(&self, name: &str, spec: &ProgramSpec) -> Result<bool, PlatformError> {
+        if !valid_app_name(name) || self.catalog.spec(name).is_some() {
+            return Err(PlatformError::Failed { action: "define a program".into(), detail: format!("invalid program name: {name}") });
+        }
+        let path = self.apps_dir.join(format!("{name}.json"));
+        let text = serde_json::to_string_pretty(spec)
+            .map_err(|error| PlatformError::Failed { action: "define a program".into(), detail: error.to_string() })?;
+        if fs::read_to_string(&path).ok().as_deref() == Some(text.as_str()) {
+            return Ok(false);
+        }
+        fs::create_dir_all(&self.apps_dir).map_err(|error| PlatformError::from_io("define a program", error))?;
+        let temporary = path.with_extension("json.tmp");
+        fs::write(&temporary, text)
+            .and_then(|()| fs::rename(&temporary, &path))
+            .map_err(|error| PlatformError::from_io("define a program", error))?;
+        Ok(true)
+    }
+
+    /// Stops a program defined at runtime, waits for it to end, and forgets
+    /// it; `false` when there was none.
+    pub fn remove_app(&self, name: &str) -> Result<bool, PlatformError> {
+        if !self.is_app(name) {
+            return Ok(false);
+        }
+        self.stop(name)?;
+        self.set_enabled(name, false)?;
+        if let Some(unit) = self.lock_units().get(name).cloned() {
+            let deadline = Instant::now() + Duration::from_secs(10);
+            let mut state = unit.lock();
+            while matches!(state.phase, Phase::Starting | Phase::Running | Phase::Backoff) {
+                let left = deadline.saturating_duration_since(Instant::now());
+                if left.is_zero() {
+                    break;
+                }
+                state = unit.wake.wait_timeout(state, left).unwrap_or_else(|poisoned| poisoned.into_inner()).0;
+            }
+        }
+        fs::remove_file(self.apps_dir.join(format!("{name}.json")))
+            .map_err(|error| PlatformError::from_io("remove a program", error))?;
+        Ok(true)
+    }
+
+    pub fn is_app(&self, name: &str) -> bool {
+        valid_app_name(name) && self.catalog.spec(name).is_none() && self.apps_dir.join(format!("{name}.json")).is_file()
     }
 
     pub fn start(self: &Arc<Self>, name: &str) -> Result<(), PlatformError> {
@@ -253,7 +331,7 @@ impl Supervisor {
     }
 
     pub fn status(&self, name: &str) -> ServiceStatus {
-        if self.catalog.spec(name).is_none() {
+        if self.spec(name).is_none() {
             return ServiceStatus { installed: false, active: false, enabled: false, state: "not-found".into() };
         }
         let enabled = self.read_enabled().is_some_and(|enabled| enabled.contains(name));
@@ -276,7 +354,7 @@ impl Supervisor {
     }
 
     pub fn names(&self, pattern: &str) -> Vec<String> {
-        self.catalog.names().into_iter().filter(|name| glob_matches(pattern, name)).collect()
+        self.all_names().into_iter().filter(|name| glob_matches(pattern, name)).collect()
     }
 
     pub fn log_file(&self, name: &str) -> PathBuf {
@@ -301,7 +379,7 @@ impl Supervisor {
     }
 
     fn unit(&self, name: &str) -> Result<Arc<Unit>, PlatformError> {
-        if self.catalog.spec(name).is_none() {
+        if self.spec(name).is_none() {
             return Err(PlatformError::NotFound { what: format!("service {name}") });
         }
         Ok(self
@@ -430,7 +508,7 @@ impl Supervisor {
     }
 
     fn launch(&self, name: &str) -> Result<Child, String> {
-        let spec = self.catalog.spec(name).unwrap_or_else(|| Err("no longer known".into()))?;
+        let spec = self.spec(name).unwrap_or_else(|| Err("no longer known".into()))?;
         let log = self.open_log(name)?;
         if let Some(setup) = &spec.setup
             && !setup.creates.exists()
@@ -462,6 +540,7 @@ impl Supervisor {
         if spec.env == EnvPolicy::Clean {
             super::runner::clean_environment(&mut command, |name| std::env::var_os(name));
         }
+        command.envs(spec.vars.iter().map(|(name, value)| (name, value)));
         super::process::without_console(&mut command);
         Ok(command)
     }
@@ -481,6 +560,11 @@ impl Supervisor {
             let _ = writeln!(log, "[{} drust] {message}", chrono::Local::now().format("%Y-%m-%d %H:%M:%S"));
         }
     }
+}
+
+/// A runtime program's name, also its file name: letters, digits, `-`, `_`.
+fn valid_app_name(name: &str) -> bool {
+    !name.is_empty() && name.len() <= 120 && name.bytes().all(|byte| byte.is_ascii_alphanumeric() || byte == b'-' || byte == b'_')
 }
 
 /// `*` matches any run of characters; nothing else is special.
