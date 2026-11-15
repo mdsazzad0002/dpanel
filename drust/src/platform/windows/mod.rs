@@ -8,3 +8,4 @@ pub mod cert_store;
 pub mod elevate;
 pub mod random;
 pub mod service;
+pub mod system_info;

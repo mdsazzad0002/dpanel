@@ -3750,40 +3750,28 @@ class WebsiteController extends Controller
         return count(array_filter($lines, fn (string $line) => str_contains($line, $domain)));
     }
 
+    /** The host's 1-minute load per core, from drust (D3/D4); 0 when unknown, as on Windows. */
     protected function currentCpuUsagePercent(): float
     {
-        if (! function_exists('sys_getloadavg')) {
+        $host = app(\App\Services\Platform\SystemOverviewClient::class)->overview() ?? [];
+        $load = $host['load'][0] ?? null;
+        $cores = max(1, (int) ($host['cpu_cores'] ?? 1));
+        if (! is_numeric($load)) {
             return 0.0;
         }
 
-        $load = sys_getloadavg();
-        if (! is_array($load) || ! isset($load[0])) {
-            return 0.0;
-        }
-
-        $local = app(LocalCommand::class);
-        $cores = $local->supports(LocalCommand::LINUX_TOOLS) ? (int) trim((string) $local->output(['nproc'])) : 0;
-        $cores = $cores > 0 ? $cores : 1;
-
-        return round(min(100, max(0, ((float) $load[0] / $cores) * 100)), 2);
+        return round(min(100, max(0, ((float) $load / $cores) * 100)), 2);
     }
 
+    /** Memory in use on the host, from drust (D3/D4) on every OS; 0 when unknown. */
     protected function currentRamUsageMb(): int
     {
-        $memInfo = @file_get_contents('/proc/meminfo');
-        if (! is_string($memInfo) || $memInfo === '') {
+        $memory = (app(\App\Services\Platform\SystemOverviewClient::class)->overview() ?? [])['memory'] ?? null;
+        if (! isset($memory['total_kb'], $memory['available_kb'])) {
             return 0;
         }
 
-        preg_match('/^MemTotal:\s+(\d+)\s+kB$/m', $memInfo, $total);
-        preg_match('/^MemAvailable:\s+(\d+)\s+kB$/m', $memInfo, $available);
-        if (! isset($total[1], $available[1])) {
-            return 0;
-        }
-
-        $usedKb = max(0, (int) $total[1] - (int) $available[1]);
-
-        return (int) floor($usedKb / 1024);
+        return (int) floor(max(0, (int) $memory['total_kb'] - (int) $memory['available_kb']) / 1024);
     }
 
     /**

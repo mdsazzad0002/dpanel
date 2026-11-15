@@ -127,7 +127,28 @@ fn disk(path: &Path) -> Option<Disk> {
     super::disk_space(path).map(|(total, free)| Disk { path: path.display().to_string(), total_bytes: total, free_bytes: free })
 }
 
+/// What Linux reads from `/proc`, from the OS's own calls: uptime, CPU
+/// model and memory. Nothing on Linux (it has `/proc`) or macOS (yet).
+fn native_figures() -> (Option<u64>, Option<String>, Option<Memory>) {
+    #[cfg(windows)]
+    {
+        use super::windows::system_info;
+        let memory = system_info::memory_kb().map(|(total_kb, available_kb, swap_total_kb, swap_free_kb)| Memory {
+            total_kb,
+            available_kb,
+            swap_total_kb,
+            swap_free_kb,
+        });
+        (Some(system_info::uptime_seconds()), system_info::cpu_model(), memory)
+    }
+    #[cfg(not(windows))]
+    {
+        (None, None, None)
+    }
+}
+
 pub fn overview(services: &[String], disk_path: &Path) -> Overview {
+    let (native_uptime, native_cpu, native_memory) = native_figures();
     let os = super::current().os();
     let proc_text = |name: &str| if os == Os::Linux { fs::read_to_string(format!("/proc/{name}")).ok() } else { None };
     let manager = super::services();
@@ -153,11 +174,11 @@ pub fn overview(services: &[String], disk_path: &Path) -> Overview {
         primary_ip: primary_ip(),
         os_name: if os == Os::Linux { fs::read_to_string("/etc/os-release").ok().and_then(|text| parse_os_release(&text)) } else { None }
             .unwrap_or_else(|| std::env::consts::OS.to_string()),
-        uptime_seconds: proc_text("uptime").as_deref().and_then(parse_uptime),
+        uptime_seconds: proc_text("uptime").as_deref().and_then(parse_uptime).or(native_uptime),
         cpu_cores: std::thread::available_parallelism().map_or(1, |n| n.get()),
-        cpu_model: proc_text("cpuinfo").as_deref().and_then(parse_cpu_model),
+        cpu_model: proc_text("cpuinfo").as_deref().and_then(parse_cpu_model).or(native_cpu),
         load: proc_text("loadavg").as_deref().and_then(parse_loadavg),
-        memory: proc_text("meminfo").as_deref().and_then(parse_meminfo),
+        memory: proc_text("meminfo").as_deref().and_then(parse_meminfo).or(native_memory),
         disk: disk(disk_path),
         process_count: (os == Os::Linux).then(|| {
             fs::read_dir("/proc").map_or(0, |entries| {
@@ -172,6 +193,21 @@ pub fn overview(services: &[String], disk_path: &Path) -> Overview {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// D4: Windows reports memory, uptime and the CPU, as Linux does.
+    #[test]
+    fn windows_has_its_own_memory_uptime_and_cpu() {
+        if super::super::current().os() != Os::Windows {
+            return;
+        }
+        let overview = overview(&[], Path::new("."));
+        let memory = overview.memory.expect("memory");
+        assert!(memory.total_kb > 512 * 1024 && memory.available_kb <= memory.total_kb, "{memory:?}");
+        assert!(memory.swap_free_kb <= memory.swap_total_kb);
+        assert!(overview.uptime_seconds.is_some_and(|seconds| seconds > 0));
+        assert!(overview.cpu_model.is_some_and(|model| !model.is_empty()));
+        assert_eq!(overview.load, None);
+    }
 
     #[test]
     fn meminfo_gives_total_available_and_swap() {

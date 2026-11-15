@@ -3,8 +3,12 @@
 namespace Tests\Feature;
 
 use App\Http\Controllers\DashboardController;
+use App\Http\Controllers\MonitoringController;
+use App\Http\Controllers\Website\WebsiteController;
+use App\Services\Mcp\Tools\PanelOverviewTool;
 use App\Services\PostgresqlServiceManager;
 use App\Services\Platform\SystemOverviewClient;
+use App\Support\Platform\LocalCommand;
 use Illuminate\Support\Facades\Http;
 use Tests\TestCase;
 
@@ -66,5 +70,51 @@ class SystemOverviewTest extends TestCase
             $this->assertArrayHasKey('state', $status);
             $this->assertNotSame('', $status['state']);
         }
+    }
+
+    /** What drust sends from a Windows PC (D4): memory, uptime and cores, no load. */
+    private function windowsHost(): void
+    {
+        Http::fake(['drust.test/system/overview*' => Http::response(['success' => true, 'overview' => [
+            'os' => 'windows', 'cpu_cores' => 8, 'uptime_seconds' => 90061, 'load' => null,
+            'memory' => ['total_kb' => 16 * 1024 * 1024, 'available_kb' => 4 * 1024 * 1024, 'swap_total_kb' => 0, 'swap_free_kb' => 0],
+        ]])]);
+        $this->app->instance(LocalCommand::class, new LocalCommand('Windows'));
+    }
+
+    private function invokeHidden(object $object, string $method): mixed
+    {
+        return (new \ReflectionMethod($object, $method))->invoke($object);
+    }
+
+    public function test_the_mcp_overview_takes_the_hosts_figures_from_drust(): void
+    {
+        $this->windowsHost();
+        $tool = app(PanelOverviewTool::class);
+
+        $this->assertSame(8, $this->invokeHidden($tool, 'cpuCores'));
+        $this->assertSame('1d 1h 1m', $this->invokeHidden($tool, 'uptime'));
+        $this->assertSame(['total_mb' => 16384, 'available_mb' => 4096, 'used_percent' => 75.0], $this->invokeHidden($tool, 'memory'));
+    }
+
+    public function test_the_website_page_takes_cpu_and_ram_from_drust(): void
+    {
+        $this->windowsHost();
+        $controller = app(WebsiteController::class);
+
+        $this->assertSame(12288, $this->invokeHidden($controller, 'currentRamUsageMb'));
+        // Windows has no load average: unknown is 0, as before.
+        $this->assertSame(0.0, $this->invokeHidden($controller, 'currentCpuUsagePercent'));
+    }
+
+    public function test_linux_only_monitoring_readers_stay_quiet_elsewhere(): void
+    {
+        $this->windowsHost();
+        $controller = app(MonitoringController::class);
+
+        $this->assertSame([], $this->invokeHidden($controller, 'physicalDisks'));
+        $this->assertSame([], $this->invokeHidden($controller, 'networkInterfaces'));
+        $this->assertSame([], $this->invokeHidden($controller, 'connectionBreakdown'));
+        $this->assertSame([null], array_values(array_unique($this->invokeHidden($controller, 'connectionStats'))));
     }
 }

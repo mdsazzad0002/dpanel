@@ -232,6 +232,10 @@ class MonitoringController extends Controller
      */
     private function physicalDisks(): array
     {
+        // /sys/block and /proc/mounts are Linux's; elsewhere the page shows drust's disk only.
+        if (! app(LocalCommand::class)->supports(LocalCommand::LINUX_TOOLS)) {
+            return [];
+        }
         $blockDevices = glob('/sys/block/*') ?: [];
         $mountTable = @file_get_contents('/proc/mounts');
         if ($blockDevices === [] || ! is_string($mountTable)) {
@@ -564,6 +568,9 @@ class MonitoringController extends Controller
      */
     private function networkInterfaces(): array
     {
+        if (! app(LocalCommand::class)->supports(LocalCommand::LINUX_TOOLS)) {
+            return [];
+        }
         $netDev = @file_get_contents('/proc/net/dev');
         if (! is_string($netDev)) {
             return [];
@@ -602,6 +609,9 @@ class MonitoringController extends Controller
             'udp_in_use' => null,
             'sockets_used' => null,
         ];
+        if (! app(LocalCommand::class)->supports(LocalCommand::LINUX_TOOLS)) {
+            return $stats;
+        }
 
         $snmp = @file_get_contents('/proc/net/snmp');
         if (is_string($snmp) && preg_match_all('/^Tcp:\s+(.+)$/m', $snmp, $tcpLines) === 2) {
@@ -636,6 +646,9 @@ class MonitoringController extends Controller
      */
     private function connectionBreakdown(): array
     {
+        if (! app(LocalCommand::class)->supports(LocalCommand::LINUX_TOOLS)) {
+            return [];
+        }
         $sockets = [];
         foreach (['/proc/net/tcp', '/proc/net/tcp6'] as $table) {
             $lines = @file($table, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);

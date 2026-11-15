@@ -9,6 +9,7 @@ use App\Models\Server;
 use App\Models\SslCertificate;
 use App\Models\Website;
 use App\Services\Mcp\Contracts\McpTool;
+use App\Services\Platform\SystemOverviewClient;
 use App\Support\Platform\LocalCommand;
 
 class PanelOverviewTool implements McpTool
@@ -114,9 +115,19 @@ class PanelOverviewTool implements McpTool
 
     private function cpuCores(): ?int
     {
-        $cpuinfo = @file_get_contents('/proc/cpuinfo');
+        $cores = $this->host()['cpu_cores'] ?? null;
 
-        return is_string($cpuinfo) ? (preg_match_all('/^processor\s*:/m', $cpuinfo) ?: null) : null;
+        return is_numeric($cores) && (int) $cores > 0 ? (int) $cores : null;
+    }
+
+    /**
+     * The panel host's figures from drust (backlog D3/D4), on every OS.
+     *
+     * @return array<string, mixed>
+     */
+    private function host(): array
+    {
+        return app(SystemOverviewClient::class)->overview() ?? [];
     }
 
     /**
@@ -218,33 +229,28 @@ class PanelOverviewTool implements McpTool
 
     private function uptime(): ?string
     {
-        $raw = @file_get_contents('/proc/uptime');
-        if (! is_string($raw)) {
+        $seconds = $this->host()['uptime_seconds'] ?? null;
+        if (! is_numeric($seconds)) {
             return null;
         }
-
-        $seconds = (int) explode(' ', $raw)[0];
+        $seconds = (int) $seconds;
 
         return sprintf('%dd %dh %dm', intdiv($seconds, 86400), intdiv($seconds % 86400, 3600), intdiv($seconds % 3600, 60));
     }
 
     private function memory(): ?array
     {
-        $raw = @file_get_contents('/proc/meminfo');
-        if (! is_string($raw)) {
+        $memory = $this->host()['memory'] ?? null;
+        $total = (int) ($memory['total_kb'] ?? 0);
+        if ($total <= 0 || ! isset($memory['available_kb'])) {
             return null;
         }
-
-        preg_match('/MemTotal:\s+(\d+)/', $raw, $total);
-        preg_match('/MemAvailable:\s+(\d+)/', $raw, $available);
-        if (! isset($total[1], $available[1])) {
-            return null;
-        }
+        $available = (int) $memory['available_kb'];
 
         return [
-            'total_mb' => intdiv((int) $total[1], 1024),
-            'available_mb' => intdiv((int) $available[1], 1024),
-            'used_percent' => round(100 - ((int) $available[1] / (int) $total[1] * 100), 1),
+            'total_mb' => intdiv($total, 1024),
+            'available_mb' => intdiv($available, 1024),
+            'used_percent' => round(100 - ($available / $total * 100), 1),
         ];
     }
 
