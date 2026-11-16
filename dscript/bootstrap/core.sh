@@ -1488,6 +1488,29 @@ EOF
   printf '%s' "$env_file"
 }
 
+# The panel was called serverpanel before e5687665 renamed its .env keys
+# SERVERPANEL_* to dPanel_*. A server updated from then still has the old
+# names. The panel reads them anyway (config/dpanel.php), but the shell
+# scripts read the .env by the new names (_drust-api.sh, serverinstaller-site). Each
+# old line becomes the new name, unless the new name is set already.
+panel_migrate_env_prefix() {
+  local file="$1" tmp
+  [[ -f "$file" ]] && grep -q '^SERVERPANEL_' "$file" || return 0
+  tmp="$(mktemp "${TMPDIR:-/tmp}/panel-env.XXXXXX")" || return 1
+  awk '
+    NR == FNR { if ($0 ~ /^dPanel_[A-Za-z0-9_]+=/) { split($0, kv, "="); have[kv[1]] = 1 } next }
+    /^SERVERPANEL_[A-Za-z0-9_]+=/ {
+      split($0, kv, "=")
+      name = "dPanel_" substr(kv[1], 13)
+      if (!(name in have)) { have[name] = 1; print name substr($0, length(kv[1]) + 1); next }
+    }
+    { print }
+  ' "$file" "$file" > "$tmp" && cat "$tmp" > "$file"
+  local status=$?
+  rm -f "$tmp"
+  return "$status"
+}
+
 panel_env_set() {
   local file="$1"
   local key="$2"
@@ -2651,6 +2674,11 @@ panel_bootstrap() {
       ;;
     update)
       panel_sync_manifest
+      local update_env_file
+      update_env_file="$(panel_resolve_app_env_file)"
+      if [[ -n "$update_env_file" ]]; then
+        panel_migrate_env_prefix "$update_env_file" || panel_warn_log "Could not rename the old SERVERPANEL_ keys in ${update_env_file}."
+      fi
       local module
       for module in $(dscript_manifest_modules); do
         if panel_module_is_optional "$module" && ! panel_module_present "$module"; then
