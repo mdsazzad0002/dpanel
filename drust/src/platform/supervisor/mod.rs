@@ -531,7 +531,8 @@ impl Supervisor {
 
     fn command(&self, spec: &ProgramSpec, program: &Path, args: &[OsString], log: &File) -> Result<Command, String> {
         let mut command = Command::new(program);
-        command.args(args).stdin(Stdio::null());
+        super::process::add_args(&mut command, program, args);
+        command.stdin(Stdio::null());
         command.stdout(log.try_clone().map_err(|error| error.to_string())?);
         command.stderr(log.try_clone().map_err(|error| error.to_string())?);
         if let Some(cwd) = &spec.cwd {

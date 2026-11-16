@@ -353,6 +353,13 @@ fn locate(
             .find(|path| is_file(path)),
         // Windows has its own timeout.exe, which only pauses a console.
         Os::Windows if tool == Tool::Timeout => None,
+        // Python's installer names it python.exe. The python3.exe and
+        // python.exe in WindowsApps are stubs that open the Microsoft Store.
+        Os::Windows if tool == Tool::Python3 => on_windows_path(
+            "python",
+            path_dirs.filter(|dir| !dir.components().any(|part| part.as_os_str().eq_ignore_ascii_case("WindowsApps"))),
+            is_file,
+        ),
         // npm and composer are batch files there.
         Os::Windows => on_windows_path(tool.name(), path_dirs, is_file),
     }
@@ -974,6 +981,18 @@ mod tests {
         );
         assert_eq!(found(Os::Windows, Tool::Npm, &["/second/npm.cmd"]), Some("/second/npm.cmd".into()));
         assert_eq!(found(Os::Windows, Tool::Node, &["/usr/bin/node"]), None);
+    }
+
+    #[test]
+    fn windows_python_is_python_exe_and_never_the_store_stub() {
+        let stub = r"C:\Users\a\AppData\Local\Microsoft\WindowsApps";
+        let real = r"C:\Python313";
+        let dirs = || [PathBuf::from(stub), PathBuf::from(real)].into_iter();
+        let present = [format!(r"{stub}\python.exe"), format!(r"{stub}\python3.exe"), format!(r"{real}\python.exe")];
+        let is_file = |path: &Path| present.iter().any(|item| Path::new(item) == path);
+        assert_eq!(locate(Os::Windows, Tool::Python3, dirs(), is_file), Some(PathBuf::from(real).join("python.exe")));
+        let only_stub = |path: &Path| path.starts_with(stub);
+        assert_eq!(locate(Os::Windows, Tool::Python3, dirs(), only_stub), None);
     }
 
     #[test]

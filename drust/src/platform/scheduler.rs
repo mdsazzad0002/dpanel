@@ -245,9 +245,10 @@ pub fn due_jobs<T: Datelike + Timelike>(store: &Path, time: &T) -> Result<Vec<Cr
 
 /// The shell a cron line is written for.
 fn shell_command(owner: &str, line: &str) -> Result<std::process::Command, PlatformError> {
-    let (shell, flag) = if cfg!(windows) { ("cmd", "/C") } else { ("/bin/sh", "-c") };
+    let (shell, flags): (&str, &[&str]) = if cfg!(windows) { ("cmd", &["/D", "/S", "/C"]) } else { ("/bin/sh", &["-c"]) };
     let mut command = super::current().runner().command(owner, std::ffi::OsStr::new(shell))?;
-    command.arg(flag).arg(line);
+    let args: Vec<std::ffi::OsString> = flags.iter().map(|flag| (*flag).into()).chain([line.into()]).collect();
+    super::process::add_args(&mut command, Path::new(shell), &args);
     command
         .stdin(std::process::Stdio::null())
         .stdout(std::process::Stdio::null())

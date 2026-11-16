@@ -416,3 +416,97 @@ fn a_real_node_app_serves_under_the_supervisor() {
     assert!(apps.remove("dpanel-node-real").unwrap());
     wait_for("the port to close", || std::net::TcpStream::connect(("127.0.0.1", port)).is_err());
 }
+
+/// A site owner's start command with double quotes reaches the shell as
+/// written. Rust quotes an argument with `\"`, which cmd does not undo.
+#[test]
+fn a_shell_command_keeps_its_double_quotes() {
+    use crate::platform::apps::{AppCommand, AppManager, AppUnit, SupervisorApps};
+    let php = crate::platform::paths().php_cli(None);
+    if !php.is_file() {
+        eprintln!("skipped: no php on PATH");
+        return;
+    }
+    let fixture = Fixture::new();
+    let app_dir = fixture.dir.path().join("app");
+    fs::create_dir_all(&app_dir).unwrap();
+    let shell = if cfg!(windows) {
+        (PathBuf::from(std::env::var_os("ComSpec").unwrap_or_else(|| "cmd.exe".into())), ["/D", "/S", "/C"].map(String::from).to_vec())
+    } else {
+        (PathBuf::from("/bin/sh"), vec!["-c".to_string()])
+    };
+    let supervisor = fixture.supervisor(vec![]);
+    let apps = SupervisorApps { supervisor: supervisor.clone(), shell };
+    let line = format!(
+        "\"{}\" -r \"file_put_contents('out.txt', 'a b'); sleep(30);\"",
+        php.display()
+    );
+    let unit = AppUnit {
+        name: "dpanel-node-quoted".into(),
+        description: "quoted".into(),
+        owner: "me".into(),
+        workdir: app_dir.clone(),
+        env: Vec::new(),
+        command: AppCommand::Shell(line),
+    };
+    apps.define(&unit).unwrap();
+    SupervisorServices(supervisor.clone()).switch(&["dpanel-node-quoted"], true).unwrap();
+    let deadline = Instant::now() + Duration::from_secs(15);
+    while !app_dir.join("out.txt").is_file() {
+        assert!(Instant::now() < deadline, "the command never ran:\n{}", supervisor.logs("dpanel-node-quoted", 30).unwrap());
+        std::thread::sleep(Duration::from_millis(50));
+    }
+    assert_eq!(fs::read_to_string(app_dir.join("out.txt")).unwrap(), "a b");
+    assert!(apps.remove("dpanel-node-quoted").unwrap());
+}
+
+/// A Laravel queue worker instance where there is no systemd: the real PHP
+/// CLI runs `artisan` with the queue options, no shell between, and the
+/// supervisor brings it back when it exits. Needs PHP on `PATH`.
+#[test]
+fn a_real_php_queue_worker_runs_and_restarts_under_the_supervisor() {
+    use crate::laravel_queue::{QueueSite, WorkerSpec, supervised_unit};
+    use crate::platform::apps::{AppManager, SupervisorApps};
+    let php = crate::platform::paths().php_cli(None);
+    if !php.is_file() {
+        eprintln!("skipped: no php on PATH");
+        return;
+    }
+    let fixture = Fixture::new();
+    // A space, so a path that a shell would split must arrive whole.
+    let root = fixture.dir.path().join("shop app");
+    fs::create_dir_all(&root).unwrap();
+    // Each run appends its arguments, then exits, as queue:work does at --max-time.
+    fs::write(
+        root.join("artisan"),
+        "<?php file_put_contents(__DIR__ . '/runs.txt', implode(' ', array_slice($argv, 1)) . \"\\n\", FILE_APPEND); usleep(300000);\n",
+    )
+    .unwrap();
+    let site = QueueSite::for_test("site-1", "me", root.clone(), &php.to_string_lossy());
+    let worker = WorkerSpec {
+        id: "7".into(),
+        connection: Some("database".into()),
+        queue: Some("high,default".into()),
+        processes: 1,
+        tries: 3,
+        timeout: 60,
+        sleep: 3,
+        memory: 128,
+    };
+    let unit = supervised_unit(&site, &worker, "7", 1).unwrap();
+    let supervisor = fixture.supervisor(vec![]);
+    let apps = SupervisorApps { supervisor: supervisor.clone(), shell: (PathBuf::from("unused"), Vec::new()) };
+    apps.define(&unit).unwrap();
+    SupervisorServices(supervisor.clone()).switch(&[&unit.name], true).unwrap();
+
+    let runs = || fs::read_to_string(root.join("runs.txt")).unwrap_or_default();
+    wait_for("a restart after the worker exits", || runs().lines().count() >= 2);
+    assert_eq!(
+        runs().lines().next().unwrap(),
+        "queue:work database --queue=high,default --sleep=3 --tries=3 --timeout=60 --memory=128 --max-time=3600 --no-interaction"
+    );
+    assert!(apps.remove(&unit.name).unwrap());
+    let after = runs().lines().count();
+    std::thread::sleep(Duration::from_millis(1500));
+    assert!(runs().lines().count() <= after + 1, "kept running after removal:\n{}", runs());
+}

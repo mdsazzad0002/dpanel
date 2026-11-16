@@ -104,6 +104,31 @@ pub fn without_console(command: &mut std::process::Command) -> &mut std::process
     }
 }
 
+/// Adds `args`. When `program` is cmd and the last two are `/C` and a command
+/// line, that line goes as `"line"`, untouched: Rust would quote it with
+/// `\"`, which cmd keeps, so `"C:\php\php.exe" -r "..."` would not run.
+/// With `/S`, cmd drops only those outer quotes.
+pub fn add_args(command: &mut std::process::Command, program: &std::path::Path, args: &[std::ffi::OsString]) {
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        let is_cmd = program.file_stem().is_some_and(|stem| stem.eq_ignore_ascii_case("cmd"));
+        if let [rest @ .., switch, line] = args
+            && is_cmd
+            && switch.eq_ignore_ascii_case("/C")
+        {
+            command.args(rest).arg(switch);
+            let mut quoted = std::ffi::OsString::from("\"");
+            quoted.push(line);
+            quoted.push("\"");
+            command.raw_arg(quoted);
+            return;
+        }
+    }
+    let _ = program;
+    command.args(args);
+}
+
 /// Gives up root for good, becoming `nobody`, once a process has read what
 /// only root may (the WAF worker after loading its rules). Does nothing when
 /// not root, or where there is no such thing.

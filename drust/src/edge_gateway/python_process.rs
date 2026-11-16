@@ -7,7 +7,11 @@ use std::{
     time::{Duration, Instant},
 };
 
-use crate::platform::{self, Os, service::LogStyle};
+use crate::platform::{
+    self, Os,
+    apps::{AppCommand, AppUnit},
+    service::LogStyle,
+};
 use tokio::{net::TcpStream, time::timeout};
 
 /// Gunicorn's own default is one sync worker, which handles a single request
@@ -181,11 +185,6 @@ async fn provision(
     port: u16,
     force: bool,
 ) -> Result<(), String> {
-    // gunicorn and the unit below are Unix's; a Windows server for Python
-    // apps (waitress, uvicorn) is still to be chosen (C3).
-    if platform::current().os() != Os::Linux {
-        return Err("Python apps run on Linux only for now: they are served by gunicorn under systemd".to_string());
-    }
     let owner = validate_system_user(owner)?;
     let site_id = site_id.to_string();
     let project_root = project_root.to_path_buf();
@@ -289,15 +288,7 @@ pub fn stop_python_process(site_id: &str) -> Result<(), String> {
 
 /// Stops the app and deletes its unit, for a deleted project.
 pub fn remove_python_process(site_id: &str) -> Result<(), String> {
-    let unit = unit_name(site_id);
-    if !unit_file_exists(&unit) {
-        return Ok(());
-    }
-    let _ = platform::services().switch(&[&unit], false);
-    fs::remove_file(format!("/etc/systemd/system/{unit}.service"))
-        .map_err(|error| format!("cannot remove systemd unit {unit}: {error}"))?;
-    let _ = platform::services().reset_failed(&unit);
-    platform::services().reload_definitions().map_err(|e| e.to_string())
+    platform::apps().remove(&unit_name(site_id)).map(drop).map_err(|e| e.to_string())
 }
 
 pub fn restart_python_process(site_id: &str) -> Result<(), String> {
@@ -334,7 +325,7 @@ pub async fn python_process_status(site_id: &str, port: u16) -> PythonProcessSta
 }
 
 fn unit_file_exists(unit: &str) -> bool {
-    Path::new(&format!("/etc/systemd/system/{unit}.service")).is_file()
+    platform::apps().exists(unit)
 }
 
 /// Provisioning (venv creation, `pip install`) can take minutes, so the lock
@@ -396,14 +387,35 @@ fn ensure_unit_provisioned(
     let app_dir = resolve_app_dir(project_root, entry_module);
     ensure_virtualenv(&python_binary, &venv_path, python_version)?;
     let asgi = requirements_use_asgi(&app_dir);
-    install_dependencies(&venv_path, &app_dir, asgi)?;
+    let os = platform::current().os();
+    install_dependencies(&venv_path, &app_dir, server_packages(os, asgi))?;
+    let unit_name = unit_name(site_id);
+    if os != Os::Linux {
+        let unit = supervised_unit(
+            &SupervisedApp {
+                site_id,
+                owner,
+                app_dir: &app_dir,
+                venv: &venv_path,
+                entry_module,
+                start_command,
+                asgi,
+                options,
+                port,
+            },
+            std::env::var_os("PATH").as_deref(),
+        )?;
+        platform::apps().define(&unit).map_err(|e| e.to_string())?;
+        let _ = platform::services().reset_failed(&unit_name);
+        return platform::services().switch(&[&unit_name], true).map_err(|e| e.to_string());
+    }
     let worker_class = if asgi {
         " --worker-class uvicorn.workers.UvicornWorker"
     } else {
         ""
     };
 
-    let gunicorn_bin = venv_path.join("bin").join("gunicorn");
+    let gunicorn_bin = venv_bin(&venv_path, "gunicorn");
     let exec_start = match start_command {
         Some(command) if !command.trim().is_empty() => {
             format!("/bin/bash -lc {}", shell_quote(command.trim()))
@@ -421,7 +433,6 @@ fn ensure_unit_provisioned(
         }
     };
 
-    let unit_name = unit_name(site_id);
     let unit_path = PathBuf::from(format!("/etc/systemd/system/{unit_name}.service"));
     let content = format!(
         "; Managed dynamically by drust edge gateway. Do not edit by hand.\n\
@@ -471,6 +482,106 @@ fn ensure_unit_provisioned(
     // clear that so this start is not refused.
     let _ = platform::services().reset_failed(&unit_name);
     platform::services().switch(&[&unit_name], true).map_err(|e| e.to_string())
+}
+
+/// What serves the app. gunicorn needs `fork`, so it is Linux's; elsewhere
+/// waitress serves WSGI apps and uvicorn ASGI ones, both of which run on
+/// Windows.
+fn server_packages(os: Os, asgi: bool) -> &'static [&'static str] {
+    match (os, asgi) {
+        (Os::Linux, false) => &["gunicorn"],
+        (Os::Linux, true) => &["gunicorn", "uvicorn"],
+        (_, false) => &["waitress"],
+        (_, true) => &["uvicorn"],
+    }
+}
+
+/// A venv's program: `Scripts\name.exe` on Windows, `bin/name` elsewhere.
+fn venv_bin_for(os: Os, venv: &Path, name: &str) -> PathBuf {
+    match os {
+        Os::Windows => venv.join("Scripts").join(format!("{name}.exe")),
+        _ => venv.join("bin").join(name),
+    }
+}
+
+fn venv_bin(venv: &Path, name: &str) -> PathBuf {
+    venv_bin_for(platform::current().os(), venv, name)
+}
+
+/// A Python site as drust's supervisor runs it.
+struct SupervisedApp<'a> {
+    site_id: &'a str,
+    owner: &'a str,
+    app_dir: &'a Path,
+    venv: &'a Path,
+    entry_module: Option<&'a str>,
+    start_command: Option<&'a str>,
+    asgi: bool,
+    options: PythonRunOptions,
+    port: u16,
+}
+
+/// The definition where gunicorn does not run. The variables are the systemd
+/// unit's, so an app reads the same `PORT`, `APP_ENV` and `WEB_CONCURRENCY`
+/// everywhere; `path` is drust's `PATH`, which the venv goes in front of.
+fn supervised_unit(app: &SupervisedApp<'_>, path: Option<&std::ffi::OsStr>) -> Result<AppUnit, String> {
+    supervised_unit_for(platform::current().os(), app, path)
+}
+
+fn supervised_unit_for(os: Os, app: &SupervisedApp<'_>, path: Option<&std::ffi::OsStr>) -> Result<AppUnit, String> {
+    let workers = worker_count(app.options.workers);
+    let port = app.port.to_string();
+    let command = match app.start_command.map(str::trim).filter(|command| !command.is_empty()) {
+        Some(command) => AppCommand::Shell(command.to_string()),
+        None => {
+            let module = app
+                .entry_module
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+                .ok_or_else(|| "python entry module (WSGI app path) is not configured".to_string())?;
+            if app.asgi {
+                let mut args: Vec<String> =
+                    vec![module.into(), "--host".into(), "127.0.0.1".into(), "--port".into(), port.clone()];
+                // uvicorn reloads or runs workers, not both.
+                if app.options.development {
+                    args.extend(["--reload".into(), "--log-level".into(), "debug".into()]);
+                } else {
+                    args.extend(["--workers".into(), workers.to_string()]);
+                }
+                AppCommand::Program { program: venv_bin_for(os, app.venv, "uvicorn"), args }
+            } else {
+                // waitress is one process with threads; it has no reload.
+                let args =
+                    vec!["--host=127.0.0.1".into(), format!("--port={port}"), format!("--threads={workers}"), module.into()];
+                AppCommand::Program { program: venv_bin_for(os, app.venv, "waitress-serve"), args }
+            }
+        }
+    };
+    let separator = if os == Os::Windows { ";" } else { ":" };
+    let scripts = venv_bin_for(os, app.venv, "python").parent().map(Path::to_path_buf).unwrap_or_default();
+    let path = match path.map(|path| path.to_string_lossy()).filter(|path| !path.is_empty()) {
+        Some(rest) => format!("{}{separator}{rest}", scripts.display()),
+        None => scripts.display().to_string(),
+    };
+    let (app_env, flask_debug) = if app.options.development { ("development", "1") } else { ("production", "0") };
+    Ok(AppUnit {
+        name: unit_name(app.site_id),
+        description: format!("dPanel Python site {}", app.site_id),
+        owner: app.owner.to_string(),
+        workdir: app.app_dir.to_path_buf(),
+        env: [
+            ("PORT", port),
+            ("PYTHONUNBUFFERED", "1".into()),
+            ("VIRTUAL_ENV", app.venv.display().to_string()),
+            ("PATH", path),
+            ("WEB_CONCURRENCY", workers.to_string()),
+            ("APP_ENV", app_env.into()),
+            ("FLASK_DEBUG", flask_debug.into()),
+        ]
+        .map(|(name, value)| (name.to_string(), value))
+        .to_vec(),
+        command,
+    })
 }
 
 fn port_is_listening_blocking(port: u16) -> bool {
@@ -538,7 +649,7 @@ fn ensure_virtualenv(
     venv_path: &Path,
     python_version: Option<&str>,
 ) -> Result<(), String> {
-    let venv_python = venv_path.join("bin").join("python");
+    let venv_python = venv_bin(venv_path, "python");
     let rebuild = match python_full_version(&venv_python) {
         Some(current) => match python_version {
             Some(wanted) if !version_matches(&current, wanted) => true,
@@ -585,10 +696,6 @@ fn version_matches(full: &str, wanted: &str) -> bool {
     wanted.len() <= full.len() && wanted.iter().zip(&full).all(|(a, b)| a == b)
 }
 
-/// Installs `requirements.txt` (if present) plus gunicorn into the site's
-/// virtualenv. Unlike Node's `npm install`, this runs automatically as part
-/// of provisioning since there is no separate "install dependencies" step
-/// exposed for Python sites.
 /// True when requirements.txt pulls in an ASGI framework (e.g. FastAPI).
 fn requirements_use_asgi(app_dir: &Path) -> bool {
     let Ok(requirements) = fs::read_to_string(app_dir.join("requirements.txt")) else {
@@ -606,8 +713,12 @@ fn requirements_use_asgi(app_dir: &Path) -> bool {
     })
 }
 
-fn install_dependencies(venv_path: &Path, project_root: &Path, asgi: bool) -> Result<(), String> {
-    let pip_bin = venv_path.join("bin").join("pip");
+/// Installs `requirements.txt` (if present) plus the app server into the
+/// site's virtualenv. Unlike Node's `npm install`, this runs automatically as
+/// part of provisioning since there is no separate "install dependencies"
+/// step exposed for Python sites.
+fn install_dependencies(venv_path: &Path, project_root: &Path, servers: &[&str]) -> Result<(), String> {
+    let pip_bin = venv_bin(venv_path, "pip");
     let requirements = project_root.join("requirements.txt");
 
     // pip re-resolves every package even when nothing changed, which adds
@@ -634,13 +745,11 @@ fn install_dependencies(venv_path: &Path, project_root: &Path, asgi: bool) -> Re
         }
     }
 
-    let mut missing = Vec::new();
-    if !venv_path.join("bin").join("gunicorn").is_file() {
-        missing.push("gunicorn");
-    }
-    if asgi && !venv_path.join("bin").join("uvicorn").is_file() {
-        missing.push("uvicorn");
-    }
+    let missing: Vec<&str> = servers
+        .iter()
+        .copied()
+        .filter(|server| !venv_bin(venv_path, server_program(server)).is_file())
+        .collect();
     if !missing.is_empty() {
         let output = std::process::Command::new(&pip_bin)
             .arg("install")
@@ -657,6 +766,14 @@ fn install_dependencies(venv_path: &Path, project_root: &Path, asgi: bool) -> Re
     }
 
     Ok(())
+}
+
+/// The program a server package installs into the venv.
+fn server_program(package: &str) -> &str {
+    match package {
+        "waitress" => "waitress-serve",
+        other => other,
+    }
 }
 
 /// A private venv holding `uv`, created on first use when no `uv` exists.
@@ -719,7 +836,7 @@ fn is_valid_python_version(version: &str) -> bool {
 /// the system Python the first time a site needs a missing version.
 fn ensure_uv() -> Result<PathBuf, String> {
     let venv = uv_tool_venv();
-    let tool_uv = venv.join("bin").join("uv");
+    let tool_uv = venv_bin(&venv, "uv");
     if let Ok(found) = crate::platform::paths().binary(crate::platform::paths::Tool::Uv) {
         return Ok(found);
     }
@@ -740,7 +857,7 @@ fn ensure_uv() -> Result<PathBuf, String> {
             String::from_utf8_lossy(&output.stderr).trim()
         ));
     }
-    let output = std::process::Command::new(venv.join("bin").join("pip"))
+    let output = std::process::Command::new(venv_bin(&venv, "pip"))
         .args(["install", "--quiet", "uv"])
         .output()
         .map_err(|error| format!("cannot install uv: {error}"))?;
@@ -921,5 +1038,79 @@ mod tests {
         fs::write(root.join("app.py"), "").unwrap();
         assert_eq!(resolve_app_dir(&root, Some("app:app")), root);
         fs::remove_dir_all(&root).unwrap();
+    }
+
+    fn supervised(asgi: bool, development: bool, start_command: Option<&str>) -> AppUnit {
+        let app = SupervisedApp {
+            site_id: "shop",
+            owner: "shop",
+            app_dir: Path::new(r"C:\sites\shop"),
+            venv: Path::new(r"C:\sites\shop\.venv"),
+            entry_module: Some("app:app"),
+            start_command,
+            asgi,
+            options: PythonRunOptions { workers: Some(3), development, timeout: None },
+            port: 8123,
+        };
+        supervised_unit_for(Os::Windows, &app, Some(std::ffi::OsStr::new(r"C:\Windows\system32"))).unwrap()
+    }
+
+    #[test]
+    fn gunicorn_is_linux_only_and_the_others_get_waitress_or_uvicorn() {
+        assert_eq!(server_packages(Os::Linux, false), ["gunicorn"]);
+        assert_eq!(server_packages(Os::Linux, true), ["gunicorn", "uvicorn"]);
+        assert_eq!(server_packages(Os::Windows, false), ["waitress"]);
+        assert_eq!(server_packages(Os::Macos, true), ["uvicorn"]);
+        assert_eq!(server_program("waitress"), "waitress-serve");
+        assert_eq!(venv_bin_for(Os::Windows, Path::new("v"), "pip"), Path::new("v").join("Scripts").join("pip.exe"));
+        assert_eq!(venv_bin_for(Os::Linux, Path::new("v"), "pip"), Path::new("v").join("bin").join("pip"));
+    }
+
+    #[test]
+    fn a_wsgi_app_runs_under_waitress_with_the_units_variables() {
+        let unit = supervised(false, false, None);
+        assert_eq!(unit.name, "dpanel-python-shop");
+        assert_eq!(unit.workdir, Path::new(r"C:\sites\shop"));
+        assert_eq!(
+            unit.command,
+            AppCommand::Program {
+                program: Path::new(r"C:\sites\shop\.venv").join("Scripts").join("waitress-serve.exe"),
+                args: ["--host=127.0.0.1", "--port=8123", "--threads=3", "app:app"].map(String::from).to_vec(),
+            }
+        );
+        let env: HashMap<_, _> = unit.env.iter().cloned().collect();
+        assert_eq!(env["PORT"], "8123");
+        assert_eq!(env["WEB_CONCURRENCY"], "3");
+        assert_eq!(env["APP_ENV"], "production");
+        assert_eq!(env["FLASK_DEBUG"], "0");
+        assert_eq!(env["PATH"], format!(r"{};C:\Windows\system32", Path::new(r"C:\sites\shop\.venv").join("Scripts").display()));
+    }
+
+    #[test]
+    fn an_asgi_app_runs_under_uvicorn_and_reloads_in_development() {
+        let AppCommand::Program { program, args } = supervised(true, false, None).command else { panic!() };
+        assert!(program.ends_with("uvicorn.exe"));
+        assert_eq!(args, ["app:app", "--host", "127.0.0.1", "--port", "8123", "--workers", "3"]);
+        let AppCommand::Program { args, .. } = supervised(true, true, None).command else { panic!() };
+        assert_eq!(args, ["app:app", "--host", "127.0.0.1", "--port", "8123", "--reload", "--log-level", "debug"]);
+        let unit = supervised(true, true, None);
+        assert!(unit.env.contains(&("APP_ENV".into(), "development".into())));
+    }
+
+    #[test]
+    fn a_start_command_runs_in_the_shell_and_an_entry_module_is_needed_otherwise() {
+        assert_eq!(supervised(false, false, Some("  python serve.py ")).command, AppCommand::Shell("python serve.py".into()));
+        let app = SupervisedApp {
+            site_id: "shop",
+            owner: "shop",
+            app_dir: Path::new("x"),
+            venv: Path::new("x"),
+            entry_module: Some(" "),
+            start_command: Some(""),
+            asgi: false,
+            options: PythonRunOptions::default(),
+            port: 1,
+        };
+        assert!(supervised_unit_for(Os::Windows, &app, None).is_err());
     }
 }
