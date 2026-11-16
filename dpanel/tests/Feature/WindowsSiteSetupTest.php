@@ -45,6 +45,16 @@ class WindowsSiteSetupTest extends TestCase
         Http::assertNothingSent();
     }
 
+    public function test_wordpress_reaches_a_mariadb_off_the_default_port(): void
+    {
+        $host = fn (array $config) => \App\Services\Website\WordpressInstallService::wordpressDbHost($config);
+
+        $this->assertSame('127.0.0.1:3307', $host(['database_host' => '127.0.0.1', 'database_port' => '3307']));
+        $this->assertSame('127.0.0.1', $host(['database_host' => '127.0.0.1', 'database_port' => '3306']));
+        $this->assertSame('127.0.0.1', $host(['database_host' => '127.0.0.1']));
+        $this->assertSame('db.example:3310', $host(['database_host' => 'db.example:3310', 'database_port' => '3307']));
+    }
+
     public function test_a_mariadb_database_is_made_by_drust_not_a_bash_script(): void
     {
         Http::fake(['drust.test/api/v1/database-request' => Http::response(['success' => true, 'message' => 'Database created.'])]);

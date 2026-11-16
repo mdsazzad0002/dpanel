@@ -264,6 +264,23 @@ class WordpressInstallService
         return $result;
     }
 
+    /**
+     * WordPress has no DB_PORT; it takes "host:port". A MariaDB off 3306
+     * (WampServer's is on 3307) is otherwise never reached.
+     *
+     * @param  array<string, mixed>  $databaseConfig
+     */
+    public static function wordpressDbHost(array $databaseConfig): string
+    {
+        $host = trim((string) ($databaseConfig['database_host'] ?? '')) ?: '127.0.0.1';
+        $port = trim((string) ($databaseConfig['database_port'] ?? ''));
+        if ($port === '' || $port === '3306' || ! ctype_digit($port) || str_contains($host, ':')) {
+            return $host;
+        }
+
+        return "{$host}:{$port}";
+    }
+
     public function hasWordPressFiles(string $rootPath): bool
     {
         return ($this->inspectRootDirectory($rootPath)['detected_app'] ?? 'missing') === 'wordpress';
@@ -622,7 +639,7 @@ class WordpressInstallService
             'DB_NAME' => (string) ($databaseConfig['database_name'] ?? ''),
             'DB_USER' => (string) ($databaseConfig['database_user'] ?? ''),
             'DB_PASSWORD' => (string) ($databaseConfig['database_password'] ?? ''),
-            'DB_HOST' => (string) ($databaseConfig['database_host'] ?? '127.0.0.1'),
+            'DB_HOST' => self::wordpressDbHost($databaseConfig),
         ];
 
         foreach ($databaseConstants as $constant => $value) {
