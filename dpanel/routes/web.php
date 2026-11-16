@@ -52,6 +52,7 @@ use App\Http\Controllers\PackagePlanController;
 use App\Http\Controllers\PageController;
 use App\Http\Controllers\PanelSearchController;
 use App\Http\Controllers\PhpManagementController;
+use App\Http\Controllers\PhpWorkersController;
 use App\Http\Controllers\MongoAdminController;
 use App\Http\Controllers\MongodbController;
 use App\Http\Controllers\PostgresqlController;
@@ -1091,6 +1092,16 @@ Route::prefix('dpt{token}')
             Route::patch('/php/config', [PhpManagementController::class, 'updateConfig'])
                 ->middleware('role:admin|reseller')
                 ->name('php.config.update');
+
+            Route::get('/php/workers', [PhpWorkersController::class, 'index'])
+                ->middleware('role:admin')
+                ->name('php.workers');
+            Route::get('/php/workers/data', [PhpWorkersController::class, 'data'])
+                ->middleware('role:admin')
+                ->name('php.workers.data');
+            Route::post('/php/workers', [PhpWorkersController::class, 'update'])
+                ->middleware('role:admin')
+                ->name('php.workers.update');
 
             Route::get('/php/settings', [PhpManagementController::class, 'config'])
                 ->middleware('role:admin|reseller')

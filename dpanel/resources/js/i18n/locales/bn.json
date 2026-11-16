@@ -772,6 +772,8 @@
         "ftpConnectHint": "সংযোগ পরীক্ষা ও FTP client download",
         "phpManager": "PHP পরিচালনা",
         "phpManagerHint": "Version, extension ও config",
+        "phpWorkers": "PHP Worker",
+        "phpWorkersHint": "প্রতি site-এর worker সীমা ও ব্যবহার",
         "emailManagement": "Email পরিচালনা",
         "emailManagementHint": "Mailbox-এর কাজ",
         "emailsList": "Email তালিকা",

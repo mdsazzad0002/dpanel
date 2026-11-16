@@ -772,6 +772,8 @@
         "ftpConnectHint": "Connection test and FTP client downloads",
         "phpManager": "PHP Management",
         "phpManagerHint": "Versions, extensions and config",
+        "phpWorkers": "PHP Workers",
+        "phpWorkersHint": "Worker limit and live usage per site",
         "emailManagement": "Email Management",
         "emailManagementHint": "Mailbox operations",
         "emailsList": "List Emails",

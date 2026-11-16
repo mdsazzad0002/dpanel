@@ -11,6 +11,7 @@ mod matching;
 mod node_process;
 pub(crate) mod php;
 pub(crate) mod php_fpm_master;
+pub(crate) mod php_workers;
 pub mod php_alerts;
 pub(crate) mod php_cgi_pool;
 mod precompress;

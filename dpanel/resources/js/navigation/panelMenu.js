@@ -84,6 +84,7 @@ export const buildPanelMenu = (userRoles = []) => [
         ],
     },
     { section: 'Websites', label: t('nav.phpManager'), hint: t('nav.phpManagerHint'), icon: 'PH', iconClass: 'bi bi-braces', routeName: 'php.manager', roles: ['admin', 'reseller'], permissions: ['manage_php'], color: 'indigo' },
+    { section: 'Websites', label: t('nav.phpWorkers'), hint: t('nav.phpWorkersHint'), icon: 'PW', iconClass: 'bi bi-cpu', routeName: 'php.workers', roles: ['admin'], color: 'indigo' },
     {
         section: 'Email',
         id: 'email-management',
