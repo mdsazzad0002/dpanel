@@ -72,6 +72,7 @@ use App\Http\Controllers\Docker\DockerStackController;
 use App\Http\Controllers\Docker\DockerSystemController;
 use App\Http\Controllers\Docker\DockerVolumeController;
 use App\Http\Controllers\MailHostnameController;
+use App\Http\Controllers\McpAccessGroupController;
 use App\Http\Controllers\McpOAuthConsentController;
 use App\Http\Controllers\McpTokenController;
 use App\Http\Controllers\SelfConnectionController;
@@ -1356,6 +1357,15 @@ Route::prefix('dpt{token}')
             Route::delete('/settings/mcp/tokens/{mcpToken}', [McpTokenController::class, 'destroy'])
                 ->middleware('role:admin')
                 ->name('mcp.tokens.destroy');
+            Route::post('/settings/mcp/groups', [McpAccessGroupController::class, 'store'])
+                ->middleware(['role:admin', 'throttle:30,1'])
+                ->name('mcp.groups.store');
+            Route::put('/settings/mcp/groups/{mcpGroup}', [McpAccessGroupController::class, 'update'])
+                ->middleware(['role:admin', 'throttle:30,1'])
+                ->name('mcp.groups.update');
+            Route::delete('/settings/mcp/groups/{mcpGroup}', [McpAccessGroupController::class, 'destroy'])
+                ->middleware('role:admin')
+                ->name('mcp.groups.destroy');
             Route::get('/settings/mcp/authorize/{requestId}', [McpOAuthConsentController::class, 'show'])
                 ->middleware('role:admin')
                 ->where('requestId', '[A-Za-z0-9]{40}')

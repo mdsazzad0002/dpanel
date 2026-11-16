@@ -97,6 +97,9 @@ class GatewayChatTools
         $definitions = [];
 
         foreach ($this->server->tools() as $tool) {
+            if (! $token->allowsTool($tool->name())) {
+                continue;
+            }
             if (! $tool->readOnly() && ! $token->allowsMutations() && $tool->name() !== 'run_command') {
                 continue;
             }
@@ -231,6 +234,9 @@ class GatewayChatTools
         $name = (string) ($toolCall['function']['name'] ?? '');
         $arguments = json_decode((string) ($toolCall['function']['arguments'] ?? '{}'), true);
         $tool = $this->server->tools()[$name] ?? null;
+        if ($tool && ! $token->allowsTool($name)) {
+            $tool = null;
+        }
 
         if (! $tool || ! is_array($arguments)) {
             $data = ['error' => $tool ? 'arguments must be a JSON object.' : "Unknown tool: {$name}"];

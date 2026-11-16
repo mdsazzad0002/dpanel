@@ -3,6 +3,7 @@ import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
 import { computed, ref } from 'vue';
 import { Head, useForm, usePage } from '@inertiajs/vue3';
 import axios from 'axios';
+import AccessGroups from './McpAccess/Partials/AccessGroups.vue';
 
 const page = usePage();
 const panelToken = page.props.panel?.token;
@@ -17,13 +18,20 @@ const props = defineProps({
     oauthEnabled: { type: Boolean, default: true },
     localAccess: { type: String, default: 'off' },
     tools: { type: Array, default: () => [] },
+    groups: { type: Array, default: () => [] },
 });
+
+const groupList = ref([...props.groups]);
+const bumpGroupCount = (groupId, delta) => {
+    const g = groupList.value.find((x) => x.id === groupId);
+    if (g) g.tokens_count = Math.max(0, (g.tokens_count || 0) + delta);
+};
 
 const tokenList = ref([...props.tokens]);
 const toggleForm = useForm({});
 const deleteForm = useForm({});
 
-const form = ref({ name: '', scope: 'read', expires_in_days: '' });
+const form = ref({ name: '', scope: 'read', access_group_id: '', expires_in_days: '' });
 const creating = ref(false);
 const createError = ref('');
 const newToken = ref(null);
@@ -81,11 +89,13 @@ const create = async () => {
         const { data } = await axios.post(panelRoute('mcp.tokens.store'), {
             name: form.value.name,
             scope: form.value.scope,
+            access_group_id: form.value.access_group_id || null,
             expires_in_days: form.value.expires_in_days || null,
         });
         tokenList.value.unshift(data.token);
+        if (data.token.access_group) bumpGroupCount(data.token.access_group.id, 1);
         newToken.value = data.plain_token;
-        form.value = { name: '', scope: 'read', expires_in_days: '' };
+        form.value = { name: '', scope: 'read', access_group_id: '', expires_in_days: '' };
     } catch (e) {
         const errors = e.response?.data?.errors || {};
         createError.value = Object.values(errors)[0]?.[0] || e.response?.data?.message || 'Could not create the token.';
@@ -103,7 +113,10 @@ const remove = (t) => {
     if (!confirm(`Revoke MCP token "${t.name}"? Clients using it lose access immediately.`)) return;
     deleteForm.delete(panelRoute('mcp.tokens.destroy', { mcpToken: t.id }), {
         preserveScroll: true,
-        onSuccess: () => { tokenList.value = tokenList.value.filter((x) => x.id !== t.id); },
+        onSuccess: () => {
+            tokenList.value = tokenList.value.filter((x) => x.id !== t.id);
+            if (t.access_group) bumpGroupCount(t.access_group.id, -1);
+        },
     });
 };
 
@@ -162,7 +175,7 @@ const fmtDate = (iso) => {
                 </div>
             </div>
 
-            <form @submit.prevent="create" class="grid gap-3 rounded-lg border border-slate-200 bg-white p-4 sm:grid-cols-[1fr_auto_auto_auto] sm:items-end dark:border-slate-700 dark:bg-slate-800">
+            <form @submit.prevent="create" class="grid gap-3 rounded-lg border border-slate-200 bg-white p-4 sm:grid-cols-[1fr_auto_auto_auto_auto] sm:items-end dark:border-slate-700 dark:bg-slate-800">
                 <div>
                     <label class="mb-1 block text-xs font-medium">Token name</label>
                     <input v-model="form.name" type="text" placeholder="e.g. My laptop – Claude Code"
@@ -176,17 +189,26 @@ const fmtDate = (iso) => {
                     </select>
                 </div>
                 <div>
+                    <label class="mb-1 block text-xs font-medium">Tools</label>
+                    <select v-model="form.access_group_id" class="w-full rounded-md border border-slate-300 px-2 py-1.5 text-sm dark:border-slate-600 dark:bg-slate-900">
+                        <option value="">All tools</option>
+                        <option v-for="g in groupList" :key="g.id" :value="g.id">{{ g.name }} ({{ g.tools.length }})</option>
+                    </select>
+                </div>
+                <div>
                     <label class="mb-1 block text-xs font-medium">Expires after (days)</label>
                     <input v-model="form.expires_in_days" type="number" min="1" placeholder="Never"
                         class="w-full rounded-md border border-slate-300 px-2 py-1.5 text-sm sm:w-32 dark:border-slate-600 dark:bg-slate-900" />
                 </div>
                 <button type="submit" :disabled="creating"
                     class="rounded-md bg-blue-600 px-4 py-2 text-sm text-white hover:bg-blue-700 disabled:opacity-50">Create token</button>
-                <div v-if="createError" class="text-xs text-red-600 sm:col-span-4">{{ createError }}</div>
-                <p v-if="form.scope === 'full'" class="text-xs text-amber-600 sm:col-span-4">
+                <div v-if="createError" class="text-xs text-red-600 sm:col-span-5">{{ createError }}</div>
+                <p v-if="form.scope === 'full'" class="text-xs text-amber-600 sm:col-span-5">
                     Full access lets the AI client run state-changing commands (install packages, restart services, edit files) on your servers as their SSH user. Dangerous commands are still refused and every command is logged.
                 </p>
             </form>
+
+            <AccessGroups v-model:groups="groupList" :tools="tools" :panel-route="panelRoute" />
 
             <div class="overflow-x-auto rounded-lg border border-slate-200 bg-white dark:border-slate-700 dark:bg-slate-800">
                 <table class="min-w-full divide-y divide-slate-200 text-sm dark:divide-slate-700">
@@ -195,6 +217,7 @@ const fmtDate = (iso) => {
                             <th class="px-4 py-3 font-medium">Name</th>
                             <th class="px-4 py-3 font-medium">Token</th>
                             <th class="px-4 py-3 font-medium">Access</th>
+                            <th class="px-4 py-3 font-medium">Tools</th>
                             <th class="px-4 py-3 font-medium">Status</th>
                             <th class="px-4 py-3 font-medium">Owner</th>
                             <th class="px-4 py-3 font-medium">Last used</th>
@@ -204,7 +227,7 @@ const fmtDate = (iso) => {
                     </thead>
                     <tbody class="divide-y divide-slate-200 dark:divide-slate-700">
                         <tr v-if="!tokenList.length">
-                            <td colspan="8" class="px-4 py-6 text-center text-sm text-slate-400">No MCP tokens yet.</td>
+                            <td colspan="9" class="px-4 py-6 text-center text-sm text-slate-400">No MCP tokens yet.</td>
                         </tr>
                         <tr v-for="t in tokenList" :key="t.id" class="hover:bg-slate-50 dark:hover:bg-slate-700/40">
                             <td class="px-4 py-3 font-medium">
@@ -214,6 +237,10 @@ const fmtDate = (iso) => {
                             <td class="px-4 py-3"><code class="text-xs text-slate-400">{{ t.token_prefix }}</code></td>
                             <td class="px-4 py-3">
                                 <span class="rounded px-2 py-0.5 text-xs" :class="t.scope === 'full' ? 'bg-amber-100 text-amber-700' : 'bg-sky-100 text-sky-700'">{{ t.scope === 'full' ? 'Full' : 'Read-only' }}</span>
+                            </td>
+                            <td class="px-4 py-3 text-xs">
+                                <span v-if="t.access_group" class="rounded bg-indigo-100 px-2 py-0.5 text-indigo-700">{{ t.access_group.name }}</span>
+                                <span v-else class="text-slate-400">All tools</span>
                             </td>
                             <td class="px-4 py-3">
                                 <span v-if="t.expired" class="rounded bg-red-100 px-2 py-0.5 text-xs text-red-700">Expired</span>

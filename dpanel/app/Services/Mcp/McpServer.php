@@ -121,7 +121,7 @@ class McpServer
                 'Area tools: list_dns_records (zone + mail/site DNS checks), get_mail_status (delivery, queue, failures), list_databases, list_cron_jobs, list_backups, list_security_findings, analyze_disk_usage.',
                 'To change code or config: browse with list_directory and search_files, read_file before editing, then edit_file (or write_file). Every write keeps a backup and delete moves to a trash folder; the tools return where, so a fix can be undone.',
                 'Explain the cause before changing anything. Prefer the smallest fix, and verify it afterwards.',
-                'Every command you run is recorded in the panel. Read-only tokens cannot change server state.',
+                'Every command you run is recorded in the panel. Read-only tokens cannot change server state, and a token tied to an access group only has that group\'s tools.',
             ]),
         ];
     }
@@ -131,6 +131,8 @@ class McpServer
      */
     private function listTools(McpAccessToken $token): array
     {
+        $allowed = array_filter($this->tools(), fn (McpTool $tool) => $token->allowsTool($tool->name()));
+
         return array_values(array_map(fn (McpTool $tool) => [
             'name' => $tool->name(),
             'title' => $tool->title(),
@@ -143,7 +145,7 @@ class McpServer
                 'destructiveHint' => ! $tool->readOnly(),
                 'openWorldHint' => false,
             ],
-        ], $this->tools()));
+        ], $allowed));
     }
 
     /**
@@ -157,6 +159,9 @@ class McpServer
 
         if (! $tool) {
             throw new McpProtocolException("Unknown tool: {$name}", -32602);
+        }
+        if (! $token->allowsTool($name)) {
+            throw new McpProtocolException("Tool not allowed for this token's access group: {$name}", -32602);
         }
         if (! is_array($arguments)) {
             throw new McpProtocolException('arguments must be an object.', -32602);

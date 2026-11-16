@@ -12,6 +12,7 @@ problems: it reads service status and logs, looks up website configuration, and
 - [Connecting a client](#connecting-a-client)
 - [Signing in with OAuth](#signing-in-with-oauth)
 - [Tokens and access levels](#tokens-and-access-levels)
+- [Access groups](#access-groups)
 - [Commands on the panel host](#commands-on-the-panel-host)
 - [Tools](#tools)
 - [Command safety](#command-safety)
@@ -126,6 +127,22 @@ Registering a client grants nothing until an admin approves it.
   at any time from the MCP Access page.
 - Only a SHA-256 hash of each token is stored. The page shows when and from
   which IP each token was last used.
+
+## Access groups
+
+An access group is a named list of tools. A token tied to a group only sees and
+calls those tools; any other tool is refused. A token with no group can use
+every tool.
+
+- Create groups under **MCP Access → Access groups**. Presets (Monitoring,
+  Logs & errors, Code editing, All read-only tools) fill the tool list for you.
+- Choose the group when you create a token, or on the OAuth approval screen.
+- Group and access level work together: the group decides *which* tools, the
+  access level decides whether they may *change* anything. A read-only token
+  in a group with `write_file` still cannot write.
+- Editing a group changes what its tokens can do right away. Tools added to the
+  panel later are not added to existing groups.
+- A group that tokens still use cannot be deleted.
 
 ## Commands on the panel host
 

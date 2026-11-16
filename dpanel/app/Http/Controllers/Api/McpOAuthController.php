@@ -263,6 +263,7 @@ class McpOAuthController extends Controller
             'token_hash' => $access['hash'],
             'refresh_token_hash' => $refresh['hash'],
             'scope' => $grant['scope'],
+            'access_group_id' => $grant['access_group_id'] ?? null,
             'is_active' => true,
             'expires_at' => now()->addSeconds($this->oauth->accessTtl()),
             'refresh_expires_at' => now()->addDays($this->oauth->refreshTtlDays()),

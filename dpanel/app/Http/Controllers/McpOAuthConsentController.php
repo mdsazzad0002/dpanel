@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\McpAccessGroup;
 use App\Models\McpAccessToken;
 use App\Models\McpOAuthClient;
 use App\Services\ActivityLogService;
@@ -38,6 +39,8 @@ class McpOAuthConsentController extends Controller
             ] : null,
             'requestedScope' => $pending['scope'] ?? McpAccessToken::SCOPE_READ,
             'endpointUrl' => $this->oauth->resourceUrl($request),
+            'groups' => McpAccessGroup::query()->orderBy('name')->get(['id', 'name', 'description', 'tools'])
+                ->map(fn (McpAccessGroup $g) => ['id' => $g->id, 'name' => $g->name, 'description' => $g->description, 'tools_count' => count($g->tools ?? [])]),
         ]);
     }
 
@@ -46,6 +49,7 @@ class McpOAuthConsentController extends Controller
         $data = $request->validate([
             'approve' => ['required', 'boolean'],
             'scope' => ['required_if:approve,true', Rule::in([McpAccessToken::SCOPE_READ, McpAccessToken::SCOPE_FULL])],
+            'access_group_id' => ['nullable', 'integer', Rule::exists('mcp_access_groups', 'id')],
         ]);
 
         [$pending, $client] = $this->pending($requestId);
@@ -72,11 +76,13 @@ class McpOAuthConsentController extends Controller
             'redirect_uri' => $pending['redirect_uri'],
             'code_challenge' => $pending['code_challenge'],
             'scope' => $data['scope'],
+            'access_group_id' => $data['access_group_id'] ?? null,
         ], now()->addMinutes(5));
 
         $this->activityLog->log('mcp.oauth_approved', $client, [
             'client' => $client->client_name,
             'scope' => $data['scope'],
+            'access_group_id' => $data['access_group_id'] ?? null,
         ]);
 
         return response()->json(['redirect' => $this->oauth->appendQuery($pending['redirect_uri'], array_filter([

@@ -23,6 +23,7 @@ class McpAccessToken extends Model
     protected $fillable = [
         'user_id',
         'oauth_client_id',
+        'access_group_id',
         'name',
         'token_prefix',
         'token_hash',
@@ -60,6 +61,21 @@ class McpAccessToken extends Model
         return $this->belongsTo(McpOAuthClient::class, 'oauth_client_id');
     }
 
+    public function accessGroup(): BelongsTo
+    {
+        return $this->belongsTo(McpAccessGroup::class, 'access_group_id');
+    }
+
+    /** Whether this token may see and call the tool; a token without a group may use every tool. */
+    public function allowsTool(string $name): bool
+    {
+        if ($this->access_group_id === null) {
+            return true;
+        }
+
+        return $this->accessGroup?->allowsTool($name) ?? false;
+    }
+
     /**
      * @return array{plain: string, prefix: string, hash: string}
      */
@@ -87,7 +103,7 @@ class McpAccessToken extends Model
     public static function findUsableByPlainToken(string $plain): ?self
     {
         return static::query()
-            ->with('user')
+            ->with(['user', 'accessGroup'])
             ->where('token_hash', hash('sha256', $plain))
             ->where('is_active', true)
             ->where(fn ($query) => $query->whereNull('expires_at')->orWhere('expires_at', '>', now()))

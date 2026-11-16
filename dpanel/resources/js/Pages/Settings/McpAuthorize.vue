@@ -15,7 +15,10 @@ const props = defineProps({
     client: { type: Object, default: null },
     requestedScope: { type: String, default: 'read' },
     endpointUrl: { type: String, default: '' },
+    groups: { type: Array, default: () => [] },
 });
+
+const groupId = ref('');
 
 const scope = ref(props.requestedScope === 'full' ? 'full' : 'read');
 const busy = ref(false);
@@ -27,7 +30,7 @@ const decide = async (approve) => {
     error.value = '';
 
     try {
-        const { data } = await axios.post(panelRoute('mcp.oauth.decide', { requestId: props.requestId }), { approve, scope: scope.value });
+        const { data } = await axios.post(panelRoute('mcp.oauth.decide', { requestId: props.requestId }), { approve, scope: scope.value, access_group_id: groupId.value || null });
         window.location.href = data.redirect;
     } catch (e) {
         error.value = e.response?.data?.message || 'Could not complete the request.';
@@ -71,6 +74,15 @@ const decide = async (approve) => {
                         <input v-model="scope" type="radio" value="full" class="mt-0.5" />
                         <span><span class="font-medium">Full</span> — diagnose and fix: may also run state-changing commands and restart services. Dangerous commands are still refused, and everything is logged.</span>
                     </label>
+                </div>
+
+                <div v-if="groups.length">
+                    <label class="mb-1 block text-sm font-medium">Tools</label>
+                    <select v-model="groupId" class="w-full rounded-md border border-slate-300 px-2 py-1.5 text-sm dark:border-slate-600 dark:bg-slate-900">
+                        <option value="">All tools</option>
+                        <option v-for="g in groups" :key="g.id" :value="g.id">{{ g.name }} ({{ g.tools_count }} tools)</option>
+                    </select>
+                    <p class="mt-1 text-xs text-slate-500">Pick an access group to limit which tools this client can use.</p>
                 </div>
 
                 <div v-if="error" class="text-sm text-red-600">{{ error }}</div>

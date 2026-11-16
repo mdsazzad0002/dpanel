@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\McpAccessGroup;
 use App\Models\McpAccessToken;
 use App\Services\ActivityLogService;
 use App\Services\Mcp\LocalHostAccess;
@@ -25,10 +26,15 @@ class McpTokenController extends Controller
     {
         return Inertia::render('Settings/McpAccess', [
             'tokens' => McpAccessToken::query()
-                ->with(['user:id,name,email', 'oauthClient:id,client_name'])
+                ->with(['user:id,name,email', 'oauthClient:id,client_name', 'accessGroup:id,name'])
                 ->orderByDesc('created_at')
                 ->get()
                 ->map(fn (McpAccessToken $t) => $this->serialise($t)),
+            'groups' => McpAccessGroup::query()
+                ->withCount('tokens')
+                ->orderBy('name')
+                ->get()
+                ->map(fn (McpAccessGroup $g) => McpAccessGroupController::serialise($g)),
             'endpointUrl' => rtrim($request->getSchemeAndHttpHost(), '/').'/api/mcp',
             'enabled' => (bool) config('mcp.enabled', true),
             'oauthEnabled' => (bool) config('mcp.oauth.enabled', true),
@@ -47,6 +53,7 @@ class McpTokenController extends Controller
             'name' => ['required', 'string', 'max:255'],
             'scope' => ['required', Rule::in([McpAccessToken::SCOPE_READ, McpAccessToken::SCOPE_FULL])],
             'expires_in_days' => ['nullable', 'integer', 'min:1', 'max:3650'],
+            'access_group_id' => ['nullable', 'integer', Rule::exists('mcp_access_groups', 'id')],
         ]);
 
         $generated = McpAccessToken::generate();
@@ -57,14 +64,15 @@ class McpTokenController extends Controller
             'token_prefix' => $generated['prefix'],
             'token_hash' => $generated['hash'],
             'scope' => $data['scope'],
+            'access_group_id' => $data['access_group_id'] ?? null,
             'is_active' => true,
             'expires_at' => isset($data['expires_in_days']) ? now()->addDays((int) $data['expires_in_days']) : null,
         ]);
 
-        $this->activityLog->log('mcp.token_created', $token, ['name' => $token->name, 'scope' => $token->scope]);
+        $this->activityLog->log('mcp.token_created', $token, ['name' => $token->name, 'scope' => $token->scope, 'access_group_id' => $token->access_group_id]);
 
         return response()->json([
-            'token' => $this->serialise($token->load('user:id,name,email')),
+            'token' => $this->serialise($token->load(['user:id,name,email', 'accessGroup:id,name'])),
             'plain_token' => $generated['plain'],
         ]);
     }
@@ -92,6 +100,7 @@ class McpTokenController extends Controller
             'name' => $t->name,
             'token_prefix' => $t->token_prefix,
             'scope' => $t->scope,
+            'access_group' => $t->accessGroup ? ['id' => $t->accessGroup->id, 'name' => $t->accessGroup->name] : null,
             'is_active' => $t->is_active,
             'owner' => $t->user?->email,
             'last_used_at' => $t->last_used_at?->toIso8601String(),
