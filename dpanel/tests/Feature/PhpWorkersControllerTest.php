@@ -63,7 +63,7 @@ class PhpWorkersControllerTest extends TestCase
 
     public function test_usage_is_read_from_drust(): void
     {
-        Http::fake(['drust.test/api/v1/php/workers' => Http::response([
+        Http::fake(['drust.test/api/v1/php/workers*' => Http::response([
             'success' => true,
             'data' => ['pools' => [['owner' => 'shop', 'active' => 1, 'running' => 2, 'max_children' => 2]]],
         ])]);
@@ -73,7 +73,9 @@ class PhpWorkersControllerTest extends TestCase
             ->assertOk()
             ->assertJsonPath('data.pools.0.owner', 'shop');
 
-        Http::assertSent(fn ($request) => $request->method() === 'GET' && $request->hasHeader('Authorization', 'Bearer secret'));
+        Http::assertSent(fn ($request) => $request->method() === 'GET'
+            && $request->hasHeader('Authorization', 'Bearer secret')
+            && $request['observer_pid'] === getmypid());
     }
 
     public function test_a_limit_is_sent_to_drust_and_logged(): void

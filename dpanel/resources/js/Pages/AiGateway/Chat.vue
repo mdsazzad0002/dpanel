@@ -50,6 +50,7 @@ const onToolsModeChange = () => {
 // Icon and readable name per server tool; unknown tools fall back to their raw name.
 const TOOL_META = {
     get_panel_overview: ['bi-speedometer2', 'Server overview'],
+    run_health_check: ['bi-clipboard2-pulse', 'Health check'],
     list_servers: ['bi-hdd-network', 'List servers'],
     list_websites: ['bi-globe2', 'List websites'],
     get_website: ['bi-globe', 'Website details'],

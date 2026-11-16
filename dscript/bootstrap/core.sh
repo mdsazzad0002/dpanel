@@ -2492,7 +2492,13 @@ panel_finalize_default_install() {
   panel_reconcile_system_records
   panel_refresh_phpmyadmin_sso
 
-  panel_refresh_drust_service
+  # composer, migrations and npm above created files as root. If the drust
+  # build stops the install here, the repair at the end never runs and the
+  # panel answers 500 (tempnam() falls back to /tmp), so repair first.
+  if ! panel_refresh_drust_service; then
+    panel_fix_app_permissions
+    return 1
+  fi
   panel_issue_panel_ssl "$env_file"
   panel_install_scheduler_cron
 

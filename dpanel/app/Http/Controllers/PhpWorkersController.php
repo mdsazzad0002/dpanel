@@ -26,7 +26,8 @@ class PhpWorkersController extends Controller
 
     public function data(): JsonResponse
     {
-        return $this->forward(fn ($request, string $url) => $request->get($url));
+        // This request itself runs in a PHP worker; drust counts it as idle.
+        return $this->forward(fn ($http, string $url) => $http->get($url, ['observer_pid' => getmypid()]));
     }
 
     public function update(Request $request): JsonResponse

@@ -229,7 +229,9 @@ fn is_busy(pid: &str) -> bool {
     !ACCEPT_SYSCALLS.contains(&number)
 }
 
-fn running_workers() -> Vec<Worker> {
+/// `observer` is the worker asking (the panel's own request): it is busy
+/// only with this question, so it counts as idle.
+fn running_workers(observer: Option<u32>) -> Vec<Worker> {
     let Ok(entries) = fs::read_dir("/proc") else { return Vec::new() };
     let mut masters: HashMap<u32, String> = HashMap::new();
     let mut found: Vec<(String, Option<u32>, Worker)> = Vec::new();
@@ -247,7 +249,7 @@ fn running_workers() -> Vec<Worker> {
             let worker = Worker {
                 pool: pool.trim().to_string(),
                 version: None,
-                busy: is_busy(&pid),
+                busy: observer.is_none_or(|observer| pid != observer.to_string()) && is_busy(&pid),
                 rss_kb: resident_kb(&pid),
             };
             found.push((pid.clone(), parent_pid(&pid), worker));
@@ -374,9 +376,9 @@ pub struct Overview {
 }
 
 /// Every managed site pool with its limit and what it is using now.
-pub fn overview() -> Overview {
+pub fn overview(observer: Option<u32>) -> Overview {
     let store = read_store();
-    let workers = running_workers();
+    let workers = running_workers(observer);
     let now = Local::now().naive_local();
     let mut logs: HashMap<PathBuf, HashMap<String, LimitHits>> = HashMap::new();
 

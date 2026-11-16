@@ -21,6 +21,7 @@ class McpServer
     /** @var array<int, class-string<McpTool>> */
     public const TOOLS = [
         Tools\PanelOverviewTool::class,
+        Tools\RunHealthCheckTool::class,
         Tools\ListServersTool::class,
         Tools\ListWebsitesTool::class,
         Tools\GetWebsiteTool::class,
@@ -115,6 +116,7 @@ class McpServer
             ],
             'instructions' => implode("\n", [
                 'You are connected to a dPanel web hosting control panel (websites, PHP/Node/Python/Docker apps, databases, mail, DNS, SSL).',
+                'For "is everything OK?", a slow site or a check after a deploy: run_health_check grades resources, backups, SSL, security, mail, PHP workers and each site\'s speed (server vs framework vs the site\'s own code) in one call.',
                 'To troubleshoot: start with get_panel_overview (its alerts list what looks wrong), look up the site with get_website, probe it live with check_website, then run find_website_errors and check get_service_status, read_service_logs or read_log_file.',
                 'Area tools: list_dns_records (zone + mail/site DNS checks), get_mail_status (delivery, queue, failures), list_databases, list_cron_jobs, list_backups, list_security_findings, analyze_disk_usage.',
                 'To change code or config: browse with list_directory and search_files, read_file before editing, then edit_file (or write_file). Every write keeps a backup and delete moves to a trash folder; the tools return where, so a fix can be undone.',

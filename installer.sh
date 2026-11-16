@@ -424,6 +424,19 @@ for component in drust dpanel; do
     continue
   fi
   printf '[INFO] Installing %s into /var/www/%s\n' "$component" "$component"
+  # cp only adds and overwrites, so a file the release moved or deleted would
+  # stay behind (e.g. drust's src/api/website.rs beside src/api/website/mod.rs
+  # breaks the build). Replace the code-only folders whole; .env, storage,
+  # vendor and builds live elsewhere and are kept.
+  case "$component" in
+    drust) code_dirs=(src) ;;
+    dpanel) code_dirs=(app routes resources) ;;
+    *) code_dirs=() ;;
+  esac
+  for code_dir in "${code_dirs[@]}"; do
+    [[ -d "${RELEASE_SOURCE_ROOT}/${component}/${code_dir}" ]] || continue
+    rm -rf "/var/www/${component}/${code_dir}"
+  done
   cp -a "${RELEASE_SOURCE_ROOT}/${component}/." "/var/www/${component}/"
 done
 

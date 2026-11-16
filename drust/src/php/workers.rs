@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use axum::{
-    extract::{Json, State},
+    extract::{Json, Query, State},
     response::IntoResponse,
 };
 use serde::Deserialize;
@@ -11,12 +11,22 @@ use crate::{
     edge_gateway::php_workers,
 };
 
+#[derive(Deserialize)]
+pub(crate) struct ListQuery {
+    /// PID of the PHP worker making this request, counted as idle.
+    pub observer_pid: Option<u32>,
+}
+
 /// Every site's PHP worker limit and live usage.
-pub(crate) async fn list(State(state): State<Arc<ApiState>>, headers: axum::http::HeaderMap) -> impl IntoResponse {
+pub(crate) async fn list(
+    State(state): State<Arc<ApiState>>,
+    headers: axum::http::HeaderMap,
+    Query(query): Query<ListQuery>,
+) -> impl IntoResponse {
     if let Err(error) = check_token(&state, &headers) {
         return error.into_response();
     }
-    match tokio::task::spawn_blocking(php_workers::overview).await {
+    match tokio::task::spawn_blocking(move || php_workers::overview(query.observer_pid)).await {
         Ok(overview) => match serde_json::to_value(overview) {
             Ok(data) => ApiResponse::ok_data("PHP workers", data).into_response(),
             Err(error) => ApiResponse::error(&error.to_string()).into_response(),
