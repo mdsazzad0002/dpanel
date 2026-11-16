@@ -5,6 +5,7 @@ import { NON_EDITABLE_EXTENSIONS } from '../constants/nonEditableExtensions';
 import { formatBytes, resolveDisplayPath } from '../helpers/fileUtils';
 import { iconClassForItem, nameClassForItem, typeLabelForItem } from '../helpers/fileIcons';
 import { getPermissionPreview } from '../helpers/permissions';
+import { previewKind } from '../helpers/previewTypes';
 
 export function useFileManager(props) {
     const page = usePage();
@@ -464,8 +465,50 @@ export function useFileManager(props) {
         return true;
     }
 
+    const previewItem = ref(null);
+
+    function openPreview(item) {
+        if (item?.type === 'file' && previewKind(item.name)) previewItem.value = item;
+    }
+
+    function closePreview() {
+        previewItem.value = null;
+    }
+
+    watch(() => props.currentPath, closePreview);
+
+    const SQLITE_EXTENSIONS = ['sqlite', 'sqlite3', 'db', 'db3', 's3db', 'sl3'];
+
+    // The file open in the read-only SQLite offcanvas.
+    const sqliteItem = ref(null);
+
+    function openSqlite(item) {
+        if (item?.type === 'file' && isSqliteFile(item.name)) sqliteItem.value = item;
+    }
+
+    function closeSqlite() {
+        sqliteItem.value = null;
+    }
+
+    watch(() => props.currentPath, closeSqlite);
+
+    function isSqliteFile(filename) {
+        const name = String(filename || '').toLowerCase();
+        return name.includes('.') && SQLITE_EXTENSIONS.includes(name.split('.').pop());
+    }
+
     function openFileInEditor(path) {
         const filename = path.split('/').pop() || '';
+
+        if (isSqliteFile(filename)) {
+            openSqlite(localItems.value.find((item) => item.path === path) || { path, name: filename, type: 'file' });
+            return;
+        }
+
+        if (previewKind(filename)) {
+            openPreview(localItems.value.find((item) => item.path === path) || { path, name: filename, type: 'file', size: null });
+            return;
+        }
 
         if (!isEditableFile(filename)) {
             pushToast(`Cannot edit "${filename}". This file type is not supported for editing.`, 'info');
@@ -492,9 +535,13 @@ export function useFileManager(props) {
         })));
     }
 
+    function downloadItem(item) {
+        if (item?.type !== 'file') return;
+        window.location.href = panelRoute('websites.filemanager.file.download', fileManagerRouteParams({ file_path: item.path }));
+    }
+
     function downloadSelected() {
-        if (!singleSelectedItem.value || singleSelectedItem.value.type !== 'file') return;
-        window.location.href = panelRoute('websites.filemanager.file.download', fileManagerRouteParams({ file_path: singleSelectedItem.value.path }));
+        downloadItem(singleSelectedItem.value);
     }
 
     function calculateFolderSize(item) {
@@ -1397,10 +1444,19 @@ export function useFileManager(props) {
         handleUploadDrop,
         handleUploadChange,
         openFileInEditor,
+        isSqliteFile,
+        sqliteItem,
+        openSqlite,
+        closeSqlite,
         isEditableFile,
+        previewItem,
+        openPreview,
+        closePreview,
+        isPreviewable: (name) => !!previewKind(name),
         loadFullFile,
         deleteSelected,
         downloadSelected,
+        downloadItem,
         openTrash,
         loadTrash,
         restoreTrashItem,

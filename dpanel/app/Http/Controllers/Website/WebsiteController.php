@@ -1947,7 +1947,15 @@ class WebsiteController extends Controller
         }
 
         if ($request->boolean('inline', false)) {
-            return response()->file($filePath);
+            // Served from the panel origin, so a site's HTML/SVG must never run
+            // script here: sandbox the response and stop MIME sniffing.
+            // PDFs are exempt: Chrome refuses to render a PDF under CSP sandbox.
+            $headers = ['X-Content-Type-Options' => 'nosniff'];
+            if (strtolower(pathinfo($filePath, PATHINFO_EXTENSION)) !== 'pdf') {
+                $headers['Content-Security-Policy'] = 'sandbox';
+            }
+
+            return response()->file($filePath, $headers);
         }
 
         return response()->download($filePath, basename($filePath));

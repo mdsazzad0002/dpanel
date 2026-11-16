@@ -47,6 +47,8 @@ http-body = "1"
 # Mail DNS checks query public resolvers directly (like dig), never /etc/hosts.
 hickory-resolver = { version = "0.24", default-features = false, features = ["tokio-runtime"] }
 mongodb = "3"
+# Read-only SQLite viewer in the file manager; bundled so no system libsqlite3 is needed.
+rusqlite = { version = "0.40", default-features = false, features = ["bundled", "limits", "hooks"] }
 # The ACME client (task I5): account and certificate keys, the CSR, and
 # reading a certificate's names and expiry without the openssl program.
 ring = "0.17"

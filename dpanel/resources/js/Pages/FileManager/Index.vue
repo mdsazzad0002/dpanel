@@ -13,6 +13,8 @@ import FileTable from './components/FileTable.vue';
 import ContextMenu from './components/ContextMenu.vue';
 import ToastStack from './components/ToastStack.vue';
 import FileEditor from './components/FileEditor.vue';
+import FilePreview from './components/FilePreview.vue';
+import SqliteOffcanvas from './components/sqlite/SqliteOffcanvas.vue';
 import UploadModal from './components/UploadModal.vue';
 import RenameModal from './components/RenameModal.vue';
 import PermissionModal from './components/PermissionModal.vue';
@@ -111,6 +113,8 @@ const openTerminal = () => {
         </main>
 
         <ContextMenu :fm="fm" />
+        <FilePreview :fm="fm" />
+        <SqliteOffcanvas :fm="fm" />
         <ToastStack :fm="fm" />
 
         <button

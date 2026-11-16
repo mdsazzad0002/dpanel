@@ -12,6 +12,7 @@ pub(crate) mod inspect;
 pub(crate) mod read;
 pub(crate) mod remove;
 pub(crate) mod size;
+pub(crate) mod sqlite;
 pub(crate) mod unzip;
 pub(crate) mod upload;
 pub(crate) mod user;

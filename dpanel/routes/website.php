@@ -23,6 +23,7 @@ use App\Http\Controllers\Website\WebsiteEdgeCacheController;
 use App\Http\Controllers\Website\WebsiteFileManagerController;
 use App\Http\Controllers\Website\WebsiteGitController;
 use App\Http\Controllers\Website\WebsiteHtaccessController;
+use App\Http\Controllers\Website\WebsiteSqliteController;
 use App\Http\Controllers\Website\WebsiteIpController;
 use App\Http\Controllers\Website\WebsiteLogController;
 use App\Http\Controllers\Wordpress\WordpressSafeUpdateController;
@@ -415,6 +416,15 @@ Route::patch('/websites/{id}/alias-api', [RedisCacheController::class, 'aliasApi
 Route::get('/websites/{id}/filemanager', [WebsiteFileManagerController::class, 'fileManager'])
     ->middleware('role_or_permission:admin|reseller|manage_websites')
     ->name('websites.filemanager');
+Route::post('/websites/{id}/sqlite/run', [WebsiteSqliteController::class, 'run'])
+    ->middleware(['role_or_permission:admin|reseller|manage_websites', 'throttle:120,1'])
+    ->name('websites.sqlite.run');
+Route::post('/websites/{id}/sqlite/ai', [WebsiteSqliteController::class, 'ai'])
+    ->middleware(['role_or_permission:admin|reseller|manage_websites', 'throttle:20,1'])
+    ->name('websites.sqlite.ai');
+Route::post('/websites/{id}/sqlite/convert', [WebsiteSqliteController::class, 'convert'])
+    ->middleware(['role_or_permission:admin|reseller|manage_websites', 'throttle:120,1'])
+    ->name('websites.sqlite.convert');
 Route::patch('/websites/{id}/filemanager/settings', [WebsiteFileManagerController::class, 'updateFileManagerSettings'])
     ->middleware('role_or_permission:admin|reseller|manage_websites')
     ->name('websites.filemanager.settings');

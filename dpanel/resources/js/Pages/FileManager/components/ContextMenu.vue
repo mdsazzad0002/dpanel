@@ -21,8 +21,8 @@ defineProps({
         </div>
 
         <button type="button" class="flex w-full items-center gap-2 px-3 py-2 text-left text-sm hover:bg-slate-100 dark:hover:bg-slate-800" @click="fm.triggerContextAction('open')">
-            <i class="bi bi-box-arrow-in-right text-xs text-slate-400"></i>
-            {{ fm.contextItem?.type === 'dir' ? 'Open Folder' : (fm.isEditableFile(fm.contextItem?.name) ? 'Edit File' : 'Open File') }}
+            <i class="bi text-xs text-slate-400" :class="fm.contextItem?.type === 'file' && fm.isSqliteFile(fm.contextItem?.name) ? 'bi-database' : 'bi-box-arrow-in-right'"></i>
+            {{ fm.contextItem?.type === 'dir' ? 'Open Folder' : fm.isSqliteFile(fm.contextItem?.name) ? 'Open in SQLite Viewer' : (fm.isPreviewable(fm.contextItem?.name) ? 'Preview' : (fm.isEditableFile(fm.contextItem?.name) ? 'Edit File' : 'Open File')) }}
         </button>
         <button v-if="fm.contextItem?.type === 'file'" type="button" class="flex w-full items-center gap-2 px-3 py-2 text-left text-sm hover:bg-slate-100 dark:hover:bg-slate-800" @click="fm.triggerContextAction('download')">
             <i class="bi bi-download text-xs text-slate-400"></i>

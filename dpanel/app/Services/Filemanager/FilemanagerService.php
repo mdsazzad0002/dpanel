@@ -241,6 +241,28 @@ class FilemanagerService
         ];
     }
 
+    /**
+     * Read-only look into a SQLite database inside the account home: the
+     * schema, a page of rows, or one read-only statement. drust opens the
+     * file read-only and refuses writes and ATTACH.
+     *
+     * @param  array<string, mixed>  $op  {action: schema|rows|query, ...}
+     * @return array<string, mixed>
+     */
+    public function sqlite(string $username, string $path, array $op): array
+    {
+        $result = $this->filemanagerApiRequest('sqlite', [
+            ...$op,
+            'username' => $this->normalizeUsername($username),
+            'path' => $this->normalizeAbsolutePath($path),
+        ], 30);
+        if (! $result['success']) {
+            throw new \RuntimeException($result['output'] !== '' ? $result['output'] : 'drust gave no answer for the SQLite viewer. If drust was updated, restart it: sudo systemctl restart drust');
+        }
+
+        return $result['data'];
+    }
+
     public function movePath(string $username, string $source, string $destination): void
     {
         $username = $this->normalizeUsername($username);

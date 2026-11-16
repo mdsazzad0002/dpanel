@@ -77,6 +77,10 @@ pub fn routes() -> Router<Arc<ApiState>> {
             post(crate::filemanager::fix_permissions::handle),
         )
         .route(
+            "/api/v1/filemanager/sqlite",
+            post(crate::filemanager::sqlite::handle),
+        )
+        .route(
             "/api/v1/filemanager/size",
             post(crate::filemanager::size::handle),
         )
