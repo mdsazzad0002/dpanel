@@ -81,6 +81,8 @@ pub async fn install(
 ) -> Result<Outcome, InstallError> {
     let target = package_dir(runtime_dir, &package.name, &package.version);
     if already_in_place(runtime_dir, package, &target) {
+        // A PHP installed before drust wrote one gets it now.
+        ensure_php_ini(&target, &package.name).map_err(|error| InstallError::Unpack(error.to_string()))?;
         return Ok(Outcome::AlreadyInstalled);
     }
     let parent = runtime_dir.join(&package.name);
@@ -99,7 +101,10 @@ pub async fn install(
         Err(error) => Err(error),
     };
     let _ = fs::remove_file(&archive);
-    result.map(|()| Outcome::Installed)
+    result?;
+    // In its final folder: the ini names the extension folder by full path.
+    ensure_php_ini(&target, &package.name).map_err(|error| InstallError::Unpack(error.to_string()))?;
+    Ok(Outcome::Installed)
 }
 
 fn already_in_place(runtime_dir: &Path, package: &Package, target: &Path) -> bool {
@@ -191,6 +196,19 @@ fn unpack_into(archive: &Path, staging: &Path, parent: &Path, package: &Package)
     let marker = serde_json::to_vec_pretty(&marker).map_err(|error| InstallError::Unpack(error.to_string()))?;
     fs::write(content.join(MARKER), marker).map_err(|error| InstallError::Unpack(error.to_string()))?;
     swap_in(&content, parent, package)
+}
+
+/// PHP's zip has no php.ini, so its CLI starts with no extensions: composer
+/// refuses to download without openssl, and a site's artisan has no
+/// pdo_mysql. The php.ini beside php.exe loads what php-cgi's does. One
+/// that is already there is the person's own and stays.
+fn ensure_php_ini(content: &Path, name: &str) -> std::io::Result<()> {
+    let ini = content.join("php.ini");
+    if name != "php" || ini.exists() {
+        return Ok(());
+    }
+    let text = crate::edge_gateway::php_cgi_pool::php_ini_text(&content.join("ext"), Path::is_file);
+    fs::write(ini, text)
 }
 
 /// Runs the package's probe; a program that does not start means the

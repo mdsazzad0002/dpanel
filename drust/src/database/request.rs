@@ -175,8 +175,17 @@ fn validate_collation(value: &str) -> Result<(), String> {
     Ok(())
 }
 
-fn is_local(host: &str) -> bool {
+pub(crate) fn is_local(host: &str) -> bool {
     host == "127.0.0.1" || host.eq_ignore_ascii_case("localhost")
+}
+
+/// The port of this machine's MariaDB, where sites' databases were made: the
+/// admin's, when that admin is local. WampServer runs MariaDB on 3307, so a
+/// backup's mysqldump must not assume 3306.
+pub(crate) fn local_server_port() -> Option<u16> {
+    let admin = DatabaseAdmin::from_env();
+    let local = admin.host.as_deref().is_none_or(|host| host.trim().is_empty() || is_local(host.trim()));
+    if local { admin.port } else { None }
 }
 
 #[derive(Clone, Debug)]

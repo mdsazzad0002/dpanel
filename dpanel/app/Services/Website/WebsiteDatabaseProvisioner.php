@@ -5,8 +5,6 @@ namespace App\Services\Website;
 use App\Models\DatabaseRequest;
 use App\Models\User;
 use App\Models\Website;
-use App\Services\ScriptExecutionGateway;
-use App\Services\ScriptPathResolver;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Str;
 
@@ -182,25 +180,7 @@ class WebsiteDatabaseProvisioner
      */
     public function provision(array $database): array
     {
-        if (($database['engine'] ?? '') === DatabaseRequest::ENGINE_POSTGRESQL) {
-            return $this->provisionPostgresql($database);
-        }
-
-        $result = app(ScriptExecutionGateway::class)->execute($this->scriptPath(), [
-            'create',
-            $database['database_name'],
-            $database['database_user'],
-            $database['database_password'],
-            $database['database_host'],
-            $database['database_port'],
-            $database['charset'],
-            $database['collation'],
-        ]);
-
-        return [
-            'success' => (bool) ($result['success'] ?? false),
-            'output' => trim((string) ($result['output'] ?? '')),
-        ];
+        return $this->provisionThroughDrust($database);
     }
 
     /** @param array<string, string> $database */
@@ -223,14 +203,18 @@ class WebsiteDatabaseProvisioner
     }
 
     /**
-     * PostgreSQL databases are created by drust (the MariaDB script can't).
-     * Re-running it on an existing database only resets the role's password.
+     * drust's database API, as the Databases page uses: database-request.sh
+     * is bash, which a Windows host does not have. Re-running it on an
+     * existing database only re-grants and resets the user's password.
      *
      * @param  array<string, string>  $database
      * @return array{success: bool, output: string}
      */
-    private function provisionPostgresql(array $database): array
+    private function provisionThroughDrust(array $database): array
     {
+        $engine = ($database['engine'] ?? '') === DatabaseRequest::ENGINE_POSTGRESQL
+            ? DatabaseRequest::ENGINE_POSTGRESQL
+            : DatabaseRequest::ENGINE_MARIADB;
         $apiUrl = trim((string) config('dpanel.database_api_url', ''));
         if ($apiUrl === '') {
             return ['success' => false, 'output' => 'Database API is not configured.'];
@@ -242,13 +226,21 @@ class WebsiteDatabaseProvisioner
         }
 
         try {
-            $response = $request->post($apiUrl, [
+            $payload = [
                 'action' => 'create',
-                'engine' => DatabaseRequest::ENGINE_POSTGRESQL,
+                'engine' => $engine,
                 'database_name' => $database['database_name'],
                 'database_user' => $database['database_user'],
                 'database_password' => $database['database_password'],
-            ]);
+            ];
+            if ($engine === DatabaseRequest::ENGINE_MARIADB) {
+                $payload += [
+                    'database_host' => (string) ($database['database_host'] ?? '127.0.0.1'),
+                    'charset' => (string) ($database['charset'] ?? 'utf8mb4'),
+                    'collation' => (string) ($database['collation'] ?? 'utf8mb4_unicode_ci'),
+                ];
+            }
+            $response = $request->post($apiUrl, $payload);
         } catch (\Throwable $e) {
             return ['success' => false, 'output' => 'Database API request failed: '.$e->getMessage()];
         }
@@ -258,17 +250,5 @@ class WebsiteDatabaseProvisioner
             'success' => $response->successful() && (bool) ($json['success'] ?? false),
             'output' => trim((string) ($json['message'] ?? '')),
         ];
-    }
-
-    private function scriptPath(): string
-    {
-        foreach (ScriptPathResolver::repositorySearchPaths() as $root) {
-            $candidate = rtrim((string) $root, '/').'/scripts/database-request.sh';
-            if (trim($candidate) !== '') {
-                return $candidate;
-            }
-        }
-
-        return rtrim(dirname(base_path()), DIRECTORY_SEPARATOR).'/dscript/scripts/database-request.sh';
     }
 }

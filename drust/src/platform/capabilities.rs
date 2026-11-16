@@ -65,6 +65,9 @@ pub struct Report {
     pub profile: &'static str,
     pub version: &'static str,
     pub capabilities: Capabilities,
+    /// Where site owners' homes are, so the panel names the same paths
+    /// as drust on every OS (`/home` on Linux).
+    pub sites_root: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -92,7 +95,7 @@ pub struct Capabilities {
 /// What this machine reports, with Docker looked up on `PATH`.
 pub fn report() -> Report {
     let platform = super::current();
-    report_for(platform.os(), platform.profile(), docker_on_path(), super::waf::available(), super::acme::engine())
+    Report { sites_root: super::paths().sites_root().display().to_string(), ..report_for(platform.os(), platform.profile(), docker_on_path(), super::waf::available(), super::acme::engine()) }
 }
 
 /// `docker_installed` only matters on a local profile, where Docker Desktop is
@@ -145,6 +148,7 @@ fn report_for(
         profile: profile.as_str(),
         version: env!("CARGO_PKG_VERSION"),
         capabilities,
+        sites_root: String::new(),
     }
 }
 

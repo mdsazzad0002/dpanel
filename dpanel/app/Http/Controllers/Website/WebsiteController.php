@@ -16,7 +16,6 @@ use App\Services\EdgeGatewayReloader;
 use App\Services\Filemanager\FilemanagerService;
 use App\Services\PathService;
 use App\Services\ScriptExecutionGateway;
-use App\Services\ScriptPathResolver;
 use App\Services\Ssl\SslLifecycleService;
 use App\Services\Website\ProjectDependencyService;
 use App\Services\Website\WebsiteCreateEditService;
@@ -2828,17 +2827,6 @@ class WebsiteController extends Controller
         }
     }
 
-    protected function runtimeDatabaseScriptPath(): string
-    {
-        foreach (ScriptPathResolver::repositorySearchPaths() as $root) {
-            $candidate = rtrim((string) $root, '/').'/scripts/database-request.sh';
-            if (trim($candidate) !== '') {
-                return $candidate;
-            }
-        }
-
-        return rtrim(dirname(base_path()), DIRECTORY_SEPARATOR).DIRECTORY_SEPARATOR.'dscript'.DIRECTORY_SEPARATOR.'scripts'.DIRECTORY_SEPARATOR.'database-request.sh';
-    }
 
     /**
      * @param  array<int, string>  $scriptCandidates
@@ -2854,51 +2842,7 @@ class WebsiteController extends Controller
         return '';
     }
 
-    /**
-     * @param  array<string, string>  $databaseConfig
-     * @return array{ran: bool, success: bool, output: string}
-     */
-    protected function provisionWordPressDatabase(array $databaseConfig): array
-    {
-        $scriptPath = $this->runtimeDatabaseScriptPath();
-        $result = app(ScriptExecutionGateway::class)->execute($scriptPath, [
-            'create',
-            (string) ($databaseConfig['database_name'] ?? ''),
-            (string) ($databaseConfig['database_user'] ?? ''),
-            (string) ($databaseConfig['database_password'] ?? ''),
-            (string) ($databaseConfig['database_host'] ?? '127.0.0.1'),
-            (string) ($databaseConfig['database_port'] ?? '3306'),
-            (string) ($databaseConfig['charset'] ?? 'utf8mb4'),
-            (string) ($databaseConfig['collation'] ?? 'utf8mb4_unicode_ci'),
-        ]);
-        $message = trim((string) ($result['output'] ?? ''));
 
-        return [
-            'ran' => (bool) ($result['ran'] ?? true),
-            'success' => (bool) ($result['success'] ?? false),
-            'output' => $message !== '' ? $message : ((bool) ($result['success'] ?? false) ? 'Database provisioning completed.' : 'Database provisioning failed.'),
-        ];
-    }
-
-    /**
-     * @param  array<string, string>  $databaseConfig
-     */
-    protected function buildWordPressDatabaseCommand(array $databaseConfig): string
-    {
-        $scriptPath = $this->runtimeDatabaseScriptPath();
-
-        return sprintf(
-            'bash %s create %s %s %s %s %s %s %s',
-            escapeshellarg($scriptPath),
-            escapeshellarg((string) ($databaseConfig['database_name'] ?? '')),
-            escapeshellarg((string) ($databaseConfig['database_user'] ?? '')),
-            escapeshellarg((string) ($databaseConfig['database_password'] ?? '')),
-            escapeshellarg((string) ($databaseConfig['database_host'] ?? '127.0.0.1')),
-            escapeshellarg((string) ($databaseConfig['database_port'] ?? '3306')),
-            escapeshellarg((string) ($databaseConfig['charset'] ?? 'utf8mb4')),
-            escapeshellarg((string) ($databaseConfig['collation'] ?? 'utf8mb4_unicode_ci')),
-        );
-    }
 
     /**
      * @param  array<string, string>  $databaseConfig

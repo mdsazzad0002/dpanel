@@ -16,6 +16,15 @@ class PathService
         if ($configured !== '') {
             return rtrim(self::normalizeAbsolutePath($configured), '/');
         }
+        // Off Linux, drust's own sites root, so both name the same folders
+        // (%USERPROFILE%\dPanel\sites on a PC). Linux is /home without asking.
+        if (! app(\App\Support\Platform\LocalCommand::class)->supports(\App\Support\Platform\LocalCommand::LINUX_TOOLS)) {
+            $reported = trim((string) (app(\App\Support\Platform\PlatformCapabilities::class)->report()['sites_root'] ?? ''));
+            if ($reported !== '') {
+                return rtrim(self::normalizeAbsolutePath($reported), '/');
+            }
+        }
+
         return self::HOME_BASE;
     }
 

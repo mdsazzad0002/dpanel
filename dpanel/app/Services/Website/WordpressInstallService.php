@@ -7,8 +7,6 @@ use App\Models\User;
 use App\Models\Website;
 use App\Services\Backup\PreOverwriteBackupService;
 use App\Services\Filemanager\FilemanagerService;
-use App\Services\ScriptExecutionGateway;
-use App\Services\ScriptPathResolver;
 use App\Services\EdgeGatewayReloader;
 use App\Support\Platform\ProcessIdentity;
 use Illuminate\Support\Facades\Cache;
@@ -559,41 +557,29 @@ class WordpressInstallService
         }
     }
 
-    private function runtimeDatabaseScriptPath(): string
-    {
-        foreach (ScriptPathResolver::repositorySearchPaths() as $root) {
-            $candidate = rtrim((string) $root, '/').'/scripts/database-request.sh';
-            if (trim($candidate) !== '') {
-                return $candidate;
-            }
-        }
-
-        return rtrim(dirname(base_path()), DIRECTORY_SEPARATOR).DIRECTORY_SEPARATOR.'dscript'.DIRECTORY_SEPARATOR.'scripts'.DIRECTORY_SEPARATOR.'database-request.sh';
-    }
-
     /**
+     * Through drust's database API, as every other app installer: the old
+     * database-request.sh is bash, which a Windows host does not have.
+     *
      * @param array<string, string> $databaseConfig
      * @return array{ran: bool, success: bool, output: string}
      */
     private function provisionWordPressDatabase(array $databaseConfig): array
     {
-        $scriptPath = $this->runtimeDatabaseScriptPath();
-        $result = app(ScriptExecutionGateway::class)->execute($scriptPath, [
-            'create',
-            (string) ($databaseConfig['database_name'] ?? ''),
-            (string) ($databaseConfig['database_user'] ?? ''),
-            (string) ($databaseConfig['database_password'] ?? ''),
-            (string) ($databaseConfig['database_host'] ?? '127.0.0.1'),
-            (string) ($databaseConfig['database_port'] ?? '3306'),
-            (string) ($databaseConfig['charset'] ?? 'utf8mb4'),
-            (string) ($databaseConfig['collation'] ?? 'utf8mb4_unicode_ci'),
+        $result = $this->databases->provision([
+            'engine' => DatabaseRequest::ENGINE_MARIADB,
+            'database_name' => (string) ($databaseConfig['database_name'] ?? ''),
+            'database_user' => (string) ($databaseConfig['database_user'] ?? ''),
+            'database_password' => (string) ($databaseConfig['database_password'] ?? ''),
+            'database_host' => (string) ($databaseConfig['database_host'] ?? '127.0.0.1'),
+            'charset' => (string) ($databaseConfig['charset'] ?? 'utf8mb4'),
+            'collation' => (string) ($databaseConfig['collation'] ?? 'utf8mb4_unicode_ci'),
         ]);
-        $message = trim((string) ($result['output'] ?? ''));
 
         return [
-            'ran' => (bool) ($result['ran'] ?? true),
-            'success' => (bool) ($result['success'] ?? false),
-            'output' => $message !== '' ? $message : ((bool) ($result['success'] ?? false) ? 'Database provisioning completed.' : 'Database provisioning failed.'),
+            'ran' => true,
+            'success' => $result['success'],
+            'output' => $result['output'] !== '' ? $result['output'] : ($result['success'] ? 'Database provisioning completed.' : 'Database provisioning failed.'),
         ];
     }
 

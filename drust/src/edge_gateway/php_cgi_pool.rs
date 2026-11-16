@@ -423,7 +423,7 @@ fn release_port(ports: &Ports, port: u16) {
 
 /// The ini of a PHP whose extensions are in `ext_dir`. Xdebug is left out, and
 /// paths use `/` because a php.ini string treats `\` as an escape.
-fn php_ini_text(ext_dir: &Path, is_file: impl Fn(&Path) -> bool) -> String {
+pub(crate) fn php_ini_text(ext_dir: &Path, is_file: impl Fn(&Path) -> bool) -> String {
     let dir = ext_dir.to_string_lossy().replace('\\', "/");
     let has = |name: &str| is_file(&ext_dir.join(format!("php_{name}.dll")));
     let mut text = format!("; Written by drust for php-cgi; changes are overwritten.\nextension_dir=\"{dir}\"\n");

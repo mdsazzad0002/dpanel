@@ -34,6 +34,34 @@ pub(crate) fn find_tool(name: &str, tool: Tool) -> Result<String, String> {
         })
 }
 
+/// On a PC every site runs as the logged-in user, so where the OS has no
+/// Unix modes there is nothing to open up. A server without them (Windows,
+/// until its ACLs, backlog J1) still refuses rather than pretend.
+fn no_modes_to_set(profile: platform::Profile, file_permissions: bool) -> bool {
+    profile == platform::Profile::Local && !file_permissions
+}
+
+/// The composer that PHP runs as a script. Windows' Composer installs
+/// `composer.bat` with `composer.phar` beside it; PHP given the .bat prints
+/// it and exits 0, so an install "succeeded" with no files.
+pub(crate) fn composer_script() -> Result<String, String> {
+    let found = find_tool("composer", Tool::Composer)?;
+    phar_for(Path::new(&found), Path::is_file)
+        .map(|path| path.display().to_string())
+        .ok_or_else(|| format!("{found} is a launcher, and no composer.phar is beside it."))
+}
+
+fn phar_for(found: &Path, is_file: impl Fn(&Path) -> bool) -> Option<PathBuf> {
+    let launcher = found
+        .extension()
+        .is_some_and(|extension| extension.eq_ignore_ascii_case("bat") || extension.eq_ignore_ascii_case("cmd"));
+    if !launcher {
+        return Some(found.to_path_buf());
+    }
+    let phar = found.with_file_name("composer.phar");
+    is_file(&phar).then_some(phar)
+}
+
 /// Directories an app writes to at runtime, and the config file that holds
 /// its database password (tightened to 640).
 pub(super) struct Permissions {
@@ -74,7 +102,8 @@ impl Site {
         let runtime = prepare_runtime(username, &group, &home, &canonical_home, &php)?;
         Ok(Self {
             username: username.to_string(),
-            target,
+            // Canonical on Windows is `\\?\C:\…`, which PHP and composer refuse.
+            target: platform::paths::plain_path(&target),
             php,
             runtime,
         })
@@ -136,7 +165,7 @@ impl Site {
     }
 
     pub async fn composer(&self, args: &[&str], timeout: Duration) -> Result<String, String> {
-        let composer = find_tool("composer", Tool::Composer)?;
+        let composer = composer_script()?;
         let mut full = vec![composer.as_str()];
         full.extend_from_slice(args);
         self.php(&full, timeout).await
@@ -209,6 +238,9 @@ impl Site {
     /// the gateway falls back to the shared www-data pool when that pool can't
     /// be provisioned, so both need access.
     pub fn finalize(&self, permissions: &Permissions) -> Result<String, String> {
+        if no_modes_to_set(platform::current().profile(), platform::capabilities::report().capabilities.file_permissions) {
+            return Ok("This PC's sites are its user's own files; no permissions to change.".into());
+        }
         let files = platform::files();
         let owner = platform::fs::owner_named(&self.username, "www-data").map_err(|e| e.to_string())?;
         if let Some(config) = permissions
@@ -345,8 +377,17 @@ fn prepare_runtime(
             "Installer runtime",
         )?);
     }
-    let runtime_home = dirs[0].clone();
-    let bin = dirs[1].clone();
+    let runtime_home = platform::paths::plain_path(&dirs[0]);
+    let bin = platform::paths::plain_path(&dirs[1]);
+
+    if platform::current().os() == platform::Os::Windows {
+        // A symlink needs a privilege there, and cmd runs .bat files, not
+        // shebang scripts: `php` and `composer` are batch shims instead.
+        for (name, text) in windows_shims(php, &composer_script()?) {
+            fs::write(bin.join(name), text).map_err(|e| format!("Cannot create {name} shim: {e}"))?;
+        }
+        return Ok(Runtime { home: runtime_home, bin });
+    }
 
     let php_link = bin.join("php");
     if fs::symlink_metadata(&php_link).is_ok() {
@@ -377,6 +418,25 @@ fn prepare_runtime(
     })
 }
 
+/// `php.bat` and `composer.bat`, which pin the website's PHP for composer
+/// scripts that call `php` or `composer` by name.
+fn windows_shims(php: &str, composer_phar: &str) -> [(&'static str, String); 2] {
+    [
+        ("php.bat", format!("@\"{php}\" %*\r\n")),
+        ("composer.bat", format!("@\"{php}\" \"{composer_phar}\" %*\r\n")),
+    ]
+}
+
+/// The shims first. Linux gets the fixed system folders, as before; Windows
+/// keeps drust's own PATH, without which nothing starts.
+fn runtime_path(bin: &Path, os: platform::Os, inherited: Option<std::ffi::OsString>) -> std::ffi::OsString {
+    if os != platform::Os::Windows {
+        return format!("{}:/usr/local/bin:/usr/bin:/bin", bin.display()).into();
+    }
+    let rest = inherited.map(|path| std::env::split_paths(&path).collect::<Vec<_>>()).unwrap_or_default();
+    std::env::join_paths(std::iter::once(bin.to_path_buf()).chain(rest)).unwrap_or_else(|_| bin.as_os_str().to_owned())
+}
+
 async fn run_as_owner(
     username: &str,
     runtime: &Runtime,
@@ -392,7 +452,7 @@ async fn run_as_owner(
         .env("HOME", &runtime.home)
         .env("USER", username)
         .env("LOGNAME", username)
-        .env("PATH", format!("{}:/usr/local/bin:/usr/bin:/bin", runtime.bin.display()))
+        .env("PATH", runtime_path(&runtime.bin, platform::current().os(), std::env::var_os("PATH")))
         .env("COMPOSER_HOME", format!("{home}/composer"))
         .env("COMPOSER_CACHE_DIR", format!("{home}/composer-cache"))
         .env("COMPOSER_NO_INTERACTION", "1")
@@ -463,6 +523,48 @@ async fn run_as_owner(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn php_runs_composer_phar_never_the_windows_launcher() {
+        let dir = Path::new(r"C:\Composer");
+        let phar = dir.join("composer.phar");
+        let has_phar = |path: &Path| path == phar;
+        assert_eq!(phar_for(&dir.join("composer.bat"), has_phar), Some(phar.clone()));
+        assert_eq!(phar_for(&dir.join("COMPOSER.CMD"), has_phar), Some(phar.clone()));
+        assert_eq!(phar_for(&dir.join("composer.bat"), |_| false), None);
+        assert_eq!(phar_for(Path::new("/usr/local/bin/composer"), |_| false), Some("/usr/local/bin/composer".into()));
+    }
+
+    #[test]
+    fn only_a_pc_without_modes_skips_them() {
+        assert!(no_modes_to_set(platform::Profile::Local, false));
+        assert!(!no_modes_to_set(platform::Profile::Server, false));
+        assert!(!no_modes_to_set(platform::Profile::Local, true));
+    }
+
+    #[test]
+    fn windows_shims_quote_paths_and_pass_every_argument() {
+        let [php, composer] = windows_shims(r"C:\php 8.3\php.exe", r"C:\Composer\composer.phar");
+        assert_eq!(php, ("php.bat", "@\"C:\\php 8.3\\php.exe\" %*\r\n".to_string()));
+        assert_eq!(composer.1, "@\"C:\\php 8.3\\php.exe\" \"C:\\Composer\\composer.phar\" %*\r\n");
+    }
+
+    #[test]
+    fn the_shims_come_first_on_path() {
+        let bin = Path::new("/home/a/.dpanel/laravel-installer/bin");
+        assert_eq!(
+            runtime_path(bin, platform::Os::Linux, Some("/evil".into())),
+            std::ffi::OsString::from("/home/a/.dpanel/laravel-installer/bin:/usr/local/bin:/usr/bin:/bin")
+        );
+        // Joining uses this OS's separator, and `C:` holds Unix's.
+        if std::path::MAIN_SEPARATOR != '\\' {
+            return;
+        }
+        let windows = runtime_path(Path::new(r"C:\s\bin"), platform::Os::Windows, Some(r"C:\Windows\system32".into()));
+        let parts: Vec<PathBuf> = std::env::split_paths(&windows).collect();
+        assert_eq!(parts[0], Path::new(r"C:\s\bin"));
+        assert!(parts.contains(&PathBuf::from(r"C:\Windows\system32")));
+    }
 
     #[test]
     fn php_version_must_look_like_major_dot_minor() {

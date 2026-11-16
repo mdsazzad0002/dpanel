@@ -29,7 +29,8 @@ pub fn dump_command(login: &Login, database: &str, flags: &[&str]) -> Command {
     command
         .env("MYSQL_PWD", login.password)
         .args(flags)
-        .args(["--host", login.host, "--user", login.user, database]);
+        .args(login_args(login, super::request::local_server_port()))
+        .arg(database);
     command
 }
 
@@ -38,8 +39,18 @@ pub fn import_command(login: &Login, database: &str) -> Command {
     let mut command = tool(Tool::Mysql);
     command
         .env("MYSQL_PWD", login.password)
-        .args(["--host", login.host, "--user", login.user, database]);
+        .args(login_args(login, super::request::local_server_port()))
+        .arg(database);
     command
+}
+
+/// `--host` and `--user`, and the local server's port for a local host.
+fn login_args(login: &Login, local_port: Option<u16>) -> Vec<String> {
+    let mut args = vec!["--host".to_string(), login.host.to_string(), "--user".to_string(), login.user.to_string()];
+    if let Some(port) = local_port.filter(|_| super::request::is_local(login.host)) {
+        args.push(format!("--port={port}"));
+    }
+    args
 }
 
 /// The dump of `database` as bytes.
@@ -137,6 +148,16 @@ pub fn dump_file_name(database: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_local_login_reaches_the_servers_own_port() {
+        let local = Login { host: "127.0.0.1", user: "shop", password: "x" };
+        assert_eq!(login_args(&local, Some(3307)), ["--host", "127.0.0.1", "--user", "shop", "--port=3307"]);
+        assert_eq!(login_args(&local, None), ["--host", "127.0.0.1", "--user", "shop"]);
+        // Another server keeps its own port.
+        let remote = Login { host: "db.example.com", user: "shop", password: "x" };
+        assert_eq!(login_args(&remote, Some(3307)), ["--host", "db.example.com", "--user", "shop"]);
+    }
 
     #[test]
     fn provision_sql_escapes_the_password() {

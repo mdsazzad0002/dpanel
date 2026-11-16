@@ -208,6 +208,31 @@ async fn the_same_archive_is_not_downloaded_twice() {
     assert_eq!(mirror.hits.load(Ordering::SeqCst), 1);
 }
 
+/// PHP's zip has no php.ini; without one its CLI has no openssl, and
+/// composer will not download.
+#[tokio::test]
+async fn php_gets_a_php_ini_that_loads_its_extensions_and_keeps_an_edited_one() {
+    let body = php_zip("", b"new");
+    let mirror = mirror(body.clone());
+    let runtime = tempfile::tempdir().unwrap();
+    let package = package(sha256(&body), "", vec![format!("{}/good.zip", mirror.base)]);
+
+    run(runtime.path(), &package).await.unwrap();
+    let dir = package_dir(runtime.path(), "php", "8.3");
+    let ini = fs::read_to_string(dir.join("php.ini")).unwrap();
+    let ext = dir.join("ext").to_string_lossy().replace('\\', "/");
+    assert!(ini.contains(&format!("extension_dir=\"{ext}\"")), "{ini}");
+    assert!(ini.contains("extension=curl\n"), "{ini}");
+    assert!(!ini.contains("extension=openssl"), "only what the build has: {ini}");
+
+    fs::write(dir.join("php.ini"), "; mine\n").unwrap();
+    assert_eq!(run(runtime.path(), &package).await, Ok(Outcome::AlreadyInstalled));
+    assert_eq!(fs::read_to_string(dir.join("php.ini")).unwrap(), "; mine\n");
+    fs::remove_file(dir.join("php.ini")).unwrap();
+    run(runtime.path(), &package).await.unwrap();
+    assert!(dir.join("php.ini").is_file(), "an install from before gets one");
+}
+
 #[tokio::test]
 async fn a_new_release_replaces_the_old_one() {
     let runtime = tempfile::tempdir().unwrap();
