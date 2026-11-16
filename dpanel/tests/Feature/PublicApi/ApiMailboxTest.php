@@ -5,6 +5,7 @@ namespace Tests\Feature\PublicApi;
 use App\Models\Mailbox;
 use App\Services\Mail\Backend\MailBackend;
 use App\Support\MailPasswordHash;
+use App\Support\Platform\ProcessIdentity;
 use Illuminate\Support\Str;
 use Mockery\MockInterface;
 
@@ -22,7 +23,15 @@ class ApiMailboxTest extends PublicApiTestCase
     public function test_a_mailbox_is_made_on_the_users_own_domain(): void
     {
         $customer = $this->user();
-        // The storage path is worked out from a real system account.
+        // The storage path is worked out from the site's system account,
+        // which is given here: Windows has neither root nor ext-posix.
+        $this->app->instance(ProcessIdentity::class, new class extends ProcessIdentity
+        {
+            public function account(string $name): ?array
+            {
+                return $name === 'root' ? ['name' => 'root', 'uid' => 0, 'gid' => 0] : null;
+            }
+        });
         $this->website($customer, 'shop.test', ['site_owner' => 'root']);
         $this->mail->shouldReceive('ensureMailbox')->once();
         $this->mail->shouldReceive('ensureDomain')->once()->with('shop.test')->andReturn(['ok' => true, 'messages' => []]);

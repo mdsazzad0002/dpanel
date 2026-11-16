@@ -1073,6 +1073,12 @@ class EmailController extends Controller
 
     private function resolveSystemId(string $mode, string $account, int $fallback): int
     {
+        // posix_getpwnam gives the same uid and primary gid as `id`, without
+        // a process; `id` is left for a PHP built without ext-posix.
+        $known = app(\App\Support\Platform\ProcessIdentity::class)->account($account);
+        if ($known !== null) {
+            return $mode === 'u' ? $known['uid'] : $known['gid'];
+        }
         $local = app(LocalCommand::class);
         $value = $local->supports(LocalCommand::UNIX_TOOLS) ? trim((string) $local->output(['id', '-'.$mode, $account])) : '';
         if ($value !== '' && ctype_digit($value)) {

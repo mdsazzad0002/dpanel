@@ -6,6 +6,7 @@ use App\Models\PanelSession;
 use App\Models\User;
 use App\Services\EdgeGatewayReloader;
 use App\Services\Mail\PostfixHostname;
+use App\Support\Platform\LocalCommand;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Testing\TestCase as BaseTestCase;
 use Illuminate\Support\Facades\URL;
@@ -31,6 +32,15 @@ abstract class TestCase extends BaseTestCase
                 $database,
             ));
         }
+
+        // phpunit.xml empties these, but Windows drops an empty variable, and
+        // the config then falls back to this machine's real drust. No test may
+        // reach it; a test that wants drust names its own (faked) address.
+        $app['config']->set('dpanel.execution_api_base_url', '');
+
+        // The suite describes a Linux server, as CI runs it, whatever OS runs
+        // the tests; a test about another host binds its own LocalCommand.
+        $app->instance(LocalCommand::class, new LocalCommand('Linux'));
 
         // A machine with Postfix must behave like one without it.
         $app->instance(PostfixHostname::class, new class extends PostfixHostname
