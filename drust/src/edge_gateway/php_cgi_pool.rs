@@ -74,6 +74,8 @@ pub struct PoolSettings {
     pub crash_window: Duration,
     pub first_backoff: Duration,
     pub ready_timeout: Duration,
+    /// Where a crashing site's alert goes; none in tests.
+    pub alerts: Option<PathBuf>,
 }
 
 impl Default for PoolSettings {
@@ -88,6 +90,7 @@ impl Default for PoolSettings {
             crash_window: Duration::from_secs(60),
             first_backoff: Duration::from_millis(200),
             ready_timeout: Duration::from_secs(10),
+            alerts: None,
         }
     }
 }
@@ -128,10 +131,16 @@ impl State {
         }
     }
 
-    fn record_crash(&mut self, site: &str, limit: usize) {
+    fn record_crash(&mut self, site: &str, settings: &PoolSettings) {
         self.crashes.push_back(Instant::now());
+        let limit = settings.crash_limit;
         if self.crashes.len() == limit {
             error!(site, crashes = limit, "PHP keeps crashing; answering 503 until it calms down");
+            if let Some(file) = &settings.alerts
+                && let Err(error) = super::php_alerts::record(file, site, limit, settings.crash_window.as_secs())
+            {
+                warn!(site, %error, "the PHP crash alert was not saved");
+            }
         }
     }
 
@@ -267,7 +276,7 @@ impl SitePool {
             Err(error) => {
                 release_port(&self.ports, port);
                 let mut state = lock(&self.state);
-                state.record_crash(&self.site, self.settings.crash_limit);
+                state.record_crash(&self.site, &self.settings);
                 return Err(format!("cannot run php-cgi: {error}"));
             }
         };
@@ -319,7 +328,7 @@ impl SitePool {
                         let _ = stop.send(Duration::ZERO);
                     }
                 }
-                state.record_crash(&self.site, self.settings.crash_limit);
+                state.record_crash(&self.site, &self.settings);
                 return Err(format!("php-cgi never listened on port {port}"));
             }
             sleep_until(next_try).await;
@@ -368,7 +377,7 @@ async fn watch_worker(
             // PHP has no limit of its own, so leaving unasked is always a crash.
             if worker.stop.is_some() {
                 warn!(%site, port, ?status, "php-cgi crashed; the next request restarts it");
-                state.record_crash(&site, settings.crash_limit);
+                state.record_crash(&site, &settings);
             }
         }
     }
@@ -495,7 +504,7 @@ pub async fn lease(site: &str, version: &str) -> Result<Lease, PoolError> {
                 let launch: Launch =
                     Arc::new(move |address| php_cgi_command(&binary, &ini, &cache_id, address));
                 let ports = PORTS.get_or_init(Default::default).clone();
-                let settings = PoolSettings::default();
+                let settings = PoolSettings { alerts: Some(super::php_alerts::alert_file()), ..PoolSettings::default() };
                 let pool = Arc::new(SitePool::new(site.to_string(), settings, launch, ports));
                 pools.insert(key, pool.clone());
                 pool
@@ -663,19 +672,27 @@ mod tests {
 
     #[tokio::test]
     async fn too_many_crashes_take_the_site_down_until_the_window_passes() {
+        let dir = tempfile::tempdir().unwrap();
+        let alerts = dir.path().join("php-pool-alerts.jsonl");
         let settings = PoolSettings {
             crash_limit: 3,
             crash_window: Duration::from_secs(3),
+            alerts: Some(alerts.clone()),
             ..Default::default()
         };
         let pool = pool(19120, 0, settings);
-        for _ in 0..3 {
+        for crash in 0..3 {
+            assert!(super::super::php_alerts::since(&alerts, 0).is_empty(), "an alert before crash {crash}");
             let lease = pool.acquire().await.unwrap();
             ask(&lease, b'd').await;
             drop(lease);
             until("the crash to be seen", || worker_count(&pool) == 0).await;
         }
         assert_eq!(pool.acquire().await.err(), Some(PoolError::Down));
+        // One alert for the storm, which the panel turns into a notification.
+        let written = super::super::php_alerts::since(&alerts, 0);
+        assert_eq!(written.len(), 1, "{written:?}");
+        assert_eq!((written[0].crashes, written[0].window_seconds), (3, 3));
         sleep(Duration::from_secs(3)).await;
         assert!(pool.acquire().await.is_ok());
     }
@@ -782,5 +799,54 @@ mod tests {
         release_port(&ports, 19161);
         assert_eq!(reserve_port(&ports, &(19160..=19161)), Ok(19161));
         drop(holder);
+    }
+
+    /// F2 with a real php-cgi, which CI does not have: run by hand with
+    /// `DPANEL_TEST_PHP_CGI` (an NTS php-cgi.exe) and `DRUST_API_TOKEN` set.
+    /// The pool's own limit swaps the process after `max_requests`, PHP
+    /// never sees drust's token, and a killed worker is replaced.
+    #[tokio::test]
+    #[ignore = "needs a real php-cgi: DPANEL_TEST_PHP_CGI"]
+    async fn a_real_php_cgi_is_recycled_and_never_sees_the_token() {
+        let binary = PathBuf::from(std::env::var_os("DPANEL_TEST_PHP_CGI").expect("DPANEL_TEST_PHP_CGI"));
+        let token = std::env::var("DRUST_API_TOKEN").expect("DRUST_API_TOKEN, so that there is one to leak");
+        let dir = tempfile::tempdir().unwrap();
+        let ini = write_php_ini(&binary, "8.3", dir.path()).unwrap();
+        let script = dir.path().join("probe.php");
+        fs::write(
+            &script,
+            "<?php echo getmypid(), ' ', var_export(getenv('DRUST_API_TOKEN'), true), ' ', var_export($_SERVER['DRUST_API_TOKEN'] ?? null, true), ' ', PHP_ZTS ? 'zts' : 'nts';",
+        )
+        .unwrap();
+        let launch: Launch = Arc::new(move |address| php_cgi_command(&binary, &ini, "real", address));
+        let settings = PoolSettings { ports: 19200..=19209, max_processes: 1, max_requests: 500, ..Default::default() };
+        let pool = SitePool::new("real".into(), settings, launch, Ports::default());
+
+        let mut pids = Vec::new();
+        for _ in 0..600 {
+            let lease = pool.acquire().await.unwrap();
+            let body = super::super::php::run_script_for_test(&lease.endpoint(), &script).await.unwrap();
+            drop(lease);
+            let parts: Vec<&str> = body.split(' ').collect();
+            assert_eq!(&parts[1..], ["false", "NULL", "nts"], "PHP saw drust's environment, or is not NTS: {body}");
+            assert!(!body.contains(&token));
+            pids.push(parts[0].to_string());
+        }
+        let first = &pids[0];
+        assert!(pids[..500].iter().all(|pid| pid == first), "a recycle before 500 requests");
+        assert!(pids[500..].iter().all(|pid| pid != first && *pid == pids[500]), "no recycle at 500");
+
+        // A crash: the next request gets a new process.
+        let lease = pool.acquire().await.unwrap();
+        let FastCgiEndpoint::Tcp(address) = lease.endpoint() else { panic!() };
+        let pid = super::super::php::run_script_for_test(&lease.endpoint(), &script).await.unwrap();
+        let pid = pid.split(' ').next().unwrap().to_string();
+        drop(lease);
+        let killed = std::process::Command::new("taskkill").args(["/F", "/PID", &pid]).output().unwrap();
+        assert!(killed.status.success(), "{killed:?}");
+        until("the crash to be seen", || worker_count(&pool) == 0).await;
+        let lease = pool.acquire().await.unwrap();
+        let body = super::super::php::run_script_for_test(&lease.endpoint(), &script).await.unwrap();
+        assert_ne!(body.split(' ').next().unwrap(), pid, "{address}");
     }
 }

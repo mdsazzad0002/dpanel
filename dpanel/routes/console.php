@@ -79,6 +79,12 @@ Schedule::command('panel:update-sync')
     ->everyMinute()
     ->withoutOverlapping();
 
+// Platform spec section 9: a site whose PHP keeps crashing in the php-cgi
+// pool (Windows) answers 503; its owner and the admins hear of it.
+Schedule::command('php:pool-alerts')
+    ->everyMinute()
+    ->withoutOverlapping();
+
 // dPanel ⇄ dPanel live migration: remove packages of transfers abandoned a day ago.
 Schedule::call(fn () => app(\App\Services\PanelLink\PanelPackageStore::class)->prune())
     ->hourly()

@@ -20,6 +20,7 @@ pub fn routes() -> Router<Arc<ApiState>> {
         .route("/system/overview", get(overview))
         .route("/system/services", get(services))
         .route("/system/addresses", get(addresses))
+        .route("/php-pool/alerts", get(php_pool_alerts))
 }
 
 /// `501` where the OS has no address listing yet, so the panel can say so.
@@ -88,6 +89,25 @@ async fn overview(State(state): State<Arc<ApiState>>, headers: HeaderMap, Query(
     match tokio::task::spawn_blocking(move || crate::platform::metrics::overview(&services, &disk_path)).await {
         Ok(overview) => Json(serde_json::json!({ "success": true, "overview": overview })).into_response(),
         Err(error) => ApiResponse::error(&format!("System overview stopped: {error}")).into_response(),
+    }
+}
+
+#[derive(Deserialize)]
+struct AlertsQuery {
+    /// The last alert id the panel has seen.
+    #[serde(default)]
+    after: u64,
+}
+
+/// Sites whose PHP kept crashing (spec section 9), newer than `after`.
+async fn php_pool_alerts(State(state): State<Arc<ApiState>>, headers: HeaderMap, Query(query): Query<AlertsQuery>) -> Response {
+    if let Err(error) = check_token(&state, &headers) {
+        return error.into_response();
+    }
+    let file = crate::edge_gateway::php_alerts::alert_file();
+    match tokio::task::spawn_blocking(move || crate::edge_gateway::php_alerts::since(&file, query.after)).await {
+        Ok(alerts) => Json(serde_json::json!({ "success": true, "alerts": alerts })).into_response(),
+        Err(error) => ApiResponse::error(&format!("Reading PHP alerts stopped: {error}")).into_response(),
     }
 }
 

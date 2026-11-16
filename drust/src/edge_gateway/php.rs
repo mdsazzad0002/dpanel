@@ -343,6 +343,35 @@ async fn fastcgi_request(
     Ok(response)
 }
 
+/// Runs `script` on the PHP at `endpoint` and returns its body, for tests
+/// that drive a real php-cgi.
+#[cfg(test)]
+pub(super) async fn run_script_for_test(endpoint: &FastCgiEndpoint, script: &Path) -> Result<String, String> {
+    let script = script.to_string_lossy().into_owned();
+    let params: Vec<(String, String)> = [
+        ("SCRIPT_FILENAME", script.as_str()),
+        ("SCRIPT_NAME", "/test.php"),
+        ("REQUEST_METHOD", "GET"),
+        ("REQUEST_URI", "/test.php"),
+        ("QUERY_STRING", ""),
+        ("SERVER_PROTOCOL", "HTTP/1.1"),
+        ("GATEWAY_INTERFACE", "CGI/1.1"),
+        ("REDIRECT_STATUS", "200"),
+    ]
+    .map(|(name, value)| (name.to_string(), value.to_string()))
+    .to_vec();
+    let response = fastcgi_request(
+        endpoint,
+        None,
+        &params,
+        RequestInput::Buffered(Bytes::new()),
+        Instant::now() + Duration::from_secs(20),
+    )
+    .await?;
+    let body = axum::body::to_bytes(response.into_body(), 1 << 20).await.map_err(|error| error.to_string())?;
+    Ok(String::from_utf8_lossy(&body).into_owned())
+}
+
 /// A PHP-FPM reload (a new site's pool being added) recreates every socket
 /// of that PHP version; for a moment they are missing or refuse connections.
 /// Nothing has been sent yet, so retrying for a few seconds is safe.
