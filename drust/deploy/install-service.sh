@@ -1,5 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
+# Say where it stopped: a failing command whose error goes to /dev/null
+# otherwise ends the install with no message at all.
+trap 'echo "[drust] install-service.sh stopped at line ${LINENO}: ${BASH_COMMAND} (exit $?)" >&2' ERR
 
 if [[ "$(id -u)" -ne 0 ]]; then
   echo "Run as root: sudo $0" >&2
@@ -431,7 +434,9 @@ cleanup_build_artifacts() {
     return 0
   fi
   local size
-  size="$(du -sch "${DRUST_ROOT}/target" "${CARGO_HOME}/registry" "${CARGO_HOME}/git" 2>/dev/null | tail -n1 | cut -f1)"
+  # du exits 1 when one of these is missing (often ${CARGO_HOME}/git); under
+  # pipefail that silently ended the install right after the restart.
+  size="$(du -sch "${DRUST_ROOT}/target" "${CARGO_HOME}/registry" "${CARGO_HOME}/git" 2>/dev/null | tail -n1 | cut -f1 || true)"
   echo "[drust] Removing build artifacts and the Cargo download cache (${size:-unknown size})."
   rm -rf -- "${DRUST_ROOT}/target" "${CARGO_HOME}/registry" "${CARGO_HOME}/git"
 }
