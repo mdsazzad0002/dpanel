@@ -147,19 +147,23 @@ class MonitoringController extends Controller
     private function systemSnapshot(): array
     {
         if (! app(LocalCommand::class)->supports(LocalCommand::LINUX_TOOLS)) {
+            // drust's overview has the machine's own figures on every OS;
+            // the hardware details below are read from Linux only.
+            $machine = DashboardController::systemSnapshot($this->overview());
+
             return [
-                'cpu_load_percent' => 0.0,
-                'cpu_model' => null,
+                'cpu_load_percent' => $machine['cpu_load_percent'],
+                'cpu_model' => $this->overview()['cpu_model'] ?? null,
                 'cpu_clock_mhz' => null,
                 'bus_speed_mhz' => null,
                 'cpu_max_mhz' => null,
                 'cpu_min_mhz' => null,
-                'memory_used_mb' => 0,
-                'memory_total_mb' => 0,
+                'memory_used_mb' => $machine['memory_used_mb'],
+                'memory_total_mb' => $machine['memory_total_mb'],
                 'memory_speed_mt_s' => null,
                 'memory_configured_speed_mt_s' => null,
-                'disk_used_gb' => 0.0,
-                'disk_total_gb' => 0.0,
+                'disk_used_gb' => $machine['disk_used_gb'],
+                'disk_total_gb' => $machine['disk_total_gb'],
                 'disks' => [],
             ];
         }
@@ -504,16 +508,28 @@ class MonitoringController extends Controller
             'connection_breakdown' => [],
         ];
 
-        if (! app(LocalCommand::class)->supports(LocalCommand::LINUX_TOOLS)) {
-            return $telemetry;
-        }
-
         $telemetry['cpu_cores'] = isset($overview['cpu_cores']) ? (int) $overview['cpu_cores'] : null;
         $telemetry['uptime_seconds'] = isset($overview['uptime_seconds']) ? (int) $overview['uptime_seconds'] : null;
         $telemetry['load_average'] = isset($overview['load']) ? array_map(fn ($value): float => round((float) $value, 2), (array) $overview['load']) : null;
         $telemetry['process_count'] = $overview['process_count'] ?? null;
         $telemetry['swap_total_mb'] = (int) floor((int) ($memory['swap_total_kb'] ?? 0) / 1024);
         $telemetry['swap_used_mb'] = (int) floor(max(0, (int) ($memory['swap_total_kb'] ?? 0) - (int) ($memory['swap_free_kb'] ?? 0)) / 1024);
+
+        if (! app(LocalCommand::class)->supports(LocalCommand::LINUX_TOOLS)) {
+            // Sensors and sockets are read from Linux only; drust gives the
+            // interfaces' byte counts everywhere it can.
+            $telemetry['network'] = collect((array) ($overview['network'] ?? []))
+                ->map(fn ($interface): array => [
+                    'name' => (string) data_get($interface, 'name', ''),
+                    'rx_bytes' => (int) data_get($interface, 'rx_bytes', 0),
+                    'tx_bytes' => (int) data_get($interface, 'tx_bytes', 0),
+                ])
+                ->filter(fn (array $interface): bool => $interface['name'] !== '')
+                ->values()
+                ->all();
+
+            return $telemetry;
+        }
 
         $telemetry['temperatures'] = $this->temperatureSensors();
         $interfaces = collect($this->networkInterfaces());

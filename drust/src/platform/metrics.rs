@@ -127,6 +127,24 @@ fn disk(path: &Path) -> Option<Disk> {
     super::disk_space(path).map(|(total, free)| Disk { path: path.display().to_string(), total_bytes: total, free_bytes: free })
 }
 
+/// The process count and interfaces from the OS's own calls, where there is
+/// no `/proc`. Nothing on Linux or macOS (yet).
+fn native_processes_and_network() -> (Option<usize>, Vec<NetworkInterface>) {
+    #[cfg(windows)]
+    {
+        use super::windows::system_info;
+        let network = system_info::network_interfaces()
+            .into_iter()
+            .map(|(name, rx_bytes, tx_bytes)| NetworkInterface { name, rx_bytes, tx_bytes })
+            .collect();
+        (system_info::process_count(), network)
+    }
+    #[cfg(not(windows))]
+    {
+        (None, Vec::new())
+    }
+}
+
 /// What Linux reads from `/proc`, from the OS's own calls: uptime, CPU
 /// model and memory. Nothing on Linux (it has `/proc`) or macOS (yet).
 fn native_figures() -> (Option<u64>, Option<String>, Option<Memory>) {
@@ -150,6 +168,8 @@ fn native_figures() -> (Option<u64>, Option<String>, Option<Memory>) {
 pub fn overview(services: &[String], disk_path: &Path) -> Overview {
     let (native_uptime, native_cpu, native_memory) = native_figures();
     let os = super::current().os();
+    let (native_processes, native_network) =
+        if os == Os::Linux { (None, Vec::new()) } else { native_processes_and_network() };
     let proc_text = |name: &str| if os == Os::Linux { fs::read_to_string(format!("/proc/{name}")).ok() } else { None };
     let manager = super::services();
     let services = services
@@ -180,12 +200,17 @@ pub fn overview(services: &[String], disk_path: &Path) -> Overview {
         load: proc_text("loadavg").as_deref().and_then(parse_loadavg),
         memory: proc_text("meminfo").as_deref().and_then(parse_meminfo).or(native_memory),
         disk: disk(disk_path),
-        process_count: (os == Os::Linux).then(|| {
-            fs::read_dir("/proc").map_or(0, |entries| {
+        process_count: if os == Os::Linux {
+            Some(fs::read_dir("/proc").map_or(0, |entries| {
                 entries.flatten().filter(|entry| entry.file_name().to_string_lossy().chars().all(|c| c.is_ascii_digit())).count()
-            })
-        }),
-        network: proc_text("net/dev").as_deref().map(parse_net_dev).unwrap_or_default(),
+            }))
+        } else {
+            native_processes
+        },
+        network: match proc_text("net/dev") {
+            Some(text) => parse_net_dev(&text),
+            None => native_network,
+        },
         services,
     }
 }
@@ -207,6 +232,11 @@ mod tests {
         assert!(overview.uptime_seconds.is_some_and(|seconds| seconds > 0));
         assert!(overview.cpu_model.is_some_and(|model| !model.is_empty()));
         assert_eq!(overview.load, None);
+        // This test process alone is one; Windows itself runs dozens.
+        assert!(overview.process_count.is_some_and(|count| count > 10), "{:?}", overview.process_count);
+        assert!(overview.network.iter().all(|interface| !interface.name.is_empty() && !interface.name.contains("Loopback")));
+        let names: Vec<&str> = overview.network.iter().map(|interface| interface.name.as_str()).collect();
+        assert!(!names.iter().any(|name| name.contains("Filter")), "{names:?}");
     }
 
     #[test]

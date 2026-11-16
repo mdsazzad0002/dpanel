@@ -117,4 +117,34 @@ class SystemOverviewTest extends TestCase
         $this->assertSame([], $this->invokeHidden($controller, 'connectionBreakdown'));
         $this->assertSame([null], array_values(array_unique($this->invokeHidden($controller, 'connectionStats'))));
     }
+
+    public function test_monitoring_on_a_pc_shows_drusts_memory_disk_cores_and_network(): void
+    {
+        Http::fake(['drust.test/system/overview*' => Http::response(['success' => true, 'overview' => [
+            'os' => 'windows', 'cpu_cores' => 8, 'cpu_model' => 'Intel Core i5', 'uptime_seconds' => 90061, 'load' => null,
+            'process_count' => 212,
+            'memory' => ['total_kb' => 16 * 1024 * 1024, 'available_kb' => 4 * 1024 * 1024, 'swap_total_kb' => 2 * 1024 * 1024, 'swap_free_kb' => 1024 * 1024],
+            'disk' => ['path' => 'C:\\', 'total_bytes' => 100 * 1024 ** 3, 'free_bytes' => 40 * 1024 ** 3],
+            'network' => [['name' => 'Ethernet', 'rx_bytes' => 5000, 'tx_bytes' => 7000]],
+        ]])]);
+        $this->app->instance(LocalCommand::class, new LocalCommand('Windows'));
+        $controller = app(MonitoringController::class);
+
+        $system = $this->invokeHidden($controller, 'systemSnapshot');
+        $this->assertSame(12288, $system['memory_used_mb']);
+        $this->assertSame(16384, $system['memory_total_mb']);
+        $this->assertSame(60.0, $system['disk_used_gb']);
+        $this->assertSame('Intel Core i5', $system['cpu_model']);
+        $this->assertSame([], $system['disks']);
+
+        $host = $this->invokeHidden($controller, 'hostTelemetry');
+        $this->assertSame(8, $host['cpu_cores']);
+        $this->assertSame(90061, $host['uptime_seconds']);
+        $this->assertSame(212, $host['process_count']);
+        $this->assertSame(2048, $host['swap_total_mb']);
+        $this->assertSame(1024, $host['swap_used_mb']);
+        $this->assertNull($host['load_average']);
+        $this->assertSame([['name' => 'Ethernet', 'rx_bytes' => 5000, 'tx_bytes' => 7000]], $host['network']);
+        $this->assertSame([], $host['temperatures']);
+    }
 }
