@@ -63,6 +63,12 @@ min_examined_row_limit = 0
 log_slow_admin_statements = ON
 CONF
 
+  # Newer MariaDB packages already rotate /var/log/mysql/*.log. Naming the slow
+  # log a second time is a "duplicate log entry" error that makes logrotate
+  # skip MariaDB's whole file and the logrotate service fail every night.
+  if grep -qsE '^[^#]*/var/log/mysql/\*\.log' /etc/logrotate.d/mariadb /etc/logrotate.d/mysql-server /etc/logrotate.d/mysql; then
+    rm -f "$MARIADB_SLOW_LOGROTATE"
+  else
   cat > "$MARIADB_SLOW_LOGROTATE" <<'ROTATE'
 /var/log/mysql/dpanel-slow.log {
     weekly
@@ -79,6 +85,7 @@ CONF
     endscript
 }
 ROTATE
+  fi
   panel_info_log "Database tuned for ${memory} MB RAM (buffer pool ${buffer_pool}M, max connections ${max_connections})."
 }
 
