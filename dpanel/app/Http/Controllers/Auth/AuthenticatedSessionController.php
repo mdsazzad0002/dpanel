@@ -27,6 +27,7 @@ class AuthenticatedSessionController extends Controller
         return Inertia::render('Auth/Login', [
             'canResetPassword' => Route::has('password.request'),
             'status' => session('status'),
+            'locationMode' => \App\Services\LoginAudit\DeviceLocation::mode(request()),
         ]);
     }
 
@@ -37,6 +38,8 @@ class AuthenticatedSessionController extends Controller
     {
         $user = $request->authenticate();
         $request->session()->regenerate();
+        // The 2FA step posts only the code; keep the form's location for it.
+        \App\Services\LoginAudit\DeviceLocation::remember($request);
 
         if (! (bool) $user->two_factor_enabled) {
             $request->session()->forget('two_factor.challenge');

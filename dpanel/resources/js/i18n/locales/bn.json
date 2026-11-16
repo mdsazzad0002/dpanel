@@ -864,6 +864,8 @@
         "securityCenterRulesHint": "Scanner rule চালু বা বন্ধ করুন",
         "fail2ban": "Fail2ban",
         "fail2banHint": "SSH login, block করা IP ও whitelist",
+        "securityLoginAudit": "Login অডিট",
+        "securityLoginAuditHint": "Panel ও SSH login, IP আর কোথা থেকে",
         "securityFail2ban": "SSH login-এর ইতিহাস",
         "securityFail2banHint": "Login-এর চেষ্টা ও block-এর setting",
         "securityFail2banWhitelist": "Whitelist",

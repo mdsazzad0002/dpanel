@@ -65,6 +65,7 @@ use App\Http\Controllers\SecurityController;
 use App\Http\Controllers\Security\FirewallRuleController;
 use App\Http\Controllers\Security\LoginUserController;
 use App\Http\Controllers\Fail2banController;
+use App\Http\Controllers\Security\LoginAuditController;
 use App\Http\Controllers\DockerController;
 use App\Http\Controllers\Docker\DockerNetworkController;
 use App\Http\Controllers\Docker\DockerStackController;
@@ -1196,6 +1197,26 @@ Route::prefix('dpt{token}')
             Route::post('/security/login-users', [LoginUserController::class, 'control'])
                 ->middleware(['role:admin', 'throttle:30,1'])
                 ->name('security.login-users.control');
+
+            // Panel and SSH login audit with IP location, admins only.
+            Route::get('/security/login-audit', [LoginAuditController::class, 'index'])
+                ->middleware('role:admin')
+                ->name('security.login-audit');
+            Route::get('/security/login-audit/events', [LoginAuditController::class, 'events'])
+                ->middleware('role:admin')
+                ->name('security.login-audit.events');
+            Route::get('/security/login-audit/map', [LoginAuditController::class, 'map'])
+                ->middleware('role:admin')
+                ->name('security.login-audit.map');
+            Route::post('/security/login-audit/sync', [LoginAuditController::class, 'sync'])
+                ->middleware(['role:admin', 'throttle:10,1'])
+                ->name('security.login-audit.sync');
+            Route::post('/security/login-audit/location', [LoginAuditController::class, 'location'])
+                ->middleware(['role:admin', 'throttle:20,1'])
+                ->name('security.login-audit.location');
+            Route::post('/security/login-audit/geoip', [LoginAuditController::class, 'geoip'])
+                ->middleware(['role:admin', 'throttle:3,10'])
+                ->name('security.login-audit.geoip');
 
             // Server-wide bans, so admins only.
             Route::get('/security/fail2ban', [Fail2banController::class, 'index'])

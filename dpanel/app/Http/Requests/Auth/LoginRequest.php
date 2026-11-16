@@ -2,7 +2,10 @@
 
 namespace App\Http\Requests\Auth;
 
+use App\Models\LoginEvent;
 use App\Models\User;
+use App\Services\LoginAudit\DeviceLocation;
+use App\Services\LoginAudit\LoginAuditRecorder;
 use Illuminate\Auth\Events\Lockout;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Support\Facades\Hash;
@@ -30,7 +33,27 @@ class LoginRequest extends FormRequest
         return [
             'email' => ['required', 'string', 'email'],
             'password' => ['required', 'string'],
+        ] + DeviceLocation::rules($this);
+    }
+
+    /** @return array<string, string> */
+    public function messages(): array
+    {
+        $message = 'Allow location access for this site to sign in. It is required over HTTPS.';
+
+        return [
+            'device_latitude.required' => $message,
+            'device_longitude.required' => $message,
         ];
+    }
+
+    protected function failedValidation(\Illuminate\Contracts\Validation\Validator $validator): void
+    {
+        if ($validator->errors()->has('device_latitude') || $validator->errors()->has('device_longitude')) {
+            $this->recordFailure('Location not shared');
+        }
+
+        parent::failedValidation($validator);
     }
 
     /**
@@ -48,6 +71,7 @@ class LoginRequest extends FormRequest
 
         if (! $user instanceof User) {
             RateLimiter::hit($this->throttleKey());
+            $this->recordFailure('No panel account with this email');
 
             throw ValidationException::withMessages([
                 'email' => trans('auth.failed'),
@@ -56,6 +80,7 @@ class LoginRequest extends FormRequest
 
         if ($user && (bool) $user->is_suspended) {
             RateLimiter::hit($this->throttleKey());
+            $this->recordFailure('Account is suspended', $user);
 
             throw ValidationException::withMessages([
                 'email' => 'Your account is suspended. Please contact support.',
@@ -64,6 +89,7 @@ class LoginRequest extends FormRequest
 
         if (! Hash::check((string) $this->string('password'), (string) $user->password)) {
             RateLimiter::hit($this->throttleKey());
+            $this->recordFailure('Wrong password', $user);
 
             throw ValidationException::withMessages([
                 'email' => trans('auth.failed'),
@@ -89,6 +115,7 @@ class LoginRequest extends FormRequest
         event(new Lockout($this));
 
         $seconds = RateLimiter::availableIn($this->throttleKey());
+        $this->recordFailure("Too many attempts, locked for {$seconds}s");
 
         throw ValidationException::withMessages([
             'email' => trans('auth.throttle', [
@@ -96,6 +123,20 @@ class LoginRequest extends FormRequest
                 'minutes' => ceil($seconds / 60),
             ]),
         ]);
+    }
+
+    private function recordFailure(string $reason, ?User $user = null): void
+    {
+        app(LoginAuditRecorder::class)->record([
+            'channel' => LoginEvent::CHANNEL_PANEL,
+            'result' => LoginEvent::RESULT_FAILED,
+            'method' => 'password',
+            'reason' => $reason,
+            'user_id' => $user?->id,
+            'username' => $this->string('email')->toString(),
+            'ip_address' => (string) $this->ip(),
+            'user_agent' => (string) $this->userAgent(),
+        ] + DeviceLocation::from($this));
     }
 
     /**

@@ -173,4 +173,7 @@ return [
         'cat /var/log',
         'cat /etc/',
     ],
+
+    // Days a login_events row is kept (panel and SSH login audit).
+    'login_audit_retention_days' => (int) env('DPANEL_LOGIN_AUDIT_RETENTION_DAYS', 15),
 ];

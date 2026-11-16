@@ -29,6 +29,24 @@ watch(() => props.pending, (now, before) => {
 const isRoot = computed(() => Number(props.user?.uid) === 0);
 const loginShells = computed(() => props.shells.filter((item) => !/nologin$/.test(item)));
 const nologinShell = computed(() => props.shells.find((item) => /nologin$/.test(item)) || '/usr/sbin/nologin');
+// The list names each shell once; keep the user's own spelling (e.g. /usr/bin/bash) selectable.
+const shellOptions = computed(() => (
+    props.user?.shell && !props.shells.includes(props.user.shell) ? [...props.shells, props.user.shell].sort() : props.shells
+));
+const SHELL_NOTES = {
+    bash: 'full shell, recommended',
+    rbash: 'restricted bash: no cd, no changing PATH',
+    sh: 'basic POSIX shell',
+    dash: 'basic POSIX shell (what sh runs on Ubuntu)',
+    zsh: 'full shell',
+    fish: 'full shell',
+    nologin: 'login blocked',
+    false: 'login blocked',
+};
+const shellLabel = (path) => {
+    const note = SHELL_NOTES[path.split('/').pop()];
+    return note ? `${path} — ${note}` : path;
+};
 
 const generatePassword = () => {
     const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789!@#%^*-_=+';
@@ -47,7 +65,7 @@ const act = (action, extra = {}, confirmText = '') => {
     <Teleport to="body">
         <div v-if="user" class="fixed inset-0 z-50">
             <button type="button" aria-label="Close user panel" class="absolute inset-0 bg-slate-950/50" @click="emit('close')" />
-            <aside class="absolute inset-y-0 right-0 flex w-full flex-col bg-white shadow-2xl sm:w-[30rem] dark:bg-slate-900">
+            <aside class="absolute inset-y-0 right-0 flex w-full flex-col bg-white text-slate-900 shadow-2xl sm:w-[30rem] dark:bg-slate-900 dark:text-slate-100">
                 <header class="flex items-center justify-between border-b border-slate-200 px-5 py-4 dark:border-slate-800">
                     <div class="min-w-0">
                         <h2 class="truncate font-semibold text-slate-900 dark:text-white"><i class="bi bi-person-lock mr-1"></i>{{ user.name }}</h2>
@@ -66,7 +84,7 @@ const act = (action, extra = {}, confirmText = '') => {
                         <p class="text-xs text-slate-500">Blocking login sets the shell to nologin: SSH (password or key) and su stop working. The user's websites and cron jobs keep running.</p>
                         <div class="flex gap-2">
                             <select v-model="shell" class="min-w-0 flex-1 rounded-lg border border-slate-300 px-3 py-2 dark:border-slate-700 dark:bg-slate-800">
-                                <option v-for="item in shells" :key="item" :value="item" :disabled="isRoot && /nologin$/.test(item)">{{ item }}</option>
+                                <option v-for="item in shellOptions" :key="item" :value="item" :disabled="isRoot && /nologin$/.test(item)">{{ shellLabel(item) }}</option>
                             </select>
                             <button type="button" :disabled="busy || shell === user.shell" class="rounded-lg bg-blue-600 px-3 py-2 font-medium text-white hover:bg-blue-700 disabled:opacity-50" @click="act('set_shell', { shell })"><i v-if="pending === 'set_shell'" class="bi bi-arrow-repeat mr-1 inline-block animate-spin"></i>{{ pending === 'set_shell' ? 'Saving…' : 'Save' }}</button>
                         </div>

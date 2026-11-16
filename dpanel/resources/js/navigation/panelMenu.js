@@ -197,6 +197,7 @@ export const buildPanelMenu = (userRoles = []) => [
         ],
     },
     { section: 'Security', label: t('nav.securityFirewallRules'), hint: t('nav.securityFirewallRulesHint'), icon: 'FW', iconClass: 'bi bi-bricks', routeName: 'security.firewall.rules', roles: ['admin'], color: 'red' },
+    { section: 'Security', label: t('nav.securityLoginAudit'), hint: t('nav.securityLoginAuditHint'), icon: 'LA', iconClass: 'bi bi-geo-alt', routeName: 'security.login-audit', roles: ['admin'], color: 'red' },
     { section: 'Security', label: t('nav.securityLoginUsers'), hint: t('nav.securityLoginUsersHint'), icon: 'LU', iconClass: 'bi bi-person-lock', routeName: 'security.login-users', roles: ['admin'], userIds: [1], color: 'violet' },
     {
         section: 'Traffic & SEO',

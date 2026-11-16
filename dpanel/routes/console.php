@@ -96,3 +96,13 @@ Schedule::call(fn () => app(\App\Services\PanelLink\PanelPackageStore::class)->p
 Schedule::command('storage:prune')
     ->hourly()
     ->withoutOverlapping();
+
+// Login audit: SSH logins are copied out of the journal before it rotates.
+Schedule::command('login-audit:sync')
+    ->everyFiveMinutes()
+    ->withoutOverlapping();
+
+// Downloads only when the DB-IP file is missing or over a month old.
+Schedule::command('login-audit:geoip-update')
+    ->dailyAt('05:10')
+    ->withoutOverlapping();

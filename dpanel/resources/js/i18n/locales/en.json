@@ -864,6 +864,8 @@
         "securityCenterRulesHint": "Turn scanner rules on or off",
         "fail2ban": "Fail2ban",
         "fail2banHint": "SSH logins, blocked IPs and whitelist",
+        "securityLoginAudit": "Login Audit",
+        "securityLoginAuditHint": "Panel and SSH logins with IP and location",
         "securityFail2ban": "SSH Login History",
         "securityFail2banHint": "Login attempts and block settings",
         "securityFail2banWhitelist": "Whitelist",

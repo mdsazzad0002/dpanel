@@ -113,6 +113,16 @@ class TwoFactorChallengeController extends Controller
         if (! $valid) {
             $attempts = (int) ($pending['attempts'] ?? 0) + 1;
             $request->session()->put('two_factor.challenge.attempts', $attempts);
+            app(\App\Services\LoginAudit\LoginAuditRecorder::class)->record([
+                'channel' => \App\Models\LoginEvent::CHANNEL_PANEL,
+                'result' => \App\Models\LoginEvent::RESULT_FAILED,
+                'method' => 'password + 2FA',
+                'reason' => "Wrong 2FA code ({$method}), attempt {$attempts}",
+                'user_id' => $user->id,
+                'username' => (string) $user->email,
+                'ip_address' => (string) $request->ip(),
+                'user_agent' => (string) $request->userAgent(),
+            ] + \App\Services\LoginAudit\DeviceLocation::from($request));
 
             return back()->withErrors([
                 'code' => 'The two-factor code is invalid.',

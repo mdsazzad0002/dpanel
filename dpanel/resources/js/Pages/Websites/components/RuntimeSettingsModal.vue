@@ -177,7 +177,7 @@ const saveRuntimeSettings = async () => {
     <Teleport to="body">
         <div v-if="modelValue" class="fixed inset-0 z-50" @keydown.esc="close">
             <div class="absolute inset-0 bg-slate-950/45" @click="close"></div>
-            <aside class="absolute inset-y-0 right-0 flex w-full max-w-md flex-col bg-white shadow-2xl dark:bg-slate-900" role="dialog" aria-modal="true" aria-labelledby="runtime-settings-title">
+            <aside class="absolute inset-y-0 right-0 flex w-full max-w-md flex-col bg-white text-slate-900 shadow-2xl dark:bg-slate-900 dark:text-slate-100" role="dialog" aria-modal="true" aria-labelledby="runtime-settings-title">
                 <div class="flex items-start justify-between border-b border-slate-200 p-5 dark:border-slate-800">
                     <div>
                         <h2 id="runtime-settings-title" class="text-lg font-semibold text-slate-900 dark:text-white">{{ t('websites.runtime.title') }}</h2>

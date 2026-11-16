@@ -7,13 +7,19 @@ import PrimaryButton from '@/Components/PrimaryButton.vue';
 import TextInput from '@/Components/TextInput.vue';
 import { Head, Link, useForm } from '@inertiajs/vue3';
 import axios from 'axios';
+import { ref } from 'vue';
+import { readDeviceLocation } from '@/composables/deviceLocation';
 
-defineProps({
+const props = defineProps({
     canResetPassword: {
         type: Boolean,
     },
     status: {
         type: String,
+    },
+    locationMode: {
+        type: String,
+        default: 'ask',
     },
 });
 
@@ -23,6 +29,12 @@ const form = useForm({
     remember: false,
 });
 
+// The admin picks off / ask / required per protocol on the Login Audit page;
+// the server sends the mode for the protocol this page was opened on.
+const askLocation = props.locationMode !== 'off';
+const locationRequired = props.locationMode === 'required';
+const locating = ref(false);
+
 const submit = async () => {
     if (form.processing) {
         return;
@@ -30,8 +42,26 @@ const submit = async () => {
 
     form.clearErrors();
     form.processing = true;
+
+    let location = {};
+    if (askLocation) {
+        locating.value = true;
+        try {
+            location = await readDeviceLocation();
+        } catch (error) {
+            // In "ask" mode a refusal is fine; the IP location is still saved.
+            if (locationRequired) {
+                form.setError('location', error.message);
+                form.processing = false;
+                return;
+            }
+        } finally {
+            locating.value = false;
+        }
+    }
+
     try {
-        const response = await axios.post('/login', form.data(), {
+        const response = await axios.post('/login', { ...form.data(), ...location }, {
             headers: { Accept: 'application/json', 'X-Requested-With': 'XMLHttpRequest' },
         });
         await new Promise((resolve) => setTimeout(resolve, 700));
@@ -44,7 +74,8 @@ const submit = async () => {
     } catch (error) {
         const data = error?.response?.data || {};
         Object.entries(data.errors || {}).forEach(([key, messages]) => {
-            form.setError(key, Array.isArray(messages) ? messages[0] : messages);
+            const field = key.startsWith('device_') ? 'location' : key;
+            form.setError(field, Array.isArray(messages) ? messages[0] : messages);
         });
     } finally {
         form.processing = false;
@@ -121,13 +152,24 @@ const submit = async () => {
                     </Link>
                 </div>
 
+                <div v-if="askLocation" class="space-y-2">
+                    <p class="flex items-start gap-2 text-xs leading-5 text-slate-400">
+                        <i class="bi bi-geo-alt mt-0.5 text-emerald-300"></i>
+                        <span>
+                            Your device location is recorded with each sign-in for the security audit. The browser will ask for permission.
+                            <template v-if="locationRequired"> Signing in needs it.</template>
+                        </span>
+                    </p>
+                    <InputError :message="form.errors.location" />
+                </div>
+
                 <PrimaryButton
                     type="submit"
                     class="w-full justify-center rounded-xl bg-gradient-to-r from-emerald-400 to-cyan-400 py-3 text-sm font-semibold tracking-[0.14em] text-slate-950 shadow-lg shadow-emerald-500/20 transition hover:from-emerald-300 hover:to-cyan-300 focus:bg-emerald-400"
                     :class="{ 'opacity-25': form.processing }"
                     :disabled="form.processing"
                 >
-                    {{ form.processing ? 'AUTHENTICATING...' : 'LOGIN TO SERVER' }}
+                    {{ locating ? 'GETTING LOCATION...' : (form.processing ? 'AUTHENTICATING...' : 'LOGIN TO SERVER') }}
                 </PrimaryButton>
             </form>
         </section>

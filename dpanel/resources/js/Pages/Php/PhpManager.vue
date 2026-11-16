@@ -215,7 +215,7 @@ const saveExtensions = async () => {
         <Teleport to="body">
             <div v-if="extensionPanelOpen" class="fixed inset-0 z-50">
                 <button type="button" aria-label="Close extension editor" class="absolute inset-0 bg-slate-950/50" @click="closeExtensionPanel" />
-                <aside class="absolute inset-y-0 right-0 flex w-full flex-col bg-white shadow-2xl sm:w-[70vw] dark:bg-slate-900">
+                <aside class="absolute inset-y-0 right-0 flex w-full flex-col bg-white text-slate-900 shadow-2xl sm:w-[70vw] dark:bg-slate-900 dark:text-slate-100">
                     <header class="flex items-center justify-between border-b border-slate-200 px-5 py-4 dark:border-slate-800">
                         <div>
                             <h2 class="font-semibold text-slate-900 dark:text-white">PHP {{ displayVersion(selectedVersion) }} Extensions</h2>
@@ -264,7 +264,7 @@ const saveExtensions = async () => {
         <Teleport to="body">
             <div v-if="configPanelOpen" class="fixed inset-0 z-50">
                 <button type="button" aria-label="Close config editor" class="absolute inset-0 bg-slate-950/50" @click="configPanelOpen = false" />
-                <aside class="absolute inset-y-0 right-0 flex w-full flex-col bg-white shadow-2xl sm:w-[70vw] dark:bg-slate-900">
+                <aside class="absolute inset-y-0 right-0 flex w-full flex-col bg-white text-slate-900 shadow-2xl sm:w-[70vw] dark:bg-slate-900 dark:text-slate-100">
                     <header class="flex items-center justify-between border-b border-slate-200 px-5 py-4 dark:border-slate-800">
                         <div>
                             <h2 class="font-semibold text-slate-900 dark:text-white">PHP {{ displayVersion(selectedVersion) }} Config</h2>

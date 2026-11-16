@@ -120,6 +120,39 @@ pub fn allowed_shells() -> Vec<String> {
     shells
 }
 
+/// One entry per real shell for the picker. On usrmerge systems /bin is a
+/// link to /usr/bin, so /etc/shells names each shell twice; keep the /bin
+/// spelling, the one useradd writes. Only the directory is resolved, so
+/// /bin/sh stays apart from the dash it points at.
+pub fn display_shells() -> Vec<String> {
+    let all = allowed_shells();
+    let real_dir = |path: &str| -> String {
+        let path = Path::new(path);
+        let dir = path.parent().map(|dir| fs::canonicalize(dir).unwrap_or_else(|_| dir.to_path_buf()));
+        match (dir, path.file_name()) {
+            (Some(dir), Some(name)) => dir.join(name).to_string_lossy().into_owned(),
+            _ => path.to_string_lossy().into_owned(),
+        }
+    };
+    dedup_shells(&all, real_dir)
+}
+
+/// Keeps the shortest spelling of each shell `resolve` maps to the same file.
+fn dedup_shells(shells: &[String], resolve: impl Fn(&str) -> String) -> Vec<String> {
+    let mut chosen: Vec<(String, String)> = Vec::new();
+    for shell in shells {
+        let real = resolve(shell);
+        match chosen.iter_mut().find(|(seen, _)| *seen == real) {
+            Some((_, kept)) if shell.len() < kept.len() => *kept = shell.clone(),
+            Some(_) => {}
+            None => chosen.push((real, shell.clone())),
+        }
+    }
+    let mut kept: Vec<String> = chosen.into_iter().map(|(_, shell)| shell).collect();
+    kept.sort();
+    kept
+}
+
 pub fn list() -> Result<Value, String> {
     let shadow = shadow_states();
     let admins = admin_members();
@@ -145,7 +178,7 @@ pub fn list() -> Result<Value, String> {
             })
         })
         .collect();
-    Ok(json!({ "users": users, "shells": allowed_shells() }))
+    Ok(json!({ "users": users, "shells": display_shells() }))
 }
 
 fn find_user(name: &str) -> Result<PasswdEntry, String> {
@@ -205,6 +238,17 @@ pub fn end_sessions(name: &str) -> Result<String, String> {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn usrmerge_duplicates_collapse_to_bin() {
+        let shells: Vec<String> = ["/bin/bash", "/bin/rbash", "/bin/sh", "/usr/bin/bash", "/usr/bin/dash", "/usr/bin/rbash", "/usr/bin/sh", "/usr/sbin/nologin"]
+            .iter().map(|s| s.to_string()).collect();
+        let merged = |path: &str| path.replacen("/bin/", "/usr/bin/", 1).replacen("/usr/usr/", "/usr/", 1);
+        assert_eq!(
+            super::dedup_shells(&shells, merged),
+            ["/bin/bash", "/bin/rbash", "/bin/sh", "/usr/bin/dash", "/usr/sbin/nologin"]
+        );
+    }
+
     use super::*;
 
     #[test]

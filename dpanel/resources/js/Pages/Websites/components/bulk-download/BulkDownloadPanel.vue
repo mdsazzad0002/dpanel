@@ -114,7 +114,7 @@ onBeforeUnmount(stopPolling);
     <Teleport to="body">
         <div v-if="open" class="fixed inset-0 z-50">
             <button type="button" aria-label="Close bulk download" class="absolute inset-0 bg-slate-950/50" @click="close" />
-            <aside class="absolute inset-y-0 right-0 flex w-full flex-col bg-white shadow-2xl sm:w-[34rem] dark:bg-slate-900">
+            <aside class="absolute inset-y-0 right-0 flex w-full flex-col bg-white text-slate-900 shadow-2xl sm:w-[34rem] dark:bg-slate-900 dark:text-slate-100">
                 <header class="flex items-center justify-between border-b border-slate-200 px-5 py-4 dark:border-slate-800">
                     <div>
                         <h2 class="font-semibold text-slate-900 dark:text-white">{{ t('websites.bulk.title') }}</h2>

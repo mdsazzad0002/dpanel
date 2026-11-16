@@ -171,7 +171,7 @@ const deleteRole = (role) => {
             <div v-if="panelOpen" class="fixed inset-0 z-50 flex justify-end">
                 <div class="absolute inset-0 bg-black/40" @click="closePanel"></div>
 
-                <div class="relative flex h-full w-[70%] flex-col overflow-y-auto border-l border-slate-200 bg-white shadow-xl dark:border-slate-800 dark:bg-slate-900">
+                <div class="relative flex h-full w-[70%] flex-col overflow-y-auto border-l border-slate-200 bg-white text-slate-900 shadow-xl dark:border-slate-800 dark:bg-slate-900 dark:text-slate-100">
                     <div class="flex items-center justify-between border-b border-slate-200 px-5 py-4 dark:border-slate-800">
                         <h2 class="text-base font-semibold">
                             {{ editingRole ? `Edit "${editingRole.name}"` : 'Create Role' }}

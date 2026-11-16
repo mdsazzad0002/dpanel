@@ -64,6 +64,9 @@ class AppServiceProvider extends ServiceProvider
         Vite::prefetch(concurrency: 3);
         Schema::defaultStringLength(120);
 
+        // Panel sign-ins and sign-outs for the login audit.
+        \Illuminate\Support\Facades\Event::subscribe(\App\Services\LoginAudit\PanelLoginSubscriber::class);
+
         // Let $user->can('some_permission_name') resolve against our custom
         // role/permission system, replacing Spatie's equivalent Gate hook.
         Gate::before(function ($user, string $ability) {
