@@ -159,42 +159,29 @@ fn execute(conn: &Connection, path: &Path, op: &Op, write: bool) -> Result<Value
 /// Owner of the database file, so files SQLite creates beside it while
 /// drust (root) writes can be given back to the site user.
 struct SidecarOwner {
-    #[cfg(unix)]
-    ids: Option<(u32, u32)>,
+    owner: Option<crate::platform::fs::OwnerId>,
 }
 
 impl SidecarOwner {
     fn of(path: &Path) -> Self {
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::MetadataExt;
-            Self { ids: std::fs::metadata(path).ok().map(|m| (m.uid(), m.gid())) }
-        }
-        #[cfg(not(unix))]
-        {
-            let _ = path;
-            Self {}
-        }
+        let files = crate::platform::files();
+        Self { owner: std::fs::metadata(path).ok().and_then(|meta| files.owner(&meta).ok()) }
     }
 
     fn restore(&self, path: &Path) {
-        #[cfg(unix)]
-        if let Some((uid, gid)) = self.ids {
-            use std::os::unix::fs::MetadataExt;
-            for suffix in ["-wal", "-shm", "-journal"] {
-                let mut name = path.as_os_str().to_owned();
-                name.push(suffix);
-                let sidecar = Path::new(&name);
-                if let Ok(meta) = std::fs::symlink_metadata(sidecar)
-                    && meta.is_file()
-                    && (meta.uid() != uid || meta.gid() != gid)
-                {
-                    let _ = std::os::unix::fs::chown(sidecar, Some(uid), Some(gid));
-                }
+        let Some(owner) = self.owner else { return };
+        let files = crate::platform::files();
+        for suffix in ["-wal", "-shm", "-journal"] {
+            let mut name = path.as_os_str().to_owned();
+            name.push(suffix);
+            let sidecar = Path::new(&name);
+            if let Ok(meta) = std::fs::symlink_metadata(sidecar)
+                && meta.is_file()
+                && files.owner(&meta).is_ok_and(|current| current != owner)
+            {
+                let _ = files.set_owner(sidecar, &owner);
             }
         }
-        #[cfg(not(unix))]
-        let _ = path;
     }
 }
 

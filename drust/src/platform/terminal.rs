@@ -53,7 +53,7 @@ pub(super) fn shell_for(
         (Os::Windows, Profile::Local) => {
             // PowerShell 7 when it is there, else the Windows PowerShell every
             // Windows has.
-            let pwsh = super::paths::on_windows_path("pwsh", std::env::split_paths(path_var), is_file);
+            let pwsh = super::paths::on_windows_path("pwsh", super::paths::windows_path_dirs(path_var).into_iter(), is_file);
             let program = pwsh.unwrap_or_else(|| {
                 let root = std::env::var_os("SystemRoot").unwrap_or_else(|| r"C:\Windows".into());
                 PathBuf::from(root).join(r"System32\WindowsPowerShell\v1.0\powershell.exe")

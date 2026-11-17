@@ -42,7 +42,10 @@ count_paths() {
     ' "$1"
 }
 
-current="$(find . -name '*.rs' -not -path './platform/*' | sed 's|^\./||' | sort | while read -r file; do
+# llm/ is the separate drust-llm binary (feature `llm`, Linux servers only):
+# it does not link drust's platform layer, and its /proc reads fall back
+# where /proc is missing.
+current="$(find . -name '*.rs' -not -path './platform/*' -not -path './llm/*' | sed 's|^\./||' | sort | while read -r file; do
     n="$(count_paths "$file")"
     if [ "$n" -gt 0 ]; then
         printf '%s %s\n' "$n" "$file"

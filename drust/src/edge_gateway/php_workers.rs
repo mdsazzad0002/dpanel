@@ -86,7 +86,7 @@ struct PoolFile {
 }
 
 fn php_versions() -> Vec<String> {
-    let Ok(entries) = fs::read_dir("/etc/php") else { return Vec::new() };
+    let Ok(entries) = fs::read_dir(platform::php_fpm::config_root()) else { return Vec::new() };
     let mut versions: Vec<String> = entries
         .filter_map(Result::ok)
         .map(|entry| entry.file_name().to_string_lossy().to_string())
@@ -99,7 +99,7 @@ fn php_versions() -> Vec<String> {
 fn pool_files() -> Vec<PoolFile> {
     let mut pools = Vec::new();
     for version in php_versions() {
-        let root = PathBuf::from(format!("/etc/php/{version}/fpm"));
+        let root = platform::php_fpm::fpm_dir(&version);
         let places = [(root.join("pool.d"), "dpanel-", ".conf", false), (root.join("dpanel-dedicated"), "", ".pool", true)];
         for (directory, prefix, suffix, dedicated) in places {
             let Ok(entries) = fs::read_dir(&directory) else { continue };
@@ -194,26 +194,24 @@ struct Worker {
 }
 
 fn version_in_path(text: &str) -> Option<String> {
-    let rest = &text[text.find("/etc/php/")? + "/etc/php/".len()..];
-    let version = rest.split('/').next()?;
+    let version = platform::php_fpm::version_in_text(text)?;
     validate_php_version(version).ok().map(|_| version.to_string())
 }
 
 fn process_title(pid: &str) -> Option<String> {
-    let raw = fs::read(format!("/proc/{pid}/cmdline")).ok()?;
+    let raw = platform::procfs::read_bytes(pid, "cmdline")?;
     let title = String::from_utf8_lossy(&raw).replace('\0', " ");
     Some(title.trim().to_string())
 }
 
 fn parent_pid(pid: &str) -> Option<u32> {
-    let stat = fs::read_to_string(format!("/proc/{pid}/stat")).ok()?;
+    let stat = platform::procfs::read(pid, "stat")?;
     // "pid (comm) state ppid ..."; comm may itself contain spaces or ')'.
     stat[stat.rfind(')')? + 1..].split_whitespace().nth(1)?.parse().ok()
 }
 
 fn resident_kb(pid: &str) -> u64 {
-    fs::read_to_string(format!("/proc/{pid}/status"))
-        .ok()
+    platform::procfs::read(pid, "status")
         .and_then(|status| {
             status
                 .lines()
@@ -224,7 +222,7 @@ fn resident_kb(pid: &str) -> u64 {
 
 /// Idle workers block in accept(); "running" means on a CPU right now.
 fn is_busy(pid: &str) -> bool {
-    let Ok(syscall) = fs::read_to_string(format!("/proc/{pid}/syscall")) else { return false };
+    let Some(syscall) = platform::procfs::read(pid, "syscall") else { return false };
     let number = syscall.split_whitespace().next().unwrap_or("");
     !ACCEPT_SYSCALLS.contains(&number)
 }
@@ -232,14 +230,9 @@ fn is_busy(pid: &str) -> bool {
 /// `observer` is the worker asking (the panel's own request): it is busy
 /// only with this question, so it counts as idle.
 fn running_workers(observer: Option<u32>) -> Vec<Worker> {
-    let Ok(entries) = fs::read_dir("/proc") else { return Vec::new() };
     let mut masters: HashMap<u32, String> = HashMap::new();
     let mut found: Vec<(String, Option<u32>, Worker)> = Vec::new();
-    for entry in entries.filter_map(Result::ok) {
-        let pid = entry.file_name().to_string_lossy().to_string();
-        if !pid.bytes().all(|byte| byte.is_ascii_digit()) {
-            continue;
-        }
+    for pid in platform::procfs::pids() {
         let Some(title) = process_title(&pid) else { continue };
         if let Some(rest) = title.strip_prefix("php-fpm: master process") {
             if let (Ok(number), Some(version)) = (pid.parse::<u32>(), version_in_path(rest)) {
@@ -331,16 +324,15 @@ fn limit_hits(log: &Path, now: NaiveDateTime) -> HashMap<String, LimitHits> {
 }
 
 fn shared_log(version: &str) -> PathBuf {
-    PathBuf::from(format!("/var/log/php{version}-fpm.log"))
+    platform::php_fpm::shared_log(version)
 }
 
 fn dedicated_log(owner: &str, version: &str) -> PathBuf {
-    PathBuf::from(format!("/var/log/php{version}-fpm-dpanel-{owner}.log"))
+    platform::php_fpm::dedicated_log(owner, version)
 }
 
 fn meminfo_kb(key: &str) -> u64 {
-    fs::read_to_string("/proc/meminfo")
-        .ok()
+    platform::procfs::meminfo()
         .and_then(|content| {
             content.lines().find_map(|line| line.strip_prefix(key)?.split_whitespace().next()?.parse().ok())
         })
@@ -462,13 +454,13 @@ pub struct Change {
 }
 
 fn test_configuration(file: &PoolFile) -> Result<(), String> {
-    let binary = format!("/usr/sbin/php-fpm{}", file.version);
+    let binary = platform::php_fpm::binary(&file.version);
     let mut command = Command::new(&binary);
     command.arg("-t");
     if file.dedicated {
         command.arg("--fpm-config").arg(file.path.with_extension("conf"));
     }
-    let output = command.output().map_err(|error| format!("cannot run {binary}: {error}"))?;
+    let output = command.output().map_err(|error| format!("cannot run {}: {error}", binary.display()))?;
     if output.status.success() {
         Ok(())
     } else {

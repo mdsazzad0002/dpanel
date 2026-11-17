@@ -521,7 +521,12 @@ mod tests {
         let root = std::env::var_os("SystemRoot").unwrap_or_else(|| r"C:\Windows".into());
         let shell = DirectShell {
             program: PathBuf::from(root).join(r"System32\WindowsPowerShell\v1.0\powershell.exe"),
-            args: ["-NoLogo", "-NoProfile", "-NoExit"].map(String::from).to_vec(),
+            // Without PSReadLine the shell reads plain lines. On GitHub's
+            // Windows runner PSReadLine redraws the typed line and never runs
+            // it; the line editor is not what this test is about.
+            args: ["-NoLogo", "-NoProfile", "-NoExit", "-Command", "Remove-Module PSReadLine -ErrorAction SilentlyContinue"]
+                .map(String::from)
+                .to_vec(),
             env: vec![("TERM".into(), "xterm-256color".into())],
         };
         let ticket = TerminalTicket {
@@ -552,7 +557,7 @@ mod tests {
         let _ = writer.write_all(b"\x1b[1;1R");
         // The typed text differs from the answers, so an answer proves
         // PowerShell ran it.
-        let _ = writer.write_all(b"echo \"sum-$(6*7)\"; echo \"[x$env:CARGO_PKG_NAME]\"; echo \"in-$((Get-Location).Path)\"\r\n");
+        let _ = writer.write_all(b"echo \"sum-$(6*7)\"; echo \"[x$env:CARGO_PKG_NAME]\"; echo \"in-$((Get-Location).Path)\"\r");
         let _ = writer.flush();
         let answered = wait_for(&output, |text| text.contains("sum-42") && text.contains("in-"));
         // Before any assertion: closing the console while the shell lives

@@ -357,11 +357,28 @@ fn locate(
         // python.exe in WindowsApps are stubs that open the Microsoft Store.
         Os::Windows if tool == Tool::Python3 => on_windows_path(
             "python",
-            path_dirs.filter(|dir| !dir.components().any(|part| part.as_os_str().eq_ignore_ascii_case("WindowsApps"))),
+            path_dirs.filter(|dir| !windows_segments(dir).any(|part| part.eq_ignore_ascii_case("WindowsApps"))),
             is_file,
         ),
         // npm and composer are batch files there.
         Os::Windows => on_windows_path(tool.name(), path_dirs, is_file),
+    }
+}
+
+/// A Windows path's folder names, split on both separators, so the result
+/// is the same whichever OS runs the code (tests build Windows paths on Linux
+/// and macOS too, where `\\` is not a separator).
+fn windows_segments(path: &Path) -> impl Iterator<Item = String> {
+    path.to_string_lossy().split(['\\', '/']).map(str::to_string).collect::<Vec<_>>().into_iter()
+}
+
+/// The folders of a Windows `PATH` value. On Windows this is the standard
+/// split; elsewhere `split_paths` would split on `:` and cut `C:\...` apart.
+pub(super) fn windows_path_dirs(path_var: &std::ffi::OsStr) -> Vec<PathBuf> {
+    if cfg!(windows) {
+        env::split_paths(path_var).collect()
+    } else {
+        path_var.to_string_lossy().split(';').filter(|dir| !dir.is_empty()).map(PathBuf::from).collect()
     }
 }
 
@@ -988,8 +1005,8 @@ mod tests {
         let stub = r"C:\Users\a\AppData\Local\Microsoft\WindowsApps";
         let real = r"C:\Python313";
         let dirs = || [PathBuf::from(stub), PathBuf::from(real)].into_iter();
-        let present = [format!(r"{stub}\python.exe"), format!(r"{stub}\python3.exe"), format!(r"{real}\python.exe")];
-        let is_file = |path: &Path| present.iter().any(|item| Path::new(item) == path);
+        let present = [Path::new(stub).join("python.exe"), Path::new(stub).join("python3.exe"), Path::new(real).join("python.exe")];
+        let is_file = |path: &Path| present.iter().any(|item| item == path);
         assert_eq!(locate(Os::Windows, Tool::Python3, dirs(), is_file), Some(PathBuf::from(real).join("python.exe")));
         let only_stub = |path: &Path| path.starts_with(stub);
         assert_eq!(locate(Os::Windows, Tool::Python3, dirs(), only_stub), None);
