@@ -857,6 +857,8 @@ Route::prefix('dpt{token}')
                     Route::get('providers/{provider}/edit', [AiGatewayProviderController::class, 'edit'])->name('ai-gateway.providers.edit');
                     Route::patch('providers/{provider}', [AiGatewayProviderController::class, 'update'])->name('ai-gateway.providers.update');
                     Route::delete('providers/{provider}', [AiGatewayProviderController::class, 'destroy'])->name('ai-gateway.providers.destroy');
+                    Route::post('providers/reorder', [AiGatewayProviderController::class, 'reorder'])->name('ai-gateway.providers.reorder');
+                    Route::post('providers/{provider}/models/reorder', [AiGatewayProviderController::class, 'reorderModels'])->name('ai-gateway.providers.models.reorder');
                     Route::patch('providers/{provider}/toggle', [AiGatewayProviderController::class, 'toggle'])->name('ai-gateway.providers.toggle');
                     Route::post('providers/{provider}/test', [AiGatewayProviderController::class, 'test'])->name('ai-gateway.providers.test');
                     Route::post('providers/{provider}/chat/send', [AiGatewayProviderController::class, 'chatSend'])->name('ai-gateway.providers.chat.send');
@@ -871,7 +873,6 @@ Route::prefix('dpt{token}')
                     Route::get('providers/{provider}/models/remote', [AiGatewayModelController::class, 'remoteModels'])->name('ai-gateway.models.remote');
                     Route::post('models', [AiGatewayModelController::class, 'store'])->name('ai-gateway.models.store');
                     Route::patch('models/{model}', [AiGatewayModelController::class, 'update'])->name('ai-gateway.models.update');
-                    Route::post('models/{model}/default', [AiGatewayModelController::class, 'setDefault'])->name('ai-gateway.models.default');
                     Route::post('models/{model}/test', [AiGatewayModelController::class, 'test'])->name('ai-gateway.models.test');
                     Route::delete('models/{model}', [AiGatewayModelController::class, 'destroy'])->name('ai-gateway.models.destroy');
 

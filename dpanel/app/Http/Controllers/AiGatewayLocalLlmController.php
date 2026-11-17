@@ -155,10 +155,15 @@ class AiGatewayLocalLlmController extends Controller
                     'is_active' => true,
                 ])->save();
             }
-            // The fastest measured model answers chats that name no model.
-            $default = $this->fastest($installed);
-            if ($default !== null || ! in_array($provider->default_model, $names, true)) {
-                $provider->update(['default_model' => $default ?? ($names[0] ?? null)]);
+            // The fastest measured model goes to the top of this provider's
+            // priority, so it answers chats that name no model.
+            $fastest = $this->fastest($installed);
+            if ($fastest !== null) {
+                $top = (int) $provider->models()->where('name', '!=', $fastest)->max('priority');
+                $row = $provider->models()->where('name', $fastest)->first();
+                if ($row && $row->priority <= $top) {
+                    $row->update(['priority' => min($top + 1, 999)]);
+                }
             }
 
             return ['provider' => $this->providerSummary($provider->fresh())];

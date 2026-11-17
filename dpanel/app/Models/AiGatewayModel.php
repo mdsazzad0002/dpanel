@@ -39,7 +39,7 @@ class AiGatewayModel extends Model
         'input_price',
         'output_price',
         'is_active',
-        'is_default',
+        'priority',
         'failure_count',
         'cooldown_until',
     ];
@@ -53,7 +53,7 @@ class AiGatewayModel extends Model
             'input_price' => 'float',
             'output_price' => 'float',
             'is_active' => 'boolean',
-            'is_default' => 'boolean',
+            'priority' => 'integer',
             'failure_count' => 'integer',
             'cooldown_until' => 'datetime',
         ];

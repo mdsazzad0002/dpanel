@@ -17,7 +17,6 @@ class AiGatewayProvider extends Model
         'slug',
         'base_url',
         'credentials',
-        'default_model',
         'is_active',
         'weight',
         'rate_limit_per_minute',
@@ -48,6 +47,21 @@ class AiGatewayProvider extends Model
     public function createdBy(): BelongsTo
     {
         return $this->belongsTo(User::class, 'created_by');
+    }
+
+    /**
+     * The model a connection test or an unpinned request uses: the active
+     * one with the highest priority, healthiest first, oldest on a tie.
+     */
+    public function preferredModel(): ?AiGatewayModel
+    {
+        return $this->models()
+            ->where('is_active', true)
+            ->orderByDesc('priority')
+            ->orderBy('failure_count')
+            ->orderBy('id')
+            ->get()
+            ->first(fn (AiGatewayModel $m) => ! $m->isInCooldown() && ! \App\Services\AiGateway\Router::isSpecialOnly($m));
     }
 
     public function getApiKey(): ?string

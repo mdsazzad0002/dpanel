@@ -13,8 +13,6 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
-use Inertia\Inertia;
-use Inertia\Response;
 
 class AiGatewayModelController extends Controller
 {
@@ -22,53 +20,40 @@ class AiGatewayModelController extends Controller
         private readonly AiGatewayService $gateway,
     ) {}
 
-    public function index(Request $request): Response
+    /** Models live on the Providers & Models page now. */
+    public function index(Request $request): RedirectResponse
     {
-        $providerFilter = $request->integer('provider');
+        return redirect()->route('ai-gateway.providers.index', $request->only('provider'));
+    }
 
-        $models = AiGatewayModel::query()
-            ->with('provider:id,name,driver')
-            ->when($providerFilter, fn ($q) => $q->where('provider_id', $providerFilter))
-            ->orderBy('provider_id')
-            ->orderBy('name')
-            ->get()
-            ->map(function (AiGatewayModel $m): array {
-                return [
-                    'id' => $m->id,
-                    'provider_id' => $m->provider_id,
-                    'provider_name' => $m->provider?->name,
-                    'provider_driver' => $m->provider?->driver,
-                    'name' => $m->name,
-                    'display_name' => $m->display_name,
-                    'context_window' => $m->context_window,
-                    'max_output_tokens' => $m->max_output_tokens,
-                    'capabilities' => $m->capabilities,
-                    'input_price' => $m->input_price,
-                    'output_price' => $m->output_price,
-                    'is_active' => $m->is_active,
-                    'is_default' => $m->is_default,
-                    'failure_count' => $m->failure_count,
-                    'cooldown_until' => $m->cooldown_until?->toIso8601String(),
-                    'auto_disabled' => ! $m->is_active && $m->failure_count >= AiGatewayModel::FAILURE_THRESHOLD,
-                    'testable' => ! Router::isSpecialOnly($m),
-                    'last_test' => Cache::get(self::testCacheKey($m)),
-                ];
-            });
-
-        return Inertia::render('AiGateway/Models/Index', [
-            'models' => $models,
-            'providers' => AiGatewayProvider::query()->orderBy('name')->get(['id', 'name', 'driver']),
-            'providerFilter' => $providerFilter ?: null,
-            'defaultModelSeed' => config('aigateway.driver_default_models'),
-            'localTranscription' => $this->localTranscription(),
-        ]);
+    /** One model row as the Providers & Models page shows it. */
+    public static function row(AiGatewayModel $m): array
+    {
+        return [
+            'id' => $m->id,
+            'provider_id' => $m->provider_id,
+            'name' => $m->name,
+            'display_name' => $m->display_name,
+            'context_window' => $m->context_window,
+            'max_output_tokens' => $m->max_output_tokens,
+            'capabilities' => $m->capabilities,
+            'input_price' => $m->input_price,
+            'output_price' => $m->output_price,
+            'is_active' => $m->is_active,
+            'priority' => $m->priority,
+            'failure_count' => $m->failure_count,
+            'cooldown_until' => $m->cooldown_until?->toIso8601String(),
+            'auto_disabled' => ! $m->is_active && $m->failure_count >= AiGatewayModel::FAILURE_THRESHOLD,
+            'testable' => ! Router::isSpecialOnly($m),
+            'last_test' => Cache::get(self::testCacheKey($m)),
+        ];
     }
 
     /**
      * drust's whisper.cpp, the voice-to-text gateway (AiGatewayService::transcribe). It is not a
      * provider model, so the page shows it on its own: on or off, reachable, and when it last worked.
      */
-    private function localTranscription(): array
+    public static function localTranscription(): array
     {
         $mode = AiGatewayService::localTranscriptionMode();
         $url = (string) config('dpanel.media_transcribe_api_url');
@@ -171,9 +156,11 @@ class AiGatewayModelController extends Controller
         ]);
 
         $provider = AiGatewayProvider::findOrFail($data['provider_id']);
-        $isFirstModel = ! $provider->models()->exists();
+        if ($provider->models()->where('name', $data['name'])->exists()) {
+            return $this->toModelsIndex($request)->withErrors(['name' => 'That provider already has a model with this ID.']);
+        }
 
-        $model = $provider->models()->create([
+        $provider->models()->create([
             'name' => $data['name'],
             'display_name' => $data['display_name'] ?? null,
             'context_window' => $data['context_window'] ?? 0,
@@ -182,12 +169,10 @@ class AiGatewayModelController extends Controller
             'output_price' => $data['output_price'] ?? 0,
             'capabilities' => array_values(array_unique($data['capabilities'] ?? [])) ?: null,
             'is_active' => $data['is_active'] ?? true,
-            'is_default' => $isFirstModel,
+            'priority' => 0,
         ]);
-
-        if ($isFirstModel) {
-            $provider->update(['default_model' => $model->name]);
-        }
+        // A new model goes to the bottom of its provider's drag order.
+        AiGatewayProviderController::applyOrder($provider->models()->getQuery(), [], 'priority');
 
         return $this->toModelsIndex($request)->with('success', 'Model "'.$data['name'].'" added.');
     }
@@ -220,10 +205,6 @@ class AiGatewayModelController extends Controller
 
         $reenabling = ! $model->is_active && ($data['is_active'] ?? $model->is_active);
         $movingProvider = isset($data['provider_id']) && (int) $data['provider_id'] !== $model->provider_id;
-        $renaming = isset($data['name']) && $data['name'] !== $model->name;
-        $oldProvider = $movingProvider ? $model->provider : null;
-        $wasDefault = $model->is_default;
-
         $model->fill([
             'provider_id' => $data['provider_id'] ?? $model->provider_id,
             'name' => $data['name'] ?? $model->name,
@@ -241,37 +222,20 @@ class AiGatewayModelController extends Controller
         }
 
         if ($movingProvider) {
-            // Default status is per-provider — moving the model out means
-            // it can't stay "the default" for a provider it no longer belongs to.
-            $model->is_default = false;
-
-            if ($wasDefault && $oldProvider) {
-                $replacement = $oldProvider->models()->where('id', '!=', $model->id)->where('is_active', true)->orderBy('id')->first();
-                $oldProvider->update(['default_model' => $replacement?->name]);
-                $replacement?->update(['is_default' => true]);
-            }
-        } elseif ($renaming && $wasDefault) {
-            // Still the default for the same provider — keep that provider's
-            // default_model pointer in sync with the new name.
-            $model->provider->update(['default_model' => $data['name']]);
+            $model->priority = 0;
         }
 
         $model->save();
 
+        if ($movingProvider) {
+            AiGatewayProviderController::applyOrder(AiGatewayModel::query()->where('provider_id', $model->provider_id), [], 'priority');
+        }
+
         if ($request->wantsJson()) {
-            return response()->json(['success' => true, 'model' => $model->fresh()]);
+            return response()->json(['success' => true, 'model' => self::row($model->fresh())]);
         }
 
         return $this->toModelsIndex($request)->with('success', 'Model updated.');
-    }
-
-    public function setDefault(Request $request, $token, AiGatewayModel $model): RedirectResponse
-    {
-        $model->provider->models()->update(['is_default' => false]);
-        $model->update(['is_default' => true]);
-        $model->provider->update(['default_model' => $model->name]);
-
-        return $this->toModelsIndex($request)->with('success', 'Default model set.');
     }
 
     public function destroy(Request $request, $token, AiGatewayModel $model): RedirectResponse
@@ -282,14 +246,13 @@ class AiGatewayModelController extends Controller
     }
 
     /**
-     * Redirect back to the models index, preserving the provider filter if
-     * one was active. Explicit route instead of redirect()->back(), since
+     * Redirect back to the Providers & Models page. Explicit route instead of redirect()->back(), since
      * `back()` follows the Referer header — unreliable in this SPA, where
      * it can resolve to a stale page instead of where the action was
      * actually triggered from.
      */
     private function toModelsIndex(Request $request): RedirectResponse
     {
-        return redirect()->route('ai-gateway.models.index', $request->only('provider'));
+        return redirect()->route('ai-gateway.providers.index');
     }
 }

@@ -216,7 +216,7 @@ class AnthropicAdapter implements ProviderAdapter
     public function ping(AiGatewayProvider $provider): array
     {
         try {
-            $result = $this->chat($provider, $provider->default_model ?: 'claude-sonnet-4-20250514', [
+            $result = $this->chat($provider, $provider->preferredModel()?->name ?: 'claude-sonnet-4-20250514', [
                 ['role' => 'user', 'content' => 'Say OK'],
             ], ['max_tokens' => 8]);
 

@@ -479,7 +479,7 @@ class GeminiAdapter implements ProviderAdapter
     public function ping(AiGatewayProvider $provider): array
     {
         try {
-            $result = $this->chat($provider, $provider->default_model ?: 'gemini-2.5-flash', [
+            $result = $this->chat($provider, $provider->preferredModel()?->name ?: 'gemini-2.5-flash', [
                 ['role' => 'user', 'content' => 'Say OK'],
             ], ['max_tokens' => 8]);
 

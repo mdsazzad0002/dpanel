@@ -431,7 +431,7 @@ class OpenAiAdapter implements ProviderAdapter
 
     public function ping(AiGatewayProvider $provider): array
     {
-        $model = $provider->default_model;
+        $model = $provider->preferredModel()?->name;
 
         try {
             $payload = ['model' => $model ?? 'gpt-4.1-mini', 'messages' => [['role' => 'user', 'content' => 'Say OK']], 'max_tokens' => 8];

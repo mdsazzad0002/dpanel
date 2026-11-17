@@ -266,7 +266,8 @@ class AiGatewayLocalLlmTest extends TestCase
         // A model trained on less than the runner's context keeps its own limit.
         $this->assertSame(2048, $provider->models()->where('name', 'small')->value('context_window'));
         $this->assertSame(['chat', 'code'], $provider->models()->where('name', 'qwen2.5-coder-3b-instruct-q4_k_m')->first()->capabilities);
-        $this->assertSame('small', $provider->default_model);
+        // The fastest model gets the top priority, so it answers unpinned chats.
+        $this->assertSame('small', $provider->preferredModel()?->name);
     }
 
     public function test_admin_starts_a_speed_test(): void

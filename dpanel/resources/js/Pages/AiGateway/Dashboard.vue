@@ -121,7 +121,7 @@ const statusLabel = (s) => (['success', 'error', 'timeout', 'cancelled'].include
                                     <span class="font-medium">{{ p.name }}</span>
                                     <span class="rounded bg-slate-100 px-1.5 py-0.5 text-[10px] text-slate-500 dark:bg-slate-700">{{ p.driver_label }}</span>
                                 </div>
-                                <div class="mt-0.5 truncate text-xs text-slate-400">{{ p.default_model }} · {{ t('aiGateway.dashboard.modelCount', { count: p.models_count }) }}</div>
+                                <div class="mt-0.5 truncate text-xs text-slate-400">{{ t('aiGateway.dashboard.modelCount', { count: p.models_count }) }}</div>
                             </div>
                             <span v-if="p.last_test_status" class="text-[11px]" :class="p.last_test_status === 'ok' ? 'text-emerald-600' : 'text-red-500'">
                                 {{ p.last_test_status === 'ok' ? t('aiGateway.dashboard.online') : t('aiGateway.dashboard.failed') }}

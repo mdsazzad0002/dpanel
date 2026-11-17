@@ -16,6 +16,8 @@ const props = defineProps({
     width: { type: String, default: 'md' }, // sm | md | lg | wide
     // Any CSS width (e.g. "60vw") from the sm breakpoint up; overrides `width`.
     maxWidth: { type: String, default: '' },
+    // Which edge the panel slides in from: right | left.
+    side: { type: String, default: 'right' },
     // Stacked panels: only the topmost one closes on Escape.
     closeOnEscape: { type: Boolean, default: true },
 });
@@ -29,6 +31,8 @@ const widthClass = {
     wide: 'sm:max-w-[70vw]',
 }[props.width] || 'sm:max-w-md';
 const panelClass = props.maxWidth ? 'sm:max-w-[var(--offcanvas-width)]' : widthClass;
+const fromLeft = props.side === 'left';
+const offscreen = fromLeft ? '-translate-x-full' : 'translate-x-full';
 
 const close = () => emit('close');
 
@@ -67,16 +71,16 @@ onUnmounted(() => {
 
         <Transition
             enter-active-class="ease-out duration-200"
-            enter-from-class="translate-x-full"
+            :enter-from-class="offscreen"
             enter-to-class="translate-x-0"
             leave-active-class="ease-in duration-150"
             leave-from-class="translate-x-0"
-            leave-to-class="translate-x-full"
+            :leave-to-class="offscreen"
         >
             <div
                 v-if="show"
-                class="fixed inset-y-0 right-0 z-50 flex w-full flex-col bg-white shadow-xl dark:bg-slate-900"
-                :class="panelClass"
+                class="fixed inset-y-0 z-50 flex w-full flex-col bg-white shadow-xl dark:bg-slate-900"
+                :class="[panelClass, fromLeft ? 'left-0' : 'right-0']"
                 :style="maxWidth ? { '--offcanvas-width': maxWidth } : undefined"
             >
                 <div class="flex items-start justify-between border-b border-slate-200 px-5 py-4 dark:border-slate-700">

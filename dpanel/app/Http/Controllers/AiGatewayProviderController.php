@@ -29,52 +29,60 @@ class AiGatewayProviderController extends Controller
         private readonly GatewayMedia $media,
     ) {}
 
-    public function index(): Response
+    /**
+     * Providers & Models on one page: providers in drag-and-drop order, each
+     * with the models it serves (also dragged into order). Position is the
+     * priority; there is no default model. Providers and models are created
+     * and edited in offcanvas panels on this page.
+     */
+    public function index(Request $request): Response
     {
         $providers = AiGatewayProvider::query()
-            ->withCount('models')
-            ->orderByDesc('is_active')
+            // The same order the drag-and-drop list saves and the router uses.
+            ->with(['models' => fn ($q) => $q->orderByDesc('priority')->orderBy('id')])
             ->orderByDesc('weight')
-            ->orderBy('name')
+            ->orderBy('id')
             ->get()
-            ->map(function (AiGatewayProvider $p): array {
-                return [
-                    'id' => $p->id,
-                    'name' => $p->name,
-                    'slug' => $p->slug,
-                    'driver' => $p->driver,
-                    'driver_label' => $p->getDriverLabel(),
-                    'default_model' => $p->default_model,
-                    'is_active' => $p->is_active,
-                    'weight' => $p->weight,
-                    'rate_limit_per_minute' => $p->rate_limit_per_minute,
-                    'models_count' => $p->models_count,
-                    'has_credentials' => $this->hasCredentials($p),
-                    'last_tested_at' => $p->last_tested_at?->toDateTimeString(),
-                    'last_test_status' => $p->last_test_status,
-                    'last_test_message' => $p->last_test_message,
-                ];
-            });
+            ->map(fn (AiGatewayProvider $p): array => [
+                'id' => $p->id,
+                'name' => $p->name,
+                'slug' => $p->slug,
+                'driver' => $p->driver,
+                'driver_label' => $p->getDriverLabel(),
+                'base_url' => $p->base_url,
+                'is_active' => $p->is_active,
+                'rate_limit_per_minute' => $p->rate_limit_per_minute,
+                'has_credentials' => $this->hasCredentials($p),
+                'last_tested_at' => $p->last_tested_at?->toDateTimeString(),
+                'last_test_status' => $p->last_test_status,
+                'last_test_message' => $p->last_test_message,
+                'models' => $p->models->map(fn ($m) => AiGatewayModelController::row($m))->values(),
+            ]);
 
         return Inertia::render('AiGateway/Providers/Index', [
             'providers' => $providers,
-            'drivers' => array_values(array_map(fn ($d) => ['driver' => $d->driver, 'label' => $d->label, 'base_url' => $d->baseUrl, 'api_key_url' => $d->apiKeyUrl], $this->gateway->adapters())),
+            'drivers' => $this->driverList(),
             'defaultModelSeed' => config('aigateway.driver_default_models'),
+            'localTranscription' => AiGatewayModelController::localTranscription(),
+            // ?create=1 / ?edit=<id> / ?provider=<id> open a panel on load (old links land here).
+            'openPanel' => [
+                'create' => $request->boolean('create'),
+                'edit' => $request->integer('edit') ?: null,
+                'provider' => $request->integer('provider') ?: null,
+            ],
         ]);
     }
 
-    public function create(): Response
+    /** The old Add Provider page opens the panel on the merged page. */
+    public function create(): RedirectResponse
     {
-        return Inertia::render('AiGateway/Providers/Create', [
-            'drivers' => array_values(array_map(fn ($d) => ['driver' => $d->driver, 'label' => $d->label, 'base_url' => $d->baseUrl, 'api_key_url' => $d->apiKeyUrl], $this->gateway->adapters())),
-            'defaultModelSeed' => config('aigateway.driver_default_models'),
-        ]);
+        return redirect()->route('ai-gateway.providers.index', ['create' => 1]);
     }
 
     public function store(Request $request): RedirectResponse
     {
         $validated = $this->validateProvider($request);
-        $name = $validated['name'] ?: $this->defaultProviderNameForDriver($validated['driver']);
+        $name = ($validated['name'] ?? null) ?: $this->uniqueNameForDriver($validated['driver']);
 
         $credentials = array_filter([
             'api_key' => $validated['api_key'] ?? null,
@@ -86,62 +94,55 @@ class AiGatewayProviderController extends Controller
             'name' => $name,
             'driver' => $validated['driver'],
             'slug' => Str::slug($name).'-'.Str::lower(Str::random(4)),
-            'base_url' => $validated['base_url'] ?: null,
+            'base_url' => ($validated['base_url'] ?? null) ?: null,
             'credentials' => $credentials === [] ? null : $credentials,
-            'default_model' => $validated['default_model'] ?: null,
             'is_active' => (bool) ($validated['is_active'] ?? true),
-            'weight' => (int) ($validated['weight'] ?? 100),
+            'weight' => 0,
             'rate_limit_per_minute' => (int) ($validated['rate_limit_per_minute'] ?? 0),
             'created_by' => $request->user()?->id,
         ]);
+        // A new provider goes to the bottom of the drag order.
+        self::applyOrder(AiGatewayProvider::query(), [], 'weight');
 
         return redirect()
-            ->route('ai-gateway.providers.index')
-            ->with('success', 'AI provider "'.$provider->name.'" created. Add models for it on the Models page, or use "Sync Default Models" on the provider\'s edit page.');
+            ->route('ai-gateway.providers.index', ['provider' => $provider->id])
+            ->with('success', 'AI provider "'.$provider->name.'" created. Now add its models.');
     }
 
-    public function edit($token, AiGatewayProvider $provider): Response
+    /**
+     * The edit panel loads the provider (with its saved key) as JSON; the
+     * old Edit page URL opens that panel on the merged page.
+     */
+    public function edit(Request $request, $token, AiGatewayProvider $provider): JsonResponse|RedirectResponse
     {
-        return Inertia::render('AiGateway/Providers/Edit', [
-            'provider' => [
-                'id' => $provider->id,
-                'name' => $provider->name,
-                'slug' => $provider->slug,
-                'driver' => $provider->driver,
-                'driver_label' => $provider->getDriverLabel(),
-                'base_url' => $provider->base_url,
-                'default_model' => $provider->default_model,
-                'is_active' => $provider->is_active,
-                'weight' => $provider->weight,
-                'rate_limit_per_minute' => $provider->rate_limit_per_minute,
-                'has_credentials' => $this->hasCredentials($provider),
-                'api_key' => $provider->getApiKey(),
-                'last_test_status' => $provider->last_test_status,
-                'last_test_message' => $provider->last_test_message,
-                'last_tested_at' => $provider->last_tested_at?->toDateTimeString(),
-                'models' => $provider->models()
-                    ->where('is_active', true)
-                    ->orderByDesc('is_default')
-                    ->orderBy('name')
-                    ->get(['name', 'display_name']),
-            ],
-            'drivers' => array_values(array_map(fn ($d) => ['driver' => $d->driver, 'label' => $d->label, 'base_url' => $d->baseUrl, 'api_key_url' => $d->apiKeyUrl], $this->gateway->adapters())),
-            'defaultModelSeed' => config('aigateway.driver_default_models'),
+        if (! $request->wantsJson()) {
+            return redirect()->route('ai-gateway.providers.index', ['edit' => $provider->id]);
+        }
+
+        return response()->json([
+            'id' => $provider->id,
+            'name' => $provider->name,
+            'driver' => $provider->driver,
+            'base_url' => $provider->base_url,
+            'api_key' => $provider->getApiKey(),
+            'has_credentials' => $this->hasCredentials($provider),
+            'is_active' => $provider->is_active,
+            'rate_limit_per_minute' => $provider->rate_limit_per_minute,
         ]);
     }
 
     public function update(Request $request, $token, AiGatewayProvider $provider): RedirectResponse
     {
         $validated = $this->validateProvider($request, $provider);
-        $name = $validated['name'] ?: $this->defaultProviderNameForDriver($validated['driver']);
+        // No name field: the name follows the driver, and stays put while the driver does.
+        $name = ($validated['name'] ?? null)
+            ?: ($validated['driver'] === $provider->driver ? $provider->name : $this->uniqueNameForDriver($validated['driver'], $provider->id));
 
         $data = [
             'name' => $name,
             'driver' => $validated['driver'],
-            'base_url' => $validated['base_url'] ?: null,
-            'default_model' => $validated['default_model'] ?: null,
+            'base_url' => ($validated['base_url'] ?? null) ?: null,
             'is_active' => (bool) ($validated['is_active'] ?? true),
-            'weight' => (int) ($validated['weight'] ?? 100),
             'rate_limit_per_minute' => (int) ($validated['rate_limit_per_minute'] ?? 0),
         ];
 
@@ -167,6 +168,44 @@ class AiGatewayProviderController extends Controller
         return redirect()
             ->route('ai-gateway.providers.index')
             ->with('success', 'AI provider "'.$provider->name.'" updated.');
+    }
+
+    /**
+     * Drag-and-drop order: the first id runs first. Position is the priority,
+     * stored as weight n..1 (higher runs first).
+     */
+    public function reorder(Request $request): JsonResponse
+    {
+        $ids = $request->validate(['ids' => ['required', 'array'], 'ids.*' => ['integer']])['ids'];
+        self::applyOrder(AiGatewayProvider::query(), $ids, 'weight');
+
+        return response()->json(['ok' => true]);
+    }
+
+    /** Same for the models of one provider. */
+    public function reorderModels(Request $request, $token, AiGatewayProvider $provider): JsonResponse
+    {
+        $ids = $request->validate(['ids' => ['required', 'array'], 'ids.*' => ['integer']])['ids'];
+        self::applyOrder($provider->models()->getQuery(), $ids, 'priority');
+
+        return response()->json(['ok' => true]);
+    }
+
+    /**
+     * Rows named in $ids take the top places in that order; any row not
+     * named keeps its relative place below them. Values run n..1.
+     */
+    public static function applyOrder(\Illuminate\Database\Eloquent\Builder $query, array $ids, string $column): void
+    {
+        $rows = (clone $query)->orderByDesc($column)->orderBy('id')->get(['id', $column]);
+        $ids = array_values(array_intersect(array_map('intval', $ids), $rows->pluck('id')->all()));
+        $ordered = array_merge($ids, array_values(array_diff($rows->pluck('id')->all(), $ids)));
+
+        $n = count($ordered);
+        foreach ($ordered as $i => $id) {
+            $value = min($n - $i, $column === 'priority' ? 999 : 1000);
+            (clone $query)->whereKey($id)->update([$column => $value]);
+        }
     }
 
     public function destroy($token, AiGatewayProvider $provider): RedirectResponse
@@ -212,7 +251,7 @@ class AiGatewayProviderController extends Controller
     {
         $providers = AiGatewayProvider::query()
             ->where('is_active', true)
-            ->with(['models' => fn ($q) => $q->where('is_active', true)->orderByDesc('is_default')->orderBy('name')])
+            ->with(['models' => fn ($q) => $q->where('is_active', true)->orderByDesc('priority')->orderBy('name')])
             ->orderByDesc('weight')
             ->orderBy('name')
             ->get();
@@ -228,7 +267,6 @@ class AiGatewayProviderController extends Controller
                 'name' => $p->name,
                 'driver' => $p->driver,
                 'driver_label' => $p->getDriverLabel(),
-                'default_model' => $p->default_model,
                 'models' => $p->models->map(fn ($m) => ['name' => $m->name, 'display_name' => $m->display_name, 'capabilities' => $m->capabilities ?? []])->values(),
             ])->values(),
             'initialProviderId' => $selected?->id ?? ($providers->count() > 1 ? '__auto__' : $providers->first()?->id),
@@ -740,17 +778,38 @@ class AiGatewayProviderController extends Controller
         $drivers = array_keys($this->gateway->adapters());
 
         return $request->validate([
-            'name' => ['required', 'string', 'max:120'],
+            'name' => ['nullable', 'string', 'max:120'],
             'driver' => ['required', Rule::in($drivers)],
             'base_url' => ['nullable', 'string', 'max:255', 'url'],
             'api_key' => ['nullable', 'string', 'max:500'],
             'organization' => ['nullable', 'string', 'max:255'],
             'project' => ['nullable', 'string', 'max:255'],
-            'default_model' => ['nullable', 'string', 'max:120'],
             'is_active' => ['nullable', 'boolean'],
-            'weight' => ['nullable', 'integer', 'min:0', 'max:1000'],
             'rate_limit_per_minute' => ['nullable', 'integer', 'min:0', 'max:100000'],
         ]);
+    }
+
+    private function driverList(): array
+    {
+        return array_values(array_map(fn ($d) => ['driver' => $d->driver, 'label' => $d->label, 'base_url' => $d->baseUrl, 'api_key_url' => $d->apiKeyUrl], $this->gateway->adapters()));
+    }
+
+    /** "OpenAI Provider", then "OpenAI Provider 2", ... for a second key of the same driver. */
+    private function uniqueNameForDriver(string $driver, ?int $ignoreId = null): string
+    {
+        $base = $this->defaultProviderNameForDriver($driver);
+        $taken = AiGatewayProvider::query()
+            ->when($ignoreId, fn ($q) => $q->where('id', '!=', $ignoreId))
+            ->where('name', 'like', $base.'%')
+            ->pluck('name')
+            ->all();
+
+        $name = $base;
+        for ($n = 2; in_array($name, $taken, true); $n++) {
+            $name = $base.' '.$n;
+        }
+
+        return $name;
     }
 
     private function hasCredentials(AiGatewayProvider $provider): bool

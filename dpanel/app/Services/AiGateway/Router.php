@@ -9,7 +9,8 @@ use Illuminate\Support\Facades\Cache;
 /**
  * Resolves which provider + model should serve a given gateway request:
  * the owner of a specifically requested model, falling back to the
- * highest-weight active provider when no model is requested (or found).
+ * highest-priority active provider and its best model when no model is
+ * requested (or found).
  */
 class Router
 {
@@ -51,11 +52,11 @@ class Router
     /**
      * Eligible failover candidates for a model name (or, if null, any
      * active model), optionally pinned to one provider: active model,
-     * active provider, not in cooldown. Base order is by provider weight
-     * with random jitter within equal weights; the list is then rotated
-     * so each call starts from the next candidate in turn (round-robin),
-     * spreading requests across providers instead of hammering the
-     * top-weight one until it hits its rate limit.
+     * active provider, not in cooldown. There is no default model: order is
+     * by priority (provider priority, then model priority), and inside one
+     * priority level models that have been failing go last. Only the top
+     * level is rotated (round-robin), so requests spread across equally
+     * ranked models; lower levels are kept as failover in order.
      *
      * @param  array<int, string>  $requireCapabilities  When non-empty (e.g.
      *                                                   ["tools"] for a request carrying function-calling tools), candidates
@@ -87,7 +88,7 @@ class Router
                     ? array_diff($special, $m->capabilities ?? []) === []
                     : ! self::isSpecialOnly($m);
             })
-            ->sortByDesc(fn (AiGatewayModel $m) => $m->provider->weight * 1000 + random_int(0, 999))
+            ->sortBy(fn (AiGatewayModel $m) => [-self::rank($m), $m->failure_count, random_int(0, 999)])
             ->values();
 
         $requireCapabilities = array_values(array_diff($requireCapabilities, self::SPECIAL_CAPABILITIES));
@@ -112,6 +113,12 @@ class Router
             }
         }
 
+        // Round-robin only among the healthy models of the top priority level.
+        $topRank = $base->isNotEmpty() ? self::rank($base->first()) : 0;
+        $lower = $base->filter(fn (AiGatewayModel $m) => self::rank($m) !== $topRank || $m->failure_count > 0)->values();
+        $base = $base->filter(fn (AiGatewayModel $m) => self::rank($m) === $topRank && $m->failure_count === 0)->values();
+        $fallbackTail = $lower->concat($fallbackTail);
+
         $count = $base->count();
         if ($count <= 1) {
             return $base->concat($fallbackTail)->values();
@@ -122,6 +129,12 @@ class Router
         Cache::put($cacheKey, $cursor + 1, now()->addHours(6));
 
         return $base->slice($cursor)->concat($base->slice(0, $cursor))->concat($fallbackTail)->values();
+    }
+
+    /** Priority of a model inside the gateway: provider priority first, then the model's own. */
+    public static function rank(AiGatewayModel $model): int
+    {
+        return ((int) $model->provider?->weight) * 1000 + (int) $model->priority;
     }
 
     /** Capabilities that pick a different kind of request, not just a better chat model. */
@@ -144,13 +157,10 @@ class Router
                 ->first();
         }
 
-        if ($model === null) {
-            $model = $provider->models()->where('is_default', true)->first()
-                ?? $provider->models()->where('is_active', true)->orderBy('id')->first();
-        }
+        // No default model: the provider's best working one by priority.
+        $model ??= $provider->preferredModel();
 
-        $modelName = $model?->name ?? $provider->default_model
-            ?? ($requestedModel ?: $provider->models()->value('name'));
+        $modelName = $model?->name ?? ($requestedModel ?: $provider->models()->value('name'));
 
         return [
             'provider' => $provider,

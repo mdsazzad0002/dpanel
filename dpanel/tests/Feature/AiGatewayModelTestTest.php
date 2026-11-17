@@ -83,8 +83,8 @@ class AiGatewayModelTestTest extends TestCase
             && str_contains(json_encode($request->data(), JSON_UNESCAPED_SLASHES), 'data:image/png;base64,'));
 
         // The page shows the last result after a reload.
-        $this->actingAs($admin)->get(route('ai-gateway.models.index', ['token' => $this->session]))
-            ->assertInertia(fn ($page) => $page->where('models.0.last_test.ok', true)->where('models.0.testable', true));
+        $this->actingAs($admin)->get(route('ai-gateway.providers.index', ['token' => $this->session]))
+            ->assertInertia(fn ($page) => $page->where('providers.0.models.0.last_test.ok', true)->where('providers.0.models.0.testable', true));
     }
 
     public function test_a_failing_model_reports_the_provider_error(): void

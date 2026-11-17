@@ -50,7 +50,6 @@ class AiGatewayController extends Controller
                 'driver_label' => $p->getDriverLabel(),
                 'slug' => $p->slug,
                 'is_active' => $p->is_active,
-                'default_model' => $p->default_model,
                 'models_count' => $p->models_count,
                 'last_test_status' => $p->last_test_status,
             ]);
