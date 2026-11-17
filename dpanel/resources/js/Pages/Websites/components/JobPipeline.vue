@@ -1,5 +1,8 @@
 <script setup>
+import { useI18n } from 'vue-i18n';
 import { computed } from 'vue';
+
+const { t } = useI18n();
 
 // Progress card for a clone/share-link job, styled like the upload form's
 // "Tracked import pipeline": one bar per step, filled as the job moves on.
@@ -36,7 +39,7 @@ const rows = computed(() => {
         <div v-for="row in rows" :key="row.key">
             <div class="mb-1 flex justify-between text-xs">
                 <span class="font-semibold text-slate-600 dark:text-slate-300">{{ row.label }}</span>
-                <span class="text-slate-500">{{ row.status }} · {{ row.progress }}%</span>
+                <span class="text-slate-500">{{ t(`websites.jobPipeline.status.${row.status}`) }} · {{ row.progress }}%</span>
             </div>
             <div class="h-2 overflow-hidden rounded-full bg-slate-200 dark:bg-slate-700">
                 <div class="h-full rounded-full transition-all duration-500"
@@ -44,7 +47,7 @@ const rows = computed(() => {
                     :style="{ width: `${row.progress}%` }"></div>
             </div>
         </div>
-        <p v-if="stage === 'ready'" class="text-xs text-emerald-600"><i class="bi bi-check-circle-fill mr-1"></i>Done</p>
-        <p v-if="stage === 'failed'" class="text-xs text-red-600"><i class="bi bi-x-circle-fill mr-1"></i>{{ message || 'Failed.' }}</p>
+        <p v-if="stage === 'ready'" class="text-xs text-emerald-600"><i class="bi bi-check-circle-fill mr-1"></i>{{ t('websites.jobPipeline.done') }}</p>
+        <p v-if="stage === 'failed'" class="text-xs text-red-600"><i class="bi bi-x-circle-fill mr-1"></i>{{ message || t('websites.jobPipeline.failed') }}</p>
     </div>
 </template>

@@ -1,7 +1,10 @@
 <script setup>
+import { useI18n } from 'vue-i18n';
 import { computed, onUnmounted, ref } from 'vue';
 import { Head, Link, usePage } from '@inertiajs/vue3';
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
+
+const { t } = useI18n();
 
 const props = defineProps({
     website: { type: Object, required: true },
@@ -45,16 +48,16 @@ const pushToast = (message, type = 'success') => {
     }, 4000);
 };
 
-const exportItemLabel = (item) => (item.type === 'database' ? `SQL — ${item.databaseName}` : 'Website files');
+const exportItemLabel = (item) => (item.type === 'database' ? t('websites.export.sqlItem', { name: item.databaseName }) : t('websites.export.files'));
 const stepStatusText = (item) => {
     const state = itemState.value[item.key] || {};
     switch (state.stage) {
-        case 'queued': return 'Step 1/2 — queued…';
-        case 'zipping': return 'Step 1/2 — preparing (zip/dump running in the background)…';
-        case 'ready': return 'Step 2/2 — download link generated';
-        case 'downloaded': return 'Download started';
-        case 'error': return state.message || 'Failed';
-        default: return 'Queued';
+        case 'queued': return t('websites.export.status.queued');
+        case 'zipping': return t('websites.export.status.zipping');
+        case 'ready': return t('websites.export.status.ready');
+        case 'downloaded': return t('websites.export.status.downloaded');
+        case 'error': return state.message || t('websites.export.status.failed');
+        default: return t('websites.export.status.pending');
     }
 };
 
@@ -98,9 +101,9 @@ const copyDownloadLink = async (item) => {
     if (!url) return;
     try {
         await navigator.clipboard.writeText(url);
-        pushToast('Link copied to clipboard.');
+        pushToast(t('websites.transfer.linkCopied'));
     } catch {
-        pushToast('Could not copy the link — copy it manually.', 'error');
+        pushToast(t('websites.transfer.copyFailed'), 'error');
     }
 };
 
@@ -138,7 +141,7 @@ const pollExportStatuses = async () => {
                 }
             } else if (data.stage === 'failed') {
                 itemState.value[item.key].stage = 'error';
-                itemState.value[item.key].message = data.message || `Failed to export ${exportItemLabel(item)}.`;
+                itemState.value[item.key].message = data.message || t('websites.export.exportFailed', { label: exportItemLabel(item) });
                 pushToast(itemState.value[item.key].message, 'error');
             } else if (data.stage) {
                 itemState.value[item.key].stage = data.stage;
@@ -155,7 +158,7 @@ const pollExportStatuses = async () => {
         const anyFailed = activeExportItems.value.some((item) => itemState.value[item.key]?.stage === 'error');
         exportPhase.value = anyFailed ? 'error' : 'complete';
         if (!anyFailed) {
-            pushToast(autoDownload.value ? 'All downloads started.' : 'All links are ready — click Download on each step.', 'success');
+            pushToast(autoDownload.value ? t('websites.export.allStarted') : t('websites.export.allReady'), 'success');
         }
     }
 };
@@ -169,13 +172,13 @@ const shareExpiresAt = ref('');
 let sharePollTimer = null;
 
 const shareStageText = (stage) => ({
-    queued: 'Queued…',
-    archiving: 'Archiving website files…',
-    exporting_database: 'Exporting database…',
-    packaging: 'Building package…',
-    ready: 'Done',
-    failed: 'Failed',
-}[stage] || 'Working…');
+    queued: t('websites.transfer.stage.queued'),
+    archiving: t('websites.transfer.stage.archiving'),
+    exporting_database: t('websites.transfer.stage.exportingDatabase'),
+    packaging: t('websites.transfer.stage.packaging'),
+    ready: t('websites.transfer.stage.ready'),
+    failed: t('websites.transfer.stage.failed'),
+}[stage] || t('websites.transfer.stage.working'));
 
 const stopSharePoll = () => {
     window.clearInterval(sharePollTimer);
@@ -196,11 +199,11 @@ const pollShareStatus = async (shareId) => {
             shareRunning.value = false;
             shareUrl.value = data.download_url || '';
             shareExpiresAt.value = data.expires_at || '';
-            pushToast('Share link is ready.');
+            pushToast(t('websites.transfer.share.ready'));
         } else if (data.stage === 'failed') {
             stopSharePoll();
             shareRunning.value = false;
-            shareMessage.value = data.message || 'Share failed.';
+            shareMessage.value = data.message || t('websites.transfer.share.failed');
             pushToast(shareMessage.value, 'error');
         }
     } catch {
@@ -227,14 +230,14 @@ const startShare = async () => {
             body: JSON.stringify({}),
         });
         const data = await response.json().catch(() => ({}));
-        if (!response.ok || !data.ok) throw new Error(data.message || 'Failed to start share.');
+        if (!response.ok || !data.ok) throw new Error(data.message || t('websites.transfer.share.startFailed'));
         stopSharePoll();
         sharePollTimer = window.setInterval(() => pollShareStatus(data.share_id), 5000);
         pollShareStatus(data.share_id);
     } catch (error) {
         shareRunning.value = false;
         shareStage.value = 'failed';
-        shareMessage.value = error?.message || 'Failed to start share.';
+        shareMessage.value = error?.message || t('websites.transfer.share.startFailed');
         pushToast(shareMessage.value, 'error');
     }
 };
@@ -243,9 +246,9 @@ const copyShareUrl = async () => {
     if (!shareUrl.value) return;
     try {
         await navigator.clipboard.writeText(shareUrl.value);
-        pushToast('Link copied to clipboard.');
+        pushToast(t('websites.transfer.linkCopied'));
     } catch {
-        pushToast('Could not copy the link — copy it manually.', 'error');
+        pushToast(t('websites.transfer.copyFailed'), 'error');
     }
 };
 
@@ -282,13 +285,13 @@ const quickExport = async () => {
 
             const data = await response.json().catch(() => ({}));
             if (!response.ok || !data.ok || !data.export_id) {
-                throw new Error(data.message || `Failed to queue export for ${exportItemLabel(item)}.`);
+                throw new Error(data.message || t('websites.export.queueFailed', { label: exportItemLabel(item) }));
             }
 
             itemState.value[item.key].exportId = data.export_id;
         } catch (error) {
             itemState.value[item.key].stage = 'error';
-            itemState.value[item.key].message = error?.message || `Failed to queue export for ${exportItemLabel(item)}.`;
+            itemState.value[item.key].message = error?.message || t('websites.export.queueFailed', { label: exportItemLabel(item) });
             pushToast(itemState.value[item.key].message, 'error');
         }
     }));
@@ -300,17 +303,17 @@ const quickExport = async () => {
 </script>
 
 <template>
-    <Head :title="`Export & Share - ${website.domain}`" />
+    <Head :title="t('websites.export.pageTitle', { domain: website.domain })" />
     <AuthenticatedLayout>
         <template #header>
             <div class="flex items-center justify-between gap-4">
                 <div>
-                    <h1 class="text-lg font-semibold">Export & Share</h1>
-                    <p class="text-sm text-slate-500">{{ website.domain }} — each selected item downloads separately</p>
-                    <p class="mt-0.5 text-xs text-slate-400">Runs in the background — stay on this page to watch live progress, or check the notification bell later.</p>
+                    <h1 class="text-lg font-semibold">{{ t('websites.export.title') }}</h1>
+                    <p class="text-sm text-slate-500">{{ t('websites.export.subtitle', { domain: website.domain }) }}</p>
+                    <p class="mt-0.5 text-xs text-slate-400">{{ t('websites.transfer.background') }}</p>
                 </div>
                 <Link :href="panelRoute('websites.manage', { id: website.id })" class="rounded-lg border px-3 py-2 text-sm dark:border-slate-700">
-                    <i class="bi bi-arrow-left mr-1"></i> Website dashboard
+                    <i class="bi bi-arrow-left mr-1"></i> {{ t('websites.transfer.dashboard') }}
                 </Link>
             </div>
         </template>
@@ -321,22 +324,22 @@ const quickExport = async () => {
                     <label class="flex cursor-pointer items-start gap-3 rounded-xl border border-slate-200 p-4 dark:border-slate-700">
                         <input v-model="exportFiles" :disabled="exportLoading" type="checkbox" class="mt-0.5 rounded border-slate-300 text-violet-600 focus:ring-violet-500" />
                         <span>
-                            <span class="block text-sm font-semibold text-slate-800 dark:text-slate-100">Website files</span>
-                            <span class="mt-1 block text-xs text-slate-500">Downloads as its own ZIP</span>
+                            <span class="block text-sm font-semibold text-slate-800 dark:text-slate-100">{{ t('websites.export.files') }}</span>
+                            <span class="mt-1 block text-xs text-slate-500">{{ t('websites.export.filesHelp') }}</span>
                         </span>
                     </label>
 
                     <label v-if="!hasMultipleDatabases" class="flex items-start gap-3 rounded-xl border border-slate-200 p-4 dark:border-slate-700" :class="databaseConnection.available ? 'cursor-pointer' : 'cursor-not-allowed opacity-55'">
                         <input v-model="selectedDatabaseIds" :value="databases[0]?.id" type="checkbox" :disabled="exportLoading || !databaseConnection.available" class="mt-0.5 rounded border-slate-300 text-violet-600 focus:ring-violet-500" />
                         <span>
-                            <span class="block text-sm font-semibold text-slate-800 dark:text-slate-100">SQL database</span>
-                            <span class="mt-1 block text-xs text-slate-500">{{ databaseConnection.available ? `Downloads as its own .sql file (${databaseConnection.database_name})` : 'No active database linked' }}</span>
+                            <span class="block text-sm font-semibold text-slate-800 dark:text-slate-100">{{ t('websites.export.sqlDatabase') }}</span>
+                            <span class="mt-1 block text-xs text-slate-500">{{ databaseConnection.available ? t('websites.export.sqlHelp', { name: databaseConnection.database_name }) : t('websites.export.noDatabase') }}</span>
                         </span>
                     </label>
 
                     <div v-else class="rounded-xl border border-slate-200 p-4 dark:border-slate-700 sm:col-span-2">
-                        <span class="block text-sm font-semibold text-slate-800 dark:text-slate-100">SQL databases</span>
-                        <span class="mt-1 block text-xs text-slate-500">Multiple databases are linked to this domain — pick which ones to export (each downloads as its own .sql file)</span>
+                        <span class="block text-sm font-semibold text-slate-800 dark:text-slate-100">{{ t('websites.export.sqlDatabases') }}</span>
+                        <span class="mt-1 block text-xs text-slate-500">{{ t('websites.export.multiHelp') }}</span>
                         <div class="mt-3 space-y-2">
                             <label v-for="database in databases" :key="database.id" class="flex cursor-pointer items-center gap-2 rounded-lg border border-slate-200 px-3 py-2 dark:border-slate-700">
                                 <input v-model="selectedDatabaseIds" :value="database.id" type="checkbox" :disabled="exportLoading" class="rounded border-slate-300 text-violet-600 focus:ring-violet-500" />
@@ -348,7 +351,7 @@ const quickExport = async () => {
 
                 <label class="mt-4 flex cursor-pointer items-center gap-2 text-sm text-slate-600 dark:text-slate-300">
                     <input v-model="autoDownload" type="checkbox" class="rounded border-slate-300 text-violet-600 focus:ring-violet-500" />
-                    Auto download when a link is ready
+                    {{ t('websites.export.autoDownload') }}
                 </label>
 
                 <div v-if="exportPhase === 'running' || exportPhase === 'complete' || exportPhase === 'error'" class="mt-5 space-y-3">
@@ -360,7 +363,7 @@ const quickExport = async () => {
                                     <i v-else-if="itemState[item.key]?.stage === 'error'" class="bi bi-x-circle-fill text-red-600"></i>
                                     <i v-else-if="['queued', 'zipping'].includes(itemState[item.key]?.stage)" class="bi bi-arrow-repeat animate-spin text-violet-600"></i>
                                     <i v-else class="bi bi-circle text-slate-400"></i>
-                                    <span>Step {{ index + 1 }} — {{ exportItemLabel(item) }}</span>
+                                    <span>{{ t('websites.export.step', { n: index + 1, label: exportItemLabel(item) }) }}</span>
                                 </div>
                                 <p class="mt-1 text-xs" :class="itemState[item.key]?.stage === 'error' ? 'text-red-600' : 'text-slate-500'">
                                     {{ stepStatusText(item) }}
@@ -372,14 +375,14 @@ const quickExport = async () => {
                                     class="rounded-lg border border-slate-300 px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50 dark:border-slate-600 dark:text-slate-200 dark:hover:bg-slate-800"
                                     @click="copyDownloadLink(item)"
                                 >
-                                    <i class="bi bi-clipboard mr-1"></i>Copy link
+                                    <i class="bi bi-clipboard mr-1"></i>{{ t('websites.transfer.copyLink') }}
                                 </button>
                                 <button
                                     type="button"
                                     class="rounded-lg bg-violet-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-violet-700"
                                     @click="triggerDownload(item)"
                                 >
-                                    {{ itemState[item.key]?.stage === 'downloaded' ? 'Download again' : 'Download' }}
+                                    {{ itemState[item.key]?.stage === 'downloaded' ? t('websites.export.downloadAgain') : t('websites.export.download') }}
                                 </button>
                             </div>
                         </div>
@@ -390,26 +393,26 @@ const quickExport = async () => {
                             {{ itemState[item.key].downloadUrl }}
                         </a>
                         <p v-if="itemState[item.key]?.downloadUrl" class="mt-1 text-[11px] text-slate-400">
-                            Link stays valid for 8 hours — no panel login needed, so it's safe to share with anyone.
+                            {{ t('websites.export.linkValid') }}
                         </p>
                     </div>
                 </div>
 
-                <p v-if="!exportFiles && selectedDatabaseIds.length === 0" class="mt-4 text-sm text-red-600">Select at least one item to export.</p>
+                <p v-if="!exportFiles && selectedDatabaseIds.length === 0" class="mt-4 text-sm text-red-600">{{ t('websites.export.selectOne') }}</p>
 
                 <div class="mt-5 flex justify-end gap-3">
                     <button v-if="exportPhase === 'complete' || exportPhase === 'error'" type="button" class="rounded-lg border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 dark:border-slate-600 dark:text-slate-200" @click="resetExport">
-                        Export again
+                        {{ t('websites.export.again') }}
                     </button>
                     <button v-else type="button" :disabled="exportLoading || (!exportFiles && selectedDatabaseIds.length === 0)" class="rounded-lg bg-violet-600 px-4 py-2 text-sm font-semibold text-white hover:bg-violet-700 disabled:cursor-not-allowed disabled:opacity-50" @click="quickExport">
-                        {{ exportLoading ? 'Preparing…' : 'Prepare & Download Selected' }}
+                        {{ exportLoading ? t('websites.transfer.preparing') : t('websites.export.submit') }}
                     </button>
                 </div>
             </section>
 
             <section class="rounded-xl border bg-white p-5 shadow-sm dark:border-slate-700 dark:bg-slate-900">
-                <h2 class="text-sm font-semibold text-slate-800 dark:text-slate-100"><i class="bi bi-share mr-1.5 text-cyan-600"></i>Share</h2>
-                <p class="mt-1 text-xs text-slate-500">Generate a one-time link for this website's files + database, to clone it on a different server.</p>
+                <h2 class="text-sm font-semibold text-slate-800 dark:text-slate-100"><i class="bi bi-share mr-1.5 text-cyan-600"></i>{{ t('websites.transfer.share.title') }}</h2>
+                <p class="mt-1 text-xs text-slate-500">{{ t('websites.transfer.share.help') }}</p>
 
                 <div v-if="shareStage" class="mt-4 rounded-lg border border-slate-200 p-3 text-xs dark:border-slate-700">
                     <div class="flex items-center gap-2">
@@ -423,15 +426,15 @@ const quickExport = async () => {
 
                 <div v-if="shareUrl" class="mt-4 space-y-2 rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-xs dark:border-emerald-900 dark:bg-emerald-950/30">
                     <p class="break-all font-mono text-emerald-800 dark:text-emerald-300">{{ shareUrl }}</p>
-                    <p class="text-[11px] text-slate-500">Paste this into the destination server's Import & Clone → "Import from another server" field. Valid for 8 hours — no login needed on either side.</p>
+                    <p class="text-[11px] text-slate-500">{{ t('websites.transfer.share.pasteHelp') }}</p>
                     <button type="button" class="rounded-lg border border-emerald-300 px-3 py-1.5 text-xs font-medium text-emerald-700 hover:bg-emerald-100 dark:border-emerald-700 dark:text-emerald-300 dark:hover:bg-emerald-900/40" @click="copyShareUrl">
-                        <i class="bi bi-clipboard mr-1"></i>Copy link
+                        <i class="bi bi-clipboard mr-1"></i>{{ t('websites.transfer.copyLink') }}
                     </button>
                 </div>
 
                 <div class="mt-5 flex justify-end">
                     <button type="button" :disabled="shareRunning" class="rounded-lg bg-cyan-600 px-4 py-2 text-sm font-semibold text-white hover:bg-cyan-700 disabled:cursor-not-allowed disabled:opacity-50" @click="startShare">
-                        {{ shareRunning ? 'Preparing…' : 'Generate Share Link' }}
+                        {{ shareRunning ? t('websites.transfer.preparing') : t('websites.transfer.share.generate') }}
                     </button>
                 </div>
             </section>

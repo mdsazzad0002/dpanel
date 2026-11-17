@@ -1,4 +1,5 @@
 <script setup>
+import { useI18n } from 'vue-i18n';
 import { computed, onBeforeUnmount, onMounted, onUnmounted, reactive, ref, watch } from 'vue';
 import { Head, Link, router, usePage } from '@inertiajs/vue3';
 import axios from 'axios';
@@ -6,6 +7,8 @@ import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
 import SearchableSelect from '@/Components/SearchableSelect.vue';
 import DatabaseTargetPicker from './components/DatabaseTargetPicker.vue';
 import JobPipeline from './components/JobPipeline.vue';
+
+const { t } = useI18n();
 
 const props = defineProps({
     website: { type: Object, required: true },
@@ -66,13 +69,13 @@ const chosenDatabase = (choice) => liveDatabases.value.find((db) => db.id === ch
 const cloneTargetDatabase = computed(() => chosenDatabase(cloneDatabase));
 const importTargetDatabase = computed(() => chosenDatabase(importDatabase));
 const confirmDatabaseOverwrite = (db) => !db || db.missing_on_server
-    || window.confirm(`Database ${db.database_name} will be overwritten with the incoming database. A backup is taken first. Continue?`);
+    || window.confirm(t('websites.import.overwriteConfirm', { name: db.database_name }));
 
 const submitGeneric = async () => {
-    if (!generic.archive && !generic.database) { error.value = 'Choose website files, a database dump, or both.'; return; }
+    if (!generic.archive && !generic.database) { error.value = t('websites.import.chooseSomething'); return; }
     const overwriteDatabase = !!generic.database && databaseTarget.value !== 'new';
     const targetDatabase = databases.value.find((entry) => entry.id === databaseTarget.value);
-    if (overwriteDatabase && !targetDatabase?.missing_on_server && !window.confirm(`Database ${targetDatabase?.database_name || ''} already exists. A backup will be created first. Continue and overwrite it?`)) return;
+    if (overwriteDatabase && !targetDatabase?.missing_on_server && !window.confirm(t('websites.import.existsConfirm', { name: targetDatabase?.database_name || '' }))) return;
     uploading.value = true; error.value = ''; message.value = '';
     Object.values(uploadStages).forEach(stage => { stage.progress = 0; stage.status = 'waiting'; });
     const routeParams = { token: panelToken.value, id: props.website.id };
@@ -94,7 +97,7 @@ const submitGeneric = async () => {
         uploadStages.connect.status = 'queued'; uploadStages.connect.progress = 100; message.value = connected.data.message;
         router.reload({ only: ['imports'], preserveScroll: true });
     }
-    catch (e) { error.value = e.response?.data?.message || Object.values(e.response?.data?.errors || {})?.[0]?.[0] || 'Migration could not be started.'; }
+    catch (e) { error.value = e.response?.data?.message || Object.values(e.response?.data?.errors || {})?.[0]?.[0] || t('websites.import.startFailed'); }
     finally { uploading.value = false; }
 };
 
@@ -158,7 +161,7 @@ const postJson = async (url, body) => {
     });
     const data = await response.json().catch(() => ({}));
     if (!response.ok || !data.ok) {
-        throw new Error(data.message || 'Request failed.');
+        throw new Error(data.message || t('websites.transfer.requestFailed'));
     }
     return data;
 };
@@ -180,11 +183,11 @@ const pullJobId = ref('');
 const pullFailedAt = ref(null);
 watch(pullStage, (stage, previous) => { if (stage === 'failed') pullFailedAt.value = previous; });
 const CLONE_STEPS = [
-    { key: 'queued', label: 'Queued' },
-    { key: 'archiving', label: 'Website files' },
-    { key: 'exporting_database', label: 'Database export' },
-    { key: 'backing_up_target', label: 'Backup of this website' },
-    { key: 'restoring', label: 'Restore into this website' },
+    { key: 'queued', label: t('websites.import.step.queued') },
+    { key: 'archiving', label: t('websites.import.step.archiving') },
+    { key: 'exporting_database', label: t('websites.import.step.exportingDatabase') },
+    { key: 'backing_up_target', label: t('websites.import.step.backingUp') },
+    { key: 'restoring', label: t('websites.import.step.restoring') },
 ];
 const pullMessage = ref('');
 let pullPollTimer = null;
@@ -206,11 +209,11 @@ const pollPullStatus = async (cloneId) => {
         if (data.stage === 'ready') {
             stopPullPoll();
             pullRunning.value = false;
-            pushToast('Clone completed — this website now has the cloned content.');
+            pushToast(t('websites.import.cloneDone'));
         } else if (data.stage === 'failed') {
             stopPullPoll();
             pullRunning.value = false;
-            pullMessage.value = data.message || 'Clone failed.';
+            pullMessage.value = data.message || t('websites.import.cloneFailed');
             pushToast(pullMessage.value, 'error');
         }
     } catch {
@@ -237,7 +240,7 @@ const startPull = async () => {
     } catch (error) {
         pullRunning.value = false;
         pullStage.value = 'failed';
-        pullMessage.value = error?.message || 'Failed to start clone.';
+        pullMessage.value = error?.message || t('websites.import.cloneStartFailed');
         pushToast(pullMessage.value, 'error');
     }
 };
@@ -251,9 +254,9 @@ const importJobId = ref('');
 const importFailedAt = ref(null);
 watch(importStage, (stage, previous) => { if (stage === 'failed') importFailedAt.value = previous; });
 const IMPORT_STEPS = [
-    { key: 'queued', label: 'Queued' },
-    { key: 'downloading', label: 'Download package' },
-    { key: 'restoring', label: 'Restore into this website' },
+    { key: 'queued', label: t('websites.import.step.queued') },
+    { key: 'downloading', label: t('websites.import.step.downloading') },
+    { key: 'restoring', label: t('websites.import.step.restoring') },
 ];
 const importMessage = ref('');
 let importPollTimer = null;
@@ -275,11 +278,11 @@ const pollImportStatus = async (cloneId) => {
         if (data.stage === 'ready') {
             stopImportPoll();
             importRunning.value = false;
-            pushToast('Import completed — this website now has the cloned content.');
+            pushToast(t('websites.import.importDone'));
         } else if (data.stage === 'failed') {
             stopImportPoll();
             importRunning.value = false;
-            importMessage.value = data.message || 'Import failed.';
+            importMessage.value = data.message || t('websites.import.importFailed');
             pushToast(importMessage.value, 'error');
         }
     } catch {
@@ -306,7 +309,7 @@ const startUrlImport = async () => {
     } catch (error) {
         importRunning.value = false;
         importStage.value = 'failed';
-        importMessage.value = error?.message || 'Failed to start import.';
+        importMessage.value = error?.message || t('websites.import.importStartFailed');
         pushToast(importMessage.value, 'error');
     }
 };
@@ -318,106 +321,106 @@ onUnmounted(() => {
 </script>
 
 <template>
-    <Head :title="`Import & Clone - ${website.domain}`" />
+    <Head :title="t('websites.import.pageTitle', { domain: website.domain })" />
     <AuthenticatedLayout>
         <template #header>
             <div class="flex items-center justify-between gap-4">
                 <div>
-                    <h1 class="text-lg font-semibold">Import & Clone</h1>
-                    <p class="text-sm text-slate-500">{{ website.domain }} — files and database are restored into this website</p>
+                    <h1 class="text-lg font-semibold">{{ t('websites.import.title') }}</h1>
+                    <p class="text-sm text-slate-500">{{ t('websites.import.subtitle', { domain: website.domain }) }}</p>
                 </div>
                 <Link :href="panelRoute('websites.manage', { id: website.id })" class="rounded-lg border px-3 py-2 text-sm dark:border-slate-700">
-                    <i class="bi bi-arrow-left mr-1"></i> Website dashboard
+                    <i class="bi bi-arrow-left mr-1"></i> {{ t('websites.transfer.dashboard') }}
                 </Link>
             </div>
         </template>
 
         <div class="mx-auto grid gap-6  lg:grid-cols-2">
             <section class="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900/50">
-                <h3 class="text-lg font-semibold text-slate-900 dark:text-slate-100">Import into {{ website.domain }}</h3>
-                <p class="mt-1 text-sm text-slate-500 dark:text-slate-400">Upload website files, a database dump, or both — either one alone is fine. Files upload in chunks, so phpMyAdmin's PHP upload-size limit doesn't apply here. Existing database credentials for this website are selected automatically—no connection form is required.</p>
+                <h3 class="text-lg font-semibold text-slate-900 dark:text-slate-100">{{ t('websites.import.uploadTitle', { domain: website.domain }) }}</h3>
+                <p class="mt-1 text-sm text-slate-500 dark:text-slate-400">{{ t('websites.import.uploadHelp') }}</p>
                 <form class="mt-6 grid gap-4 md:grid-cols-2" @submit.prevent="submitGeneric">
-                    <label class="text-sm font-medium text-slate-700 dark:text-slate-300">Website files <span class="font-normal text-slate-400">(optional)</span><input type="file" accept=".zip,.gz,.tgz,application/zip,application/gzip" class="mt-1 block w-full rounded-lg border border-slate-300 bg-white p-2 dark:border-slate-700 dark:bg-slate-800" @change="generic.archive = $event.target.files[0]" /></label>
-                    <label class="text-sm font-medium text-slate-700 dark:text-slate-300">Database dump <span class="font-normal text-slate-400">(optional)</span><input type="file" accept=".sql,application/sql,text/plain" class="mt-1 block w-full rounded-lg border border-slate-300 bg-white p-2 dark:border-slate-700 dark:bg-slate-800" @change="generic.database = $event.target.files[0]" /><span class="mt-1 block text-xs font-normal text-slate-500">Automatically imports into this website's active database. Leave "Website files" empty to import the database only.</span></label>
+                    <label class="text-sm font-medium text-slate-700 dark:text-slate-300">{{ t('websites.import.filesLabel') }} <span class="font-normal text-slate-400">{{ t('websites.import.optional') }}</span><input type="file" accept=".zip,.gz,.tgz,application/zip,application/gzip" class="mt-1 block w-full rounded-lg border border-slate-300 bg-white p-2 dark:border-slate-700 dark:bg-slate-800" @change="generic.archive = $event.target.files[0]" /></label>
+                    <label class="text-sm font-medium text-slate-700 dark:text-slate-300">{{ t('websites.import.dumpLabel') }} <span class="font-normal text-slate-400">{{ t('websites.import.optional') }}</span><input type="file" accept=".sql,application/sql,text/plain" class="mt-1 block w-full rounded-lg border border-slate-300 bg-white p-2 dark:border-slate-700 dark:bg-slate-800" @change="generic.database = $event.target.files[0]" /><span class="mt-1 block text-xs font-normal text-slate-500">{{ t('websites.import.dumpHelp') }}</span></label>
                     <div v-if="!generic.database" class="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600 dark:border-slate-700 dark:bg-slate-800/60 dark:text-slate-300 md:col-span-2">
-                        <template v-if="databaseConnection?.available && databases.length === 1 && primaryDatabaseMissing"><i class="bi bi-database-exclamation mr-1 text-amber-500"></i>Database {{ databaseConnection.database_name }} is linked to this website but doesn't exist on the server. Uploading SQL will create it and import into it.</template>
-                        <template v-else-if="databaseConnection?.available"><i class="bi bi-database-check mr-1 text-emerald-500"></i>{{ databases.length > 1 ? `${databases.length} databases are linked to this website — choose a database dump to pick which one to replace.` : `Existing database ${databaseConnection.database_name} requires confirmation and will be backed up before overwrite.` }}</template>
-                        <template v-else><i class="bi bi-database-add mr-1 text-indigo-500"></i>No active database exists. Uploading SQL will automatically create and connect one.</template>
+                        <template v-if="databaseConnection?.available && databases.length === 1 && primaryDatabaseMissing"><i class="bi bi-database-exclamation mr-1 text-amber-500"></i>{{ t('websites.import.dbMissing', { name: databaseConnection.database_name }) }}</template>
+                        <template v-else-if="databaseConnection?.available"><i class="bi bi-database-check mr-1 text-emerald-500"></i>{{ databases.length > 1 ? t('websites.import.dbMany', { count: databases.length }) : t('websites.import.dbExisting', { name: databaseConnection.database_name }) }}</template>
+                        <template v-else><i class="bi bi-database-add mr-1 text-indigo-500"></i>{{ t('websites.import.dbNone') }}</template>
                     </div>
                     <Transition v-bind="reveal">
                         <DatabaseTargetPicker v-if="generic.database" v-model:target="databaseTarget" v-model:new-name="newDatabaseName" :databases="databases" name="upload-database-target" class="md:col-span-2" />
                     </Transition>
                     <div v-if="uploading || trackingId" class="space-y-3 rounded-xl border border-slate-200 bg-slate-50 p-4 dark:border-slate-700 dark:bg-slate-800/50 md:col-span-2">
-                        <div class="flex flex-wrap items-center justify-between gap-2"><h4 class="text-sm font-semibold text-slate-800 dark:text-slate-200">Tracked import pipeline</h4><code v-if="trackingId" class="rounded bg-slate-200 px-2 py-1 text-xs text-slate-600 dark:bg-slate-700 dark:text-slate-300">{{ trackingId }}</code></div>
+                        <div class="flex flex-wrap items-center justify-between gap-2"><h4 class="text-sm font-semibold text-slate-800 dark:text-slate-200">{{ t('websites.import.pipeline') }}</h4><code v-if="trackingId" class="rounded bg-slate-200 px-2 py-1 text-xs text-slate-600 dark:bg-slate-700 dark:text-slate-300">{{ trackingId }}</code></div>
                         <div v-for="(stage, key) in uploadStages" :key="key">
-                            <div class="mb-1 flex justify-between text-xs"><span class="font-semibold capitalize text-slate-600 dark:text-slate-300">{{ key === 'archive' ? 'Website files' : key }}</span><span class="text-slate-500">{{ stage.status }} · {{ stage.progress }}%</span></div>
+                            <div class="mb-1 flex justify-between text-xs"><span class="font-semibold capitalize text-slate-600 dark:text-slate-300">{{ t(`websites.import.stageName.${key}`) }}</span><span class="text-slate-500">{{ t(`websites.import.stageStatus.${stage.status}`) }} · {{ stage.progress }}%</span></div>
                             <div class="h-2 overflow-hidden rounded-full bg-slate-200 dark:bg-slate-700"><div class="h-full rounded-full transition-all duration-200" :class="stage.status === 'ready' || stage.status === 'queued' || stage.status === 'skipped' ? 'bg-emerald-500' : 'bg-indigo-500'" :style="{ width: `${stage.progress}%` }"></div></div>
                         </div>
                     </div>
-                    <div class="md:col-span-2"><button :disabled="uploading || (!generic.archive && !generic.database)" class="rounded-lg bg-indigo-600 px-5 py-2.5 text-sm font-semibold text-white disabled:opacity-50">{{ uploading ? 'Starting…' : 'Upload & migrate' }}</button></div>
+                    <div class="md:col-span-2"><button :disabled="uploading || (!generic.archive && !generic.database)" class="rounded-lg bg-indigo-600 px-5 py-2.5 text-sm font-semibold text-white disabled:opacity-50">{{ uploading ? t('websites.import.starting') : t('websites.import.uploadSubmit') }}</button></div>
                 </form>
             </section>
 
             <section class="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900/50">
-                <h3 class="text-lg font-semibold text-slate-900 dark:text-slate-100">Clone from another website</h3>
-                <p class="mt-1 text-sm text-slate-500 dark:text-slate-400">Pull another website's files and database from this server into {{ website.domain }} — {{ website.domain }} is always the destination. The source website is never changed.</p>
+                <h3 class="text-lg font-semibold text-slate-900 dark:text-slate-100">{{ t('websites.import.cloneTitle') }}</h3>
+                <p class="mt-1 text-sm text-slate-500 dark:text-slate-400">{{ t('websites.import.cloneHelp', { domain: website.domain }) }}</p>
                 <form class="mt-6 grid gap-4" @submit.prevent="startPull">
                     <div class="text-sm font-medium text-slate-700 dark:text-slate-300">
-                        Clone from
+                        {{ t('websites.import.cloneFrom') }}
                         <SearchableSelect v-model="sourceWebsiteId" class="mt-1 font-normal" :options="otherWebsiteOptions" :disabled="pullRunning"
-                            placeholder="Select a website you own…" search-placeholder="Search websites…" />
-                        <span v-if="otherWebsites.length === 0" class="mt-1 block text-xs font-normal text-amber-600">You need at least one other website on this server to clone from.</span>
+                            :placeholder="t('websites.import.selectWebsite')" :search-placeholder="t('websites.import.searchWebsites')" />
+                        <span v-if="otherWebsites.length === 0" class="mt-1 block text-xs font-normal text-amber-600">{{ t('websites.import.needOther') }}</span>
                     </div>
                     <Transition v-bind="reveal" mode="out-in">
                         <div v-if="!sourceWebsiteId" key="hint" class="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600 dark:border-slate-700 dark:bg-slate-800/60 dark:text-slate-300">
-                            <i class="bi bi-database mr-1 text-indigo-500"></i>{{ 'Pick a website to clone — then choose which database to replace or create.' }}
+                            <i class="bi bi-database mr-1 text-indigo-500"></i>{{ t('websites.import.cloneHint') }}
                         </div>
                         <div v-else-if="liveDatabasesStatus === 'loading'" key="loading" class="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600 dark:border-slate-700 dark:bg-slate-800/60 dark:text-slate-300">
-                            <i class="bi bi-arrow-repeat mr-1 inline-block animate-spin"></i>Loading {{ website.domain }}'s databases…
+                            <i class="bi bi-arrow-repeat mr-1 inline-block animate-spin"></i>{{ t('websites.import.loadingDbs', { domain: website.domain }) }}
                         </div>
                         <div v-else-if="liveDatabasesStatus === 'error'" key="error" class="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700 dark:border-red-800 dark:bg-red-500/10 dark:text-red-300">
-                            Couldn't load {{ website.domain }}'s databases. <button type="button" class="underline" @click="loadLiveDatabases">Retry</button>
+                            {{ t('websites.import.loadDbsFailed', { domain: website.domain }) }} <button type="button" class="underline" @click="loadLiveDatabases">{{ t('websites.import.retry') }}</button>
                         </div>
                         <DatabaseTargetPicker v-else-if="liveDatabasesStatus === 'loaded'" key="picker" v-model:target="cloneDatabase.target" v-model:new-name="cloneDatabase.newName" :databases="liveDatabases" :disabled="pullRunning" name="clone-database-target" />
                     </Transition>
                     <Transition v-bind="reveal">
-                        <JobPipeline v-if="pullStage" title="Clone pipeline" :job-id="pullJobId" :steps="CLONE_STEPS" :stage="pullStage" :failed-at="pullFailedAt" :message="pullMessage" />
+                        <JobPipeline v-if="pullStage" :title="t('websites.import.clonePipeline')" :job-id="pullJobId" :steps="CLONE_STEPS" :stage="pullStage" :failed-at="pullFailedAt" :message="pullMessage" />
                     </Transition>
-                    <div><button :disabled="pullRunning || !sourceWebsiteId || liveDatabasesStatus !== 'loaded'" class="rounded-lg bg-indigo-600 px-5 py-2.5 text-sm font-semibold text-white disabled:opacity-50">{{ pullRunning ? 'Cloning…' : 'Clone & migrate' }}</button></div>
+                    <div><button :disabled="pullRunning || !sourceWebsiteId || liveDatabasesStatus !== 'loaded'" class="rounded-lg bg-indigo-600 px-5 py-2.5 text-sm font-semibold text-white disabled:opacity-50">{{ pullRunning ? t('websites.import.cloning') : t('websites.import.cloneSubmit') }}</button></div>
                 </form>
 
                 <hr class="my-6 border-slate-200 dark:border-slate-700" />
 
-                <h3 class="text-lg font-semibold text-slate-900 dark:text-slate-100">Import from another server</h3>
-                <p class="mt-1 text-sm text-slate-500 dark:text-slate-400">Paste a share link generated on another server's Export & Share page to clone it into {{ website.domain }}.</p>
+                <h3 class="text-lg font-semibold text-slate-900 dark:text-slate-100">{{ t('websites.import.urlTitle') }}</h3>
+                <p class="mt-1 text-sm text-slate-500 dark:text-slate-400">{{ t('websites.import.urlHelp', { domain: website.domain }) }}</p>
                 <form class="mt-6 grid gap-4" @submit.prevent="startUrlImport">
-                    <label class="text-sm font-medium text-slate-700 dark:text-slate-300">Share link
+                    <label class="text-sm font-medium text-slate-700 dark:text-slate-300">{{ t('websites.import.shareLink') }}
                         <input v-model="importUrl" type="url" :disabled="importRunning" placeholder="https://other-server.example.com/clone-share/download/…"
                             class="mt-1 block w-full rounded-lg border border-slate-300 bg-white p-2 font-normal dark:border-slate-700 dark:bg-slate-800" />
                     </label>
                     <Transition v-bind="reveal" mode="out-in">
                         <div v-if="!importUrl" key="hint" class="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600 dark:border-slate-700 dark:bg-slate-800/60 dark:text-slate-300">
-                            <i class="bi bi-database mr-1 text-indigo-500"></i>{{ 'Paste a share link — then choose which database to replace or create.' }}
+                            <i class="bi bi-database mr-1 text-indigo-500"></i>{{ t('websites.import.urlHint') }}
                         </div>
                         <div v-else-if="liveDatabasesStatus === 'loading'" key="loading" class="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600 dark:border-slate-700 dark:bg-slate-800/60 dark:text-slate-300">
-                            <i class="bi bi-arrow-repeat mr-1 inline-block animate-spin"></i>Loading {{ website.domain }}'s databases…
+                            <i class="bi bi-arrow-repeat mr-1 inline-block animate-spin"></i>{{ t('websites.import.loadingDbs', { domain: website.domain }) }}
                         </div>
                         <div v-else-if="liveDatabasesStatus === 'error'" key="error" class="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700 dark:border-red-800 dark:bg-red-500/10 dark:text-red-300">
-                            Couldn't load {{ website.domain }}'s databases. <button type="button" class="underline" @click="loadLiveDatabases">Retry</button>
+                            {{ t('websites.import.loadDbsFailed', { domain: website.domain }) }} <button type="button" class="underline" @click="loadLiveDatabases">{{ t('websites.import.retry') }}</button>
                         </div>
                         <DatabaseTargetPicker v-else-if="liveDatabasesStatus === 'loaded'" key="picker" v-model:target="importDatabase.target" v-model:new-name="importDatabase.newName" :databases="liveDatabases" :disabled="importRunning" name="import-database-target" />
                     </Transition>
                     <Transition v-bind="reveal">
-                        <JobPipeline v-if="importStage" title="Import pipeline" :job-id="importJobId" :steps="IMPORT_STEPS" :stage="importStage" :failed-at="importFailedAt" :message="importMessage" />
+                        <JobPipeline v-if="importStage" :title="t('websites.import.importPipeline')" :job-id="importJobId" :steps="IMPORT_STEPS" :stage="importStage" :failed-at="importFailedAt" :message="importMessage" />
                     </Transition>
-                    <div><button :disabled="importRunning || !importUrl || liveDatabasesStatus !== 'loaded'" class="rounded-lg bg-indigo-600 px-5 py-2.5 text-sm font-semibold text-white disabled:opacity-50">{{ importRunning ? 'Importing…' : 'Import & migrate' }}</button></div>
+                    <div><button :disabled="importRunning || !importUrl || liveDatabasesStatus !== 'loaded'" class="rounded-lg bg-indigo-600 px-5 py-2.5 text-sm font-semibold text-white disabled:opacity-50">{{ importRunning ? t('websites.import.importing') : t('websites.import.importSubmit') }}</button></div>
                 </form>
             </section>
 
             <div v-if="message" class="rounded-lg border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-800 dark:border-emerald-800 dark:bg-emerald-500/10 dark:text-emerald-300 lg:col-span-2">{{ message }}</div>
             <div v-if="error" class="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-800 dark:border-red-800 dark:bg-red-500/10 dark:text-red-300 lg:col-span-2">{{ error }}</div>
 
-            <div v-if="total" class="pt-2 lg:col-span-2"><h3 class="text-lg font-semibold text-slate-900 dark:text-slate-100">Import history</h3></div>
+            <div v-if="total" class="pt-2 lg:col-span-2"><h3 class="text-lg font-semibold text-slate-900 dark:text-slate-100">{{ t('websites.import.history') }}</h3></div>
             <section v-for="item in imports" :key="item.id" class="rounded-xl border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-900/50 lg:col-span-2">
                 <div class="flex items-center justify-between gap-3"><div><h4 class="font-semibold dark:text-slate-100">{{ item.inventory?.domain || item.original_name }}</h4><p class="text-sm text-slate-500 dark:text-slate-400">{{ item.original_name }}</p></div><span class="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold dark:bg-slate-800">{{ item.status }}</span></div>
                 <p v-if="item.last_error" class="mt-3 text-sm text-red-600 dark:text-red-400">{{ item.last_error }}</p>
