@@ -105,7 +105,112 @@
         "limitAlgosHint": "দৈর্ঘ্য দিয়ে স্বয়ংক্রিয় শনাক্তের জন্য খালি রাখুন। সল্টেড হ্যাশে উপেক্ষিত।",
         "customChars": "কাস্টম অক্ষর",
         "customCharsPlaceholder": "যেমন .!_-",
-        "poolSize": "{n}-অক্ষরের পুল"
+        "poolSize": "{n}-অক্ষরের পুল",
+        "tabTransform": "Transform",
+        "appearance": "চেহারা",
+        "apReset": "রিসেট",
+        "apAccent": "রঙ",
+        "apDensity": "ঘনত্ব",
+        "apCard": "কার্ড",
+        "apRadius": "কোণা",
+        "apMono": "Monospace মান",
+        "apD": {
+            "compact": "সংক্ষিপ্ত",
+            "cozy": "স্বাভাবিক",
+            "roomy": "খোলামেলা"
+        },
+        "apC": {
+            "bordered": "বর্ডারযুক্ত",
+            "filled": "ভরাট",
+            "elevated": "ছায়াযুক্ত"
+        },
+        "apR": {
+            "sharp": "ধারালো",
+            "soft": "নরম",
+            "round": "গোল"
+        },
+        "tfInputPlaceholder": "যে টেক্সট transform করবেন…",
+        "tfAdd": "একটি transform যোগ করুন",
+        "tfClear": "সব মুছুন",
+        "tfEmpty": "উপরে থেকে transform যোগ করে pipeline বানান। প্রতিটি ধাপ পরেরটিকে input দেয়।",
+        "tfMoveUp": "উপরে তুলুন",
+        "tfMoveDown": "নিচে নামান",
+        "tfRemove": "ধাপ সরান",
+        "tfStepFailed": "এই ধাপটি তার input-এ চলতে পারেনি।",
+        "tfOutput": "ফলাফল",
+        "tfOutputEmpty": "টেক্সট দিন এবং অন্তত একটি transform যোগ করুন।",
+        "tfShowSteps": "প্রতিটি ধাপ দেখুন",
+        "tf": {
+            "base64": "Base64",
+            "hex": "Hex",
+            "binary": "Binary",
+            "decimal": "Decimal bytes",
+            "url": "URL",
+            "html": "HTML entities",
+            "case": "Case বদল",
+            "reverse": "উল্টো",
+            "caesar": "Caesar shift",
+            "rot13": "ROT13",
+            "rot47": "ROT47",
+            "morse": "Morse code",
+            "whitespace": "Whitespace"
+        },
+        "tfOpt": {
+            "base64": {
+                "urlsafe": "URL-safe",
+                "padding": "Padding",
+                "wrap": "Wrap at"
+            },
+            "hex": {
+                "upper": "বড় হাতের",
+                "delim": "বিভাজক",
+                "prefix": "0x prefix"
+            },
+            "binary": {
+                "delim": "বিভাজক"
+            },
+            "decimal": {
+                "delim": "বিভাজক"
+            },
+            "url": {
+                "mode": "পরিসর"
+            },
+            "case": {
+                "mode": "ধরন"
+            },
+            "reverse": {
+                "unit": "যেভাবে"
+            },
+            "caesar": {
+                "shift": "Shift"
+            },
+            "whitespace": {
+                "mode": "কাজ"
+            }
+        },
+        "tfChoice": {
+            "none": "কিছু না",
+            "space": "স্পেস",
+            "colon": "কোলন",
+            "dash": "ড্যাশ",
+            "comma": "কমা",
+            "component": "Component",
+            "full": "পূর্ণ URL",
+            "upper": "UPPER",
+            "lower": "lower",
+            "title": "Title",
+            "sentence": "Sentence",
+            "toggle": "tOGGLE",
+            "snake": "snake_case",
+            "kebab": "kebab-case",
+            "camel": "camelCase",
+            "chars": "অক্ষর",
+            "words": "শব্দ",
+            "lines": "লাইন",
+            "collapse": "সংকুচিত",
+            "stripAll": "সব বাদ",
+            "trimLines": "লাইন trim"
+        }
     },
     "loadTest": {
         "title": "লোড টেস্ট",
