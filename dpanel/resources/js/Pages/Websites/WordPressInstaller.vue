@@ -5,6 +5,9 @@ import { Deferred, Head, Link, usePage } from '@inertiajs/vue3';
 import { computed, onUnmounted, ref, watch } from 'vue';
 import InstallerVersionPicker from '@/Components/Installer/InstallerVersionPicker.vue';
 import InstallerDatabasePicker from '@/Components/Installer/InstallerDatabasePicker.vue';
+import { useI18n } from 'vue-i18n';
+
+const { t } = useI18n();
 
 const props = defineProps({
     website: {
@@ -79,12 +82,12 @@ const versionList = computed(() => (Array.isArray(props.wordpressVersions) ? pro
 
 const selectedWordPressVersion = ref('latest');
 const phpHint = (version) => {
-    const range = `PHP ${version.min_php}–${version.max_php}`;
-    return version.php_version ? `${range} · runs on ${version.php_version}` : `${range} · not installed`;
+    const range = t('installer.wordpress.phpRange', { min: version.min_php, max: version.max_php });
+    return version.php_version ? t('installer.wordpress.runsOn', { range, version: version.php_version }) : t('installer.wordpress.notInstalled', { range });
 };
 const wordpressVersionOptions = computed(() => versionList.value.map((version) => ({
     value: version.value,
-    label: version.value === 'latest' ? 'Latest stable' : `WordPress ${version.value}`,
+    label: version.value === 'latest' ? t('installer.wordpress.latest') : t('installer.wordpress.named', { version: version.value }),
     hint: phpHint(version),
     disabled: !version.php_version,
 })));
@@ -102,12 +105,12 @@ const phpPlan = computed(() => {
         const fits = currentPhp.value
             && Number.parseFloat(currentPhp.value) >= Number.parseFloat(range.min_php)
             && Number.parseFloat(currentPhp.value) <= Number.parseFloat(range.max_php);
-        return { subject: `Installed WordPress ${props.installedVersion}`, ...range, target: fits ? currentPhp.value : null, fits };
+        return { subject: t('installer.wordpress.installed', { version: props.installedVersion }), ...range, target: fits ? currentPhp.value : null, fits };
     }
     const meta = versionList.value.find((version) => version.value === selectedWordPressVersion.value);
     if (!meta) return null;
     return {
-        subject: meta.value === 'latest' ? 'Latest WordPress' : `WordPress ${meta.value}`,
+        subject: meta.value === 'latest' ? t('installer.wordpress.latestSubject') : t('installer.wordpress.named', { version: meta.value }),
         min_php: meta.min_php,
         max_php: meta.max_php,
         target: meta.php_version,
@@ -140,13 +143,13 @@ const installMessageClass = computed(() => (
 // Ordered so the progress bar can compute "how far along" from the stage's
 // index — 'queued' isn't in here since it maps to 0% (nothing has started).
 const INSTALL_STAGES = ['downloading', 'creating_database', 'connecting_database', 'ready'];
-const INSTALL_STAGE_LABELS = {
-    queued: 'Queued…',
-    downloading: 'Downloading WordPress…',
-    creating_database: 'Creating database…',
-    connecting_database: 'Connecting database…',
-    ready: 'Done',
-};
+const INSTALL_STAGE_LABELS = computed(() => ({
+    queued: t('installer.stage.queued'),
+    downloading: t('installer.wordpress.stage.downloading'),
+    creating_database: t('installer.wordpress.stage.creatingDatabase'),
+    connecting_database: t('installer.wordpress.stage.connectingDatabase'),
+    ready: t('installer.stage.ready'),
+}));
 
 const installStage = ref('');
 const installProgress = computed(() => {
@@ -158,7 +161,7 @@ const installProgress = computed(() => {
 
     return Math.round(((index + 1) / INSTALL_STAGES.length) * 100);
 });
-const installStageLabel = computed(() => INSTALL_STAGE_LABELS[installStage.value] || 'Working…');
+const installStageLabel = computed(() => INSTALL_STAGE_LABELS.value[installStage.value] || t('installer.working'));
 
 let installPollTimer = null;
 const stopInstallPoll = () => {
@@ -188,12 +191,12 @@ const pollInstallStatus = async (installId, prefix) => {
             }
 
             installFeedbackType.value = 'success';
-            installFeedback.value = payload.message || 'WordPress installed and configured successfully.';
+            installFeedback.value = payload.message || t('installer.wordpress.done');
         } else if (payload.stage === 'failed') {
             stopInstallPoll();
             installBusy.value = false;
             installFeedbackType.value = 'error';
-            installFeedback.value = payload.message || 'WordPress installation failed.';
+            installFeedback.value = payload.message || t('installer.wordpress.failed');
         }
     } catch {
         // Network hiccup — next tick retries.
@@ -236,21 +239,21 @@ const installWordPress = async () => {
         installFeedbackType.value = 'error';
         installFeedback.value = error?.response?.data?.message
             || error?.response?.data?.error
-            || 'WordPress installation failed.';
+            || t('installer.wordpress.failed');
     }
 };
 </script>
 
 <template>
-    <Head title="WordPress Installer" />
+    <Head :title="t('installer.wordpress.title')" />
 
     <AuthenticatedLayout>
         <template #header>
             <div class="flex flex-wrap items-center justify-between gap-3">
                 <div>
-                    <h1 class="text-lg font-semibold">WordPress Installer</h1>
+                    <h1 class="text-lg font-semibold">{{ t('installer.wordpress.title') }}</h1>
                     <p class="text-sm text-slate-500 dark:text-slate-400">
-                        Install WordPress with automatic database provisioning for {{ website.domain || '-' }}.
+                        {{ t('installer.wordpress.subtitle', { domain: website.domain || '-' }) }}
                     </p>
                 </div>
             </div>
@@ -269,18 +272,18 @@ const installWordPress = async () => {
 
             <div class="flex justify-end">
                 <Link :href="panelRoute('websites.manage', { id: website.id })" class="rounded-md border border-slate-300 px-3 py-2 text-sm hover:bg-slate-100 dark:border-slate-700 dark:hover:bg-slate-800">
-                    <i class="bi bi-arrow-left mr-2"></i> Back to Manage
+                    <i class="bi bi-arrow-left mr-2"></i> {{ t('common.back') }}
                 </Link>
             </div>
 
             <section class="rounded-xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900">
                 <div class="grid gap-3 sm:grid-cols-2">
                     <div class="rounded-lg border border-slate-200 p-3 dark:border-slate-700">
-                        <p class="text-xs text-slate-500 dark:text-slate-400">Domain</p>
+                        <p class="text-xs text-slate-500 dark:text-slate-400">{{ t('installer.domain') }}</p>
                         <p class="mt-1 break-all text-sm font-semibold">{{ website.domain || '-' }}</p>
                     </div>
                     <div class="rounded-lg border border-slate-200 p-3 dark:border-slate-700">
-                        <p class="text-xs text-slate-500 dark:text-slate-400">Root Path</p>
+                        <p class="text-xs text-slate-500 dark:text-slate-400">{{ t('installer.rootPath') }}</p>
                         <p class="mt-1 break-all text-sm font-semibold">{{ website.root_path || '-' }}</p>
                     </div>
                 </div>
@@ -296,7 +299,7 @@ const installWordPress = async () => {
                                 ? 'border-emerald-300 bg-emerald-50 text-emerald-700 dark:border-emerald-700 dark:bg-emerald-900/20 dark:text-emerald-300'
                                 : 'border-slate-300 bg-slate-50 text-slate-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200'"
                         >
-                            {{ isWordPressDetected ? 'WordPress detected' : 'Not Installed' }}
+                            {{ isWordPressDetected ? t('installer.badge.wordpress') : t('installer.badge.notInstalled') }}
                         </span>
                     </Deferred>
                 </div>
@@ -308,12 +311,12 @@ const installWordPress = async () => {
                 <div class="mt-5">
                     <Deferred data="wordpressVersions">
                         <template #fallback>
-                            <p class="text-xs uppercase tracking-wide text-slate-500 dark:text-slate-400">WordPress Version</p>
+                            <p class="text-xs uppercase tracking-wide text-slate-500 dark:text-slate-400">{{ t('installer.wordpress.version') }}</p>
                             <div class="mt-2 h-[62px] w-full animate-pulse rounded-lg border border-slate-200 bg-slate-100 dark:border-slate-700 dark:bg-slate-800"></div>
                         </template>
                         <InstallerVersionPicker
                             v-model="selectedWordPressVersion"
-                            label="WordPress Version"
+                            :label="t('installer.wordpress.version')"
                             name="wordpress_version"
                             :versions="wordpressVersionOptions"
                             :disabled="installBusy"
@@ -329,7 +332,7 @@ const installWordPress = async () => {
                     :databases="databases"
                     :new-database="newDatabase"
                     :engines="['mariadb']"
-                    existing-note="Reused as-is; WordPress tables use the prefix below"
+                    :existing-note="t('installer.wordpress.existingNote')"
                     password-file="wp-config.php"
                     :disabled="installBusy"
                     accent="blue"
@@ -345,18 +348,18 @@ const installWordPress = async () => {
                                 : 'border-red-200 bg-red-50 text-red-700 dark:border-red-800 dark:bg-red-500/10 dark:text-red-400')">
                         <i class="bi bi-filetype-php mt-0.5"></i>
                         <span>
-                            {{ phpPlan.subject }} supports <strong>PHP {{ phpPlan.min_php }}–{{ phpPlan.max_php }}</strong>.
-                            <template v-if="phpPlan.fits">Current PHP <strong>{{ currentPhp }}</strong> is compatible.</template>
-                            <template v-else-if="phpPlan.target">PHP will be switched automatically from <strong>{{ currentPhp || 'none' }}</strong> to <strong>{{ phpPlan.target }}</strong>.</template>
-                            <template v-else-if="isWordPressDetected">Current PHP <strong>{{ currentPhp || 'none' }}</strong> is out of range; <em>Update Configuration</em> switches it to the newest compatible installed PHP.</template>
-                            <template v-else>No compatible PHP is installed on this server — install one in PHP Manager or pick another version.</template>
+                            <i18n-t keypath="installer.wordpress.supports" scope="global"><template #subject>{{ phpPlan.subject }}</template><template #range><strong>{{ t('installer.wordpress.phpRange', { min: phpPlan.min_php, max: phpPlan.max_php }) }}</strong></template></i18n-t>
+                            <template v-if="phpPlan.fits"><i18n-t keypath="installer.wordpress.phpFits" scope="global"><template #version><strong>{{ currentPhp }}</strong></template></i18n-t></template>
+                            <template v-else-if="phpPlan.target"><i18n-t keypath="installer.wordpress.phpAuto" scope="global"><template #from><strong>{{ currentPhp || t('installer.none') }}</strong></template><template #to><strong>{{ phpPlan.target }}</strong></template></i18n-t></template>
+                            <template v-else-if="isWordPressDetected"><i18n-t keypath="installer.wordpress.phpOutOfRange" scope="global"><template #version><strong>{{ currentPhp || t('installer.none') }}</strong></template><template #action><em>{{ t('installer.wordpress.update') }}</em></template></i18n-t></template>
+                            <template v-else>{{ t('installer.wordpress.phpNone') }}</template>
                         </span>
                     </div>
                 </Deferred>
 
                 <div class="mt-5 grid gap-4 lg:grid-cols-[1fr_auto] lg:items-end">
                     <div>
-                        <label class="text-xs uppercase tracking-wide text-slate-500 dark:text-slate-400">Table Prefix</label>
+                        <label class="text-xs uppercase tracking-wide text-slate-500 dark:text-slate-400">{{ t('installer.wordpress.prefix') }}</label>
                         <input
                             v-model="databasePrefix"
                             type="text"
@@ -366,8 +369,8 @@ const installWordPress = async () => {
                             class="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-800"
                         />
                         <p class="mt-1 text-xs text-slate-500 dark:text-slate-400">
-                            WordPress table prefix. Example: `client` becomes `client_`.
-                            <template v-if="selectedDatabase">Tables are created in <strong>{{ selectedDatabase.database_name }}</strong>; existing tables with another prefix are left alone.</template>
+                            {{ t('installer.wordpress.prefixHelp') }}
+                            <template v-if="selectedDatabase"><i18n-t keypath="installer.wordpress.prefixDb" scope="global"><template #name><strong>{{ selectedDatabase.database_name }}</strong></template></i18n-t></template>
                         </p>
                     </div>
 
@@ -381,8 +384,8 @@ const installWordPress = async () => {
                         @click="installWordPress"
                     >
                         {{ installBusy
-                            ? 'Applying...'
-                        : (isWordPressDetected ? 'Update Configuration' : 'Install WordPress') }}
+                            ? t('installer.wordpress.applying')
+                            : (isWordPressDetected ? t('installer.wordpress.update') : t('installer.wordpress.install')) }}
                     </button>
                 </div>
 

@@ -5,6 +5,9 @@ import { computed, onUnmounted, ref, watch } from 'vue';
 import InstallerDatabasePicker from '@/Components/Installer/InstallerDatabasePicker.vue';
 import InstallerVersionPicker from '@/Components/Installer/InstallerVersionPicker.vue';
 import { engineLabel } from '@/Components/Installer/engines';
+import { useI18n } from 'vue-i18n';
+
+const { t } = useI18n();
 
 const props = defineProps({
     website: {
@@ -77,7 +80,7 @@ const effectiveEngine = computed(() => selectedDatabase.value?.engine || newData
 const versionOptions = computed(() => versions.value.map((version) => ({
     value: version.value,
     label: version.label,
-    hint: version.php_version ? `Runs on PHP ${version.php_version}` : `Needs PHP ${version.min_php}+ (not installed)`,
+    hint: version.php_version ? t('installer.runsOnPhp', { version: version.php_version }) : t('installer.needsPhp', { version: version.min_php }),
     disabled: !version.php_version,
 })));
 
@@ -91,13 +94,13 @@ const phpWillChange = computed(() => targetPhp.value && targetPhp.value !== curr
 const detectedApp = computed(() => String(props.rootInspection?.detected_app ?? '').toLowerCase());
 const rootHasFiles = computed(() => !['', 'missing', 'empty'].includes(detectedApp.value));
 const rootBadge = computed(() => ({
-    laravel: 'Laravel detected',
-    wordpress: 'WordPress detected',
-    codeigniter: 'CodeIgniter detected',
-    unknown: 'Existing files',
-    empty: 'Empty',
-    missing: 'Empty',
-}[detectedApp.value] || 'Unknown'));
+    laravel: t('installer.badge.laravel'),
+    wordpress: t('installer.badge.wordpress'),
+    codeigniter: t('installer.badge.codeigniter'),
+    unknown: t('installer.badge.unknown'),
+    empty: t('installer.badge.empty'),
+    missing: t('installer.badge.empty'),
+}[detectedApp.value] || t('installer.badge.other')));
 
 const installBusy = ref(false);
 const installFeedback = ref('');
@@ -109,18 +112,18 @@ const installMessageClass = computed(() => (
 ));
 
 const INSTALL_STAGES = ['backing_up', 'downloading', 'creating_database', 'configuring', 'migrating', 'building_assets', 'finalizing', 'pushing_git', 'ready'];
-const INSTALL_STAGE_LABELS = {
-    queued: 'Queued…',
-    backing_up: 'Moving existing files to trash…',
-    downloading: 'Downloading Laravel with Composer…',
-    creating_database: 'Preparing database…',
-    configuring: 'Writing .env and app key…',
-    migrating: 'Running fresh migrations…',
-    building_assets: 'Building frontend assets (npm)…',
-    finalizing: 'Switching PHP version and document root…',
-    pushing_git: 'Pushing the project to the connected repository…',
-    ready: 'Done',
-};
+const INSTALL_STAGE_LABELS = computed(() => ({
+    queued: t('installer.stage.queued'),
+    backing_up: t('installer.stage.backingUp'),
+    downloading: t('installer.laravel.stage.downloading'),
+    creating_database: t('installer.stage.creatingDatabase'),
+    configuring: t('installer.laravel.stage.configuring'),
+    migrating: t('installer.laravel.stage.migrating'),
+    building_assets: t('installer.laravel.stage.buildingAssets'),
+    finalizing: t('installer.laravel.stage.finalizing'),
+    pushing_git: t('installer.laravel.stage.pushingGit'),
+    ready: t('installer.stage.ready'),
+}));
 
 const installStage = ref('');
 const installProgress = computed(() => {
@@ -130,7 +133,7 @@ const installProgress = computed(() => {
     if (index === -1) return 3;
     return Math.round(((index + 1) / INSTALL_STAGES.length) * 100);
 });
-const installStageLabel = computed(() => INSTALL_STAGE_LABELS[installStage.value] || 'Working…');
+const installStageLabel = computed(() => INSTALL_STAGE_LABELS.value[installStage.value] || t('installer.working'));
 
 let installPollTimer = null;
 const stopInstallPoll = () => {
@@ -155,12 +158,12 @@ const pollInstallStatus = async (installId) => {
             installBusy.value = false;
             if (payload.website) websiteState.value = { ...payload.website };
             installFeedbackType.value = 'success';
-            installFeedback.value = payload.message || 'Laravel installed successfully.';
+            installFeedback.value = payload.message || t('installer.laravel.done');
         } else if (payload.stage === 'failed') {
             stopInstallPoll();
             installBusy.value = false;
             installFeedbackType.value = 'error';
-            installFeedback.value = payload.message || 'Laravel installation failed.';
+            installFeedback.value = payload.message || t('installer.laravel.failed');
         }
     } catch {
         // Network hiccup — next tick retries.
@@ -171,10 +174,10 @@ const installLaravel = async () => {
     if (installBusy.value || !targetPhp.value) return;
 
     const warnings = [];
-    if (rootHasFiles.value) warnings.push(`Current files in ${website.value.root_path} will be moved to the File Manager trash.`);
-    if (selectedDatabase.value) warnings.push(`${engineLabel(selectedDatabase.value.engine)} database "${selectedDatabase.value.database_name}" will be wiped (migrate:fresh).`);
-    if (phpWillChange.value) warnings.push(`Website PHP will switch from ${currentPhp.value || 'none'} to ${targetPhp.value}.`);
-    if (warnings.length && !window.confirm(`${warnings.join('\n')}\n\nContinue?`)) return;
+    if (rootHasFiles.value) warnings.push(t('installer.warnTrash', { path: website.value.root_path }));
+    if (selectedDatabase.value) warnings.push(t('installer.laravel.warnWipe', { engine: engineLabel(selectedDatabase.value.engine), name: selectedDatabase.value.database_name }));
+    if (phpWillChange.value) warnings.push(t('installer.warnPhp', { from: currentPhp.value || t('installer.none'), to: targetPhp.value }));
+    if (warnings.length && !window.confirm(t('installer.confirmContinue', { warnings: warnings.join('\n') }))) return;
 
     installBusy.value = true;
     installFeedback.value = '';
@@ -201,20 +204,20 @@ const installLaravel = async () => {
         installBusy.value = false;
         installStage.value = 'failed';
         installFeedbackType.value = 'error';
-        installFeedback.value = error?.response?.data?.message || 'Laravel installation failed.';
+        installFeedback.value = error?.response?.data?.message || t('installer.laravel.failed');
     }
 };
 </script>
 
 <template>
-    <Head title="Laravel Installer" />
+    <Head :title="t('installer.laravel.title')" />
 
     <AuthenticatedLayout>
         <template #header>
             <div>
-                <h1 class="text-lg font-semibold">Laravel Installer</h1>
+                <h1 class="text-lg font-semibold">{{ t('installer.laravel.title') }}</h1>
                 <p class="text-sm text-slate-500 dark:text-slate-400">
-                    Install a fresh Laravel project with a database for {{ website.domain || '-' }}.
+                    {{ t('installer.laravel.subtitle', { domain: website.domain || '-' }) }}
                 </p>
             </div>
         </template>
@@ -226,22 +229,22 @@ const installLaravel = async () => {
 
             <div class="flex justify-end">
                 <Link :href="panelRoute('websites.manage', { id: website.id })" class="rounded-md border border-slate-300 px-3 py-2 text-sm hover:bg-slate-100 dark:border-slate-700 dark:hover:bg-slate-800">
-                    <i class="bi bi-arrow-left mr-2"></i> Back to Manage
+                    <i class="bi bi-arrow-left mr-2"></i> {{ t('common.back') }}
                 </Link>
             </div>
 
             <section class="rounded-xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900">
                 <div class="grid gap-3 sm:grid-cols-3">
                     <div class="rounded-lg border border-slate-200 p-3 dark:border-slate-700">
-                        <p class="text-xs text-slate-500 dark:text-slate-400">Domain</p>
+                        <p class="text-xs text-slate-500 dark:text-slate-400">{{ t('installer.domain') }}</p>
                         <p class="mt-1 break-all text-sm font-semibold">{{ website.domain || '-' }}</p>
                     </div>
                     <div class="rounded-lg border border-slate-200 p-3 dark:border-slate-700">
-                        <p class="text-xs text-slate-500 dark:text-slate-400">Project Root</p>
+                        <p class="text-xs text-slate-500 dark:text-slate-400">{{ t('installer.projectRoot') }}</p>
                         <p class="mt-1 break-all text-sm font-semibold">{{ website.root_path || '-' }}</p>
                     </div>
                     <div class="rounded-lg border border-slate-200 p-3 dark:border-slate-700">
-                        <p class="text-xs text-slate-500 dark:text-slate-400">Current PHP</p>
+                        <p class="text-xs text-slate-500 dark:text-slate-400">{{ t('installer.currentPhp') }}</p>
                         <p class="mt-1 text-sm font-semibold">{{ currentPhp || '-' }}</p>
                     </div>
                 </div>
@@ -265,7 +268,7 @@ const installLaravel = async () => {
                 <InstallerVersionPicker
                     v-model="selectedVersion"
                     class="mt-5"
-                    label="Laravel Version"
+                    :label="t('installer.laravel.version')"
                     name="laravel_version"
                     :versions="versionOptions"
                     :disabled="installBusy"
@@ -280,7 +283,7 @@ const installLaravel = async () => {
                     :new-database="newDatabase"
                     :engines="databaseEngines"
                     :postgresql="postgresql"
-                    existing-note="All tables will be dropped"
+                    :existing-note="t('installer.laravel.existingNote')"
                     existing-note-class="text-rose-600 dark:text-rose-400"
                     password-file=".env"
                     :disabled="installBusy"
@@ -288,7 +291,7 @@ const installLaravel = async () => {
                 />
 
                 <div class="mt-5">
-                    <p class="text-xs uppercase tracking-wide text-slate-500 dark:text-slate-400">Stack</p>
+                    <p class="text-xs uppercase tracking-wide text-slate-500 dark:text-slate-400">{{ t('installer.laravel.stack') }}</p>
                     <div class="mt-2 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
                         <label
                             v-for="stack in stacks"
@@ -312,7 +315,7 @@ const installLaravel = async () => {
                             <span>
                                 <span class="block text-sm font-semibold">{{ stack.label }}</span>
                                 <span class="block text-xs text-slate-500 dark:text-slate-400">
-                                    {{ stackAvailable(stack) ? stack.description : `Needs Laravel ${stack.versions.join(' or ')}` }}
+                                    {{ stackAvailable(stack) ? stack.description : t('installer.laravel.needsLaravel', { versions: stack.versions.join(t('installer.laravel.or')) }) }}
                                 </span>
                             </span>
                         </label>
@@ -326,10 +329,10 @@ const installLaravel = async () => {
                     <input v-model="pushToGit" type="checkbox" class="mt-1 rounded" :disabled="installBusy" />
                     <span>
                         <span class="block text-sm font-semibold">
-                            <i class="bi bi-github mr-1"></i> Push to {{ gitRepositoryLabel }} ({{ gitRepository.branch }})
+                            <i class="bi bi-github mr-1"></i> {{ t('installer.laravel.pushTo', { repo: gitRepositoryLabel, branch: gitRepository.branch }) }}
                         </span>
                         <span class="block text-xs text-slate-500 dark:text-slate-400">
-                            Only if the repository is still empty: the new project becomes its first commit. <code>.env</code>, <code>vendor</code> and <code>node_modules</code> are not pushed.
+                            {{ t('installer.laravel.pushHelp') }}
                         </span>
                     </span>
                 </label>
@@ -337,22 +340,22 @@ const installLaravel = async () => {
                 <ul class="mt-5 space-y-1.5 text-sm text-slate-600 dark:text-slate-300">
                     <li v-if="targetPhp">
                         <i class="bi bi-braces mr-2 text-indigo-500"></i>
-                        <template v-if="phpWillChange">PHP will switch from <strong>{{ currentPhp || 'none' }}</strong> to <strong>{{ targetPhp }}</strong>.</template>
-                        <template v-else>Runs on the current PHP <strong>{{ targetPhp }}</strong>.</template>
+                        <template v-if="phpWillChange"><i18n-t keypath="installer.phpSwitch" scope="global"><template #from><strong>{{ currentPhp || t('installer.none') }}</strong></template><template #to><strong>{{ targetPhp }}</strong></template></i18n-t></template>
+                        <template v-else><i18n-t keypath="installer.phpCurrent" scope="global"><template #version><strong>{{ targetPhp }}</strong></template></i18n-t></template>
                     </li>
                     <li>
                         <i class="bi bi-database mr-2 text-orange-500"></i>
-                        <template v-if="selectedDatabase">{{ engineLabel(selectedDatabase.engine) }} database <strong>{{ selectedDatabase.database_name }}</strong> will be reused and <strong>wiped</strong> by <code>migrate:fresh</code>.</template>
-                        <template v-else>A new {{ engineLabel(newDatabaseEngine) }} database <strong>{{ newDatabase?.database_name }}</strong> will be created for {{ website.domain }}.</template>
-                        <span v-if="effectiveEngine === 'postgresql'" class="block pl-6 text-xs text-slate-500 dark:text-slate-400">Laravel connects with <code>DB_CONNECTION=pgsql</code>; the site's PHP needs the <code>pdo_pgsql</code> extension.</span>
+                        <template v-if="selectedDatabase"><i18n-t keypath="installer.laravel.dbReuse" scope="global"><template #engine>{{ engineLabel(selectedDatabase.engine) }}</template><template #name><strong>{{ selectedDatabase.database_name }}</strong></template></i18n-t></template>
+                        <template v-else><i18n-t keypath="installer.laravel.dbNew" scope="global"><template #engine>{{ engineLabel(newDatabaseEngine) }}</template><template #name><strong>{{ newDatabase?.database_name }}</strong></template><template #domain>{{ website.domain }}</template></i18n-t></template>
+                        <span v-if="effectiveEngine === 'postgresql'" class="block pl-6 text-xs text-slate-500 dark:text-slate-400">{{ t('installer.laravel.pgNote') }}</span>
                     </li>
                     <li v-if="rootHasFiles">
                         <i class="bi bi-trash mr-2 text-rose-500"></i>
-                        Current files in the project root will be moved to the File Manager trash.
+                        {{ t('installer.rootTrash') }}
                     </li>
                     <li>
                         <i class="bi bi-folder2 mr-2 text-emerald-500"></i>
-                        The document root will be set to <code>public/</code>.
+                        <i18n-t keypath="installer.docRoot" scope="global"><template #path><code>public/</code></template></i18n-t>
                     </li>
                 </ul>
 
@@ -366,7 +369,7 @@ const installLaravel = async () => {
                             : 'border-red-300 text-red-700 hover:bg-red-50 dark:border-red-700 dark:text-red-300 dark:hover:bg-red-900/20'"
                         @click="installLaravel"
                     >
-                        {{ installBusy ? 'Installing…' : 'Install Laravel' }}
+                        {{ installBusy ? t('installer.installing') : t('installer.laravel.install') }}
                     </button>
                 </div>
 
@@ -381,7 +384,7 @@ const installLaravel = async () => {
                             :style="{ width: installProgress + '%' }"
                         ></div>
                     </div>
-                    <p class="mt-2 text-xs text-slate-500 dark:text-slate-400">Composer and the frontend build can take several minutes.</p>
+                    <p class="mt-2 text-xs text-slate-500 dark:text-slate-400">{{ t('installer.laravel.slow') }}</p>
                 </div>
             </section>
         </div>

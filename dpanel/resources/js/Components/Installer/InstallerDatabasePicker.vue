@@ -1,11 +1,14 @@
 <script setup>
 import { computed } from 'vue';
+import { useI18n } from 'vue-i18n';
 import InstallerEnginePicker from './InstallerEnginePicker.vue';
 import { engineBadgeClass, engineLabel, optionCardClass } from './engines';
 
 // The database step every installer shares: this website's existing databases
 // (with their engine), "create new" (engine choice + preview of what will be
 // made) and, for apps that can run without one, "no database".
+const { t } = useI18n();
+
 const props = defineProps({
     databases: { type: Array, default: () => [] },
     newDatabase: { type: Object, default: () => null },
@@ -39,7 +42,7 @@ const preview = computed(() => {
 
 <template>
     <div>
-        <p class="text-xs uppercase tracking-wide text-slate-500 dark:text-slate-400">Database</p>
+        <p class="text-xs uppercase tracking-wide text-slate-500 dark:text-slate-400">{{ t('installer.db.title') }}</p>
         <div class="mt-2 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
             <label
                 v-for="db in visibleDatabases"
@@ -53,22 +56,22 @@ const preview = computed(() => {
                         <span class="break-all text-sm font-semibold">{{ db.database_name }}</span>
                         <span :class="engineBadgeClass(db.engine)" class="rounded-full px-1.5 py-0.5 text-[10px] font-medium">{{ engineLabel(db.engine) }}</span>
                     </span>
-                    <span class="block break-all text-xs text-slate-500 dark:text-slate-400">User: {{ db.database_user }}</span>
+                    <span class="block break-all text-xs text-slate-500 dark:text-slate-400">{{ t('installer.db.user', { user: db.database_user }) }}</span>
                     <span v-if="existingNote" class="block text-xs" :class="existingNoteClass">{{ existingNote }}</span>
                 </span>
             </label>
             <label class="flex cursor-pointer gap-3 rounded-lg border p-3 transition" :class="optionCardClass(selected === 'new', accent)">
                 <input v-model="selected" type="radio" name="database" class="mt-1" value="new" :disabled="disabled" />
                 <span>
-                    <span class="block text-sm font-semibold">Create new database</span>
-                    <span class="block text-xs text-slate-500 dark:text-slate-400">A fresh database and user for this website</span>
+                    <span class="block text-sm font-semibold">{{ t('installer.db.createNew') }}</span>
+                    <span class="block text-xs text-slate-500 dark:text-slate-400">{{ t('installer.db.createNewHelp') }}</span>
                 </span>
             </label>
             <label v-if="allowNone" class="flex cursor-pointer gap-3 rounded-lg border p-3 transition" :class="optionCardClass(selected === 'none', accent)">
                 <input v-model="selected" type="radio" name="database" class="mt-1" value="none" :disabled="disabled" />
                 <span>
-                    <span class="block text-sm font-semibold">No database</span>
-                    <span class="block text-xs text-slate-500 dark:text-slate-400">Configure one later</span>
+                    <span class="block text-sm font-semibold">{{ t('installer.db.none') }}</span>
+                    <span class="block text-xs text-slate-500 dark:text-slate-400">{{ t('installer.db.noneHelp') }}</span>
                 </span>
             </label>
         </div>
@@ -79,14 +82,14 @@ const preview = computed(() => {
         >
             <InstallerEnginePicker v-model="engine" :engines="engines" :postgresql="postgresql" :disabled="disabled" :accent="accent" />
             <div>
-                <p class="text-xs uppercase tracking-wide text-slate-500 dark:text-slate-400">Will be created</p>
+                <p class="text-xs uppercase tracking-wide text-slate-500 dark:text-slate-400">{{ t('installer.db.willCreate') }}</p>
                 <dl class="mt-2 grid gap-x-6 gap-y-1 sm:grid-cols-2">
-                    <div class="flex gap-2"><dt class="text-slate-500 dark:text-slate-400">Engine:</dt><dd class="font-medium">{{ engineLabel(engine) }}</dd></div>
-                    <div class="flex gap-2"><dt class="text-slate-500 dark:text-slate-400">Database:</dt><dd class="break-all font-mono">{{ preview.database_name }}</dd></div>
-                    <div class="flex gap-2"><dt class="text-slate-500 dark:text-slate-400">User:</dt><dd class="break-all font-mono">{{ preview.database_user }}</dd></div>
-                    <div class="flex gap-2"><dt class="text-slate-500 dark:text-slate-400">Password:</dt><dd>auto-generated, saved in <code>{{ passwordFile }}</code></dd></div>
-                    <div class="flex gap-2"><dt class="text-slate-500 dark:text-slate-400">Host:</dt><dd class="font-mono">{{ preview.database_host }}</dd></div>
-                    <div v-if="preview.charset" class="flex gap-2"><dt class="text-slate-500 dark:text-slate-400">Charset:</dt><dd class="font-mono">{{ preview.charset }} / {{ preview.collation }}</dd></div>
+                    <div class="flex gap-2"><dt class="text-slate-500 dark:text-slate-400">{{ t('installer.db.engine') }}</dt><dd class="font-medium">{{ engineLabel(engine) }}</dd></div>
+                    <div class="flex gap-2"><dt class="text-slate-500 dark:text-slate-400">{{ t('installer.db.database') }}</dt><dd class="break-all font-mono">{{ preview.database_name }}</dd></div>
+                    <div class="flex gap-2"><dt class="text-slate-500 dark:text-slate-400">{{ t('installer.db.userLabel') }}</dt><dd class="break-all font-mono">{{ preview.database_user }}</dd></div>
+                    <div class="flex gap-2"><dt class="text-slate-500 dark:text-slate-400">{{ t('installer.db.password') }}</dt><dd><i18n-t keypath="installer.db.passwordValue" scope="global"><template #file><code>{{ passwordFile }}</code></template></i18n-t></dd></div>
+                    <div class="flex gap-2"><dt class="text-slate-500 dark:text-slate-400">{{ t('installer.db.host') }}</dt><dd class="font-mono">{{ preview.database_host }}</dd></div>
+                    <div v-if="preview.charset" class="flex gap-2"><dt class="text-slate-500 dark:text-slate-400">{{ t('installer.db.charset') }}</dt><dd class="font-mono">{{ preview.charset }} / {{ preview.collation }}</dd></div>
                 </dl>
             </div>
         </div>

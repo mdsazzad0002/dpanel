@@ -51,13 +51,13 @@ const newDatabaseEngine = ref('mariadb');
 const versionOptions = computed(() => versions.value.map((version) => ({
     value: version.value,
     label: version.label,
-    hint: version.php_version ? `Runs on PHP ${version.php_version}` : `Needs PHP ${version.min_php}+ (not installed)`,
+    hint: version.php_version ? t('installer.runsOnPhp', { version: version.php_version }) : t('installer.needsPhp', { version: version.min_php }),
     disabled: !version.php_version,
 })));
 const existingDatabaseNote = computed(() => {
-    if (isJoomla.value) return 'Existing tables are kept; Joomla uses a new table prefix';
-    if (isDrupal.value) return 'All tables will be dropped by the installer';
-    return 'Credentials are written to .env';
+    if (isJoomla.value) return t('installer.app.noteJoomla');
+    if (isDrupal.value) return t('installer.app.noteDrupal');
+    return t('installer.app.noteEnv');
 });
 const passwordFile = computed(() => {
     if (props.app.password_file) return props.app.password_file;
@@ -129,7 +129,7 @@ const uploadPackage = async (event) => {
         uploadId.value = id;
     } catch (error) {
         const errors = error?.response?.data?.errors;
-        uploadError.value = errors ? Object.values(errors).flat().join(' ') : (error?.response?.data?.message || 'Upload failed.');
+        uploadError.value = errors ? Object.values(errors).flat().join(' ') : (error?.response?.data?.message || t('installer.app.uploadFailed'));
     } finally {
         uploadBusy.value = false;
     }
@@ -151,13 +151,13 @@ const phpWillChange = computed(() => targetPhp.value && targetPhp.value !== curr
 const detectedApp = computed(() => String(props.rootInspection?.detected_app ?? '').toLowerCase());
 const rootHasFiles = computed(() => !['', 'missing', 'empty'].includes(detectedApp.value));
 const rootBadge = computed(() => ({
-    laravel: 'Laravel detected',
-    wordpress: 'WordPress detected',
-    codeigniter: 'CodeIgniter detected',
-    unknown: 'Existing files',
-    empty: 'Empty',
-    missing: 'Empty',
-}[detectedApp.value] || 'Unknown'));
+    laravel: t('installer.badge.laravel'),
+    wordpress: t('installer.badge.wordpress'),
+    codeigniter: t('installer.badge.codeigniter'),
+    unknown: t('installer.badge.unknown'),
+    empty: t('installer.badge.empty'),
+    missing: t('installer.badge.empty'),
+}[detectedApp.value] || t('installer.badge.other')));
 
 const installBusy = ref(false);
 const installFeedback = ref('');
@@ -170,21 +170,21 @@ const installMessageClass = computed(() => (
 
 const INSTALL_STAGES = ['backing_up', 'downloading', 'creating_database', 'configuring', 'finalizing', 'ready'];
 const INSTALL_STAGE_LABELS = computed(() => ({
-    queued: 'Queued…',
-    backing_up: 'Moving existing files to trash…',
+    queued: t('installer.stage.queued'),
+    backing_up: t('installer.stage.backingUp'),
     downloading: {
-        joomla: 'Downloading and extracting Joomla…',
-        drupal: 'Downloading Drupal and Drush with Composer…',
-        whmcs: 'Extracting the WHMCS package…',
-    }[props.app.key] || (te(`apps.${props.app.key}.downloading`) ? t(`apps.${props.app.key}.downloading`) : 'Downloading CodeIgniter with Composer…'),
-    creating_database: 'Preparing database…',
+        joomla: t('installer.app.stage.downloadJoomla'),
+        drupal: t('installer.app.stage.downloadDrupal'),
+        whmcs: t('installer.app.stage.downloadWhmcs'),
+    }[props.app.key] || (te(`apps.${props.app.key}.downloading`) ? t(`apps.${props.app.key}.downloading`) : t('installer.app.stage.downloadCodeigniter')),
+    creating_database: t('installer.stage.creatingDatabase'),
     configuring: {
-        joomla: 'Running the Joomla installer…',
-        drupal: 'Writing settings.php and running drush site:install…',
-        whmcs: 'Running the WHMCS installer…',
-    }[props.app.key] || (te(`apps.${props.app.key}.configuring`) ? t(`apps.${props.app.key}.configuring`) : 'Writing .env…'),
-    finalizing: 'Setting permissions, PHP version and document root…',
-    ready: 'Done',
+        joomla: t('installer.app.stage.configureJoomla'),
+        drupal: t('installer.app.stage.configureDrupal'),
+        whmcs: t('installer.app.stage.configureWhmcs'),
+    }[props.app.key] || (te(`apps.${props.app.key}.configuring`) ? t(`apps.${props.app.key}.configuring`) : t('installer.app.stage.configureEnv')),
+    finalizing: t('installer.app.stage.finalizing'),
+    ready: t('installer.stage.ready'),
 }));
 
 const installStage = ref('');
@@ -195,7 +195,7 @@ const installProgress = computed(() => {
     if (index === -1) return 3;
     return Math.round(((index + 1) / INSTALL_STAGES.length) * 100);
 });
-const installStageLabel = computed(() => INSTALL_STAGE_LABELS.value[installStage.value] || 'Working…');
+const installStageLabel = computed(() => INSTALL_STAGE_LABELS.value[installStage.value] || t('installer.working'));
 
 let installPollTimer = null;
 const stopInstallPoll = () => {
@@ -220,12 +220,12 @@ const pollInstallStatus = async (installId) => {
             installBusy.value = false;
             if (payload.website) websiteState.value = { ...payload.website };
             installFeedbackType.value = 'success';
-            installFeedback.value = payload.message || `${props.app.label} installed successfully.`;
+            installFeedback.value = payload.message || t('installer.app.done', { app: props.app.label });
         } else if (payload.stage === 'failed') {
             stopInstallPoll();
             installBusy.value = false;
             installFeedbackType.value = 'error';
-            installFeedback.value = payload.message || `${props.app.label} installation failed.`;
+            installFeedback.value = payload.message || t('installer.app.failed', { app: props.app.label });
         }
     } catch {
         // Network hiccup — next tick retries.
@@ -236,9 +236,9 @@ const install = async () => {
     if (installBusy.value || !targetPhp.value || !joomlaValid.value || !whmcsValid.value) return;
 
     const warnings = [];
-    if (rootHasFiles.value) warnings.push(`Current files in ${website.value.root_path} will be moved to the File Manager trash.`);
-    if (phpWillChange.value) warnings.push(`Website PHP will switch from ${currentPhp.value || 'none'} to ${targetPhp.value}.`);
-    if (warnings.length && !window.confirm(`${warnings.join('\n')}\n\nContinue?`)) return;
+    if (rootHasFiles.value) warnings.push(t('installer.warnTrash', { path: website.value.root_path }));
+    if (phpWillChange.value) warnings.push(t('installer.warnPhp', { from: currentPhp.value || t('installer.none'), to: targetPhp.value }));
+    if (warnings.length && !window.confirm(t('installer.confirmContinue', { warnings: warnings.join('\n') }))) return;
 
     installBusy.value = true;
     installFeedback.value = '';
@@ -268,7 +268,7 @@ const install = async () => {
         const errors = error?.response?.data?.errors;
         installFeedback.value = errors
             ? Object.values(errors).flat().join('\n')
-            : (error?.response?.data?.message || `${props.app.label} installation failed.`);
+            : (error?.response?.data?.message || t('installer.app.failed', { app: props.app.label }));
     }
 };
 
@@ -276,13 +276,13 @@ const inputClass = 'mt-1 w-full rounded-md border border-slate-300 px-3 py-2 tex
 </script>
 
 <template>
-    <Head :title="`${app.label} Installer`" />
+    <Head :title="t('installer.app.title', { app: app.label })" />
 
     <AuthenticatedLayout>
         <template #header>
             <div>
-                <h1 class="text-lg font-semibold">{{ app.label }} Installer</h1>
-                <p class="text-sm text-slate-500 dark:text-slate-400">{{ app.description }} Target: {{ website.domain || '-' }}.</p>
+                <h1 class="text-lg font-semibold">{{ t('installer.app.title', { app: app.label }) }}</h1>
+                <p class="text-sm text-slate-500 dark:text-slate-400">{{ t('installer.app.target', { description: app.description, domain: website.domain || '-' }) }}</p>
             </div>
         </template>
 
@@ -293,22 +293,22 @@ const inputClass = 'mt-1 w-full rounded-md border border-slate-300 px-3 py-2 tex
 
             <div class="flex justify-end">
                 <Link :href="panelRoute('websites.manage', { id: website.id })" class="rounded-md border border-slate-300 px-3 py-2 text-sm hover:bg-slate-100 dark:border-slate-700 dark:hover:bg-slate-800">
-                    <i class="bi bi-arrow-left mr-2"></i> Back to Manage
+                    <i class="bi bi-arrow-left mr-2"></i> {{ t('common.back') }}
                 </Link>
             </div>
 
             <section class="rounded-xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900">
                 <div class="grid gap-3 sm:grid-cols-3">
                     <div class="rounded-lg border border-slate-200 p-3 dark:border-slate-700">
-                        <p class="text-xs text-slate-500 dark:text-slate-400">Domain</p>
+                        <p class="text-xs text-slate-500 dark:text-slate-400">{{ t('installer.domain') }}</p>
                         <p class="mt-1 break-all text-sm font-semibold">{{ website.domain || '-' }}</p>
                     </div>
                     <div class="rounded-lg border border-slate-200 p-3 dark:border-slate-700">
-                        <p class="text-xs text-slate-500 dark:text-slate-400">Project Root</p>
+                        <p class="text-xs text-slate-500 dark:text-slate-400">{{ t('installer.projectRoot') }}</p>
                         <p class="mt-1 break-all text-sm font-semibold">{{ website.root_path || '-' }}</p>
                     </div>
                     <div class="rounded-lg border border-slate-200 p-3 dark:border-slate-700">
-                        <p class="text-xs text-slate-500 dark:text-slate-400">Current PHP</p>
+                        <p class="text-xs text-slate-500 dark:text-slate-400">{{ t('installer.currentPhp') }}</p>
                         <p class="mt-1 text-sm font-semibold">{{ currentPhp || '-' }}</p>
                     </div>
                 </div>
@@ -331,7 +331,7 @@ const inputClass = 'mt-1 w-full rounded-md border border-slate-300 px-3 py-2 tex
                 <InstallerVersionPicker
                     v-model="selectedVersion"
                     class="mt-5"
-                    :label="`${app.label} Version`"
+                    :label="t('installer.app.version', { app: app.label })"
                     name="app_version"
                     :versions="versionOptions"
                     :disabled="installBusy"
@@ -339,31 +339,31 @@ const inputClass = 'mt-1 w-full rounded-md border border-slate-300 px-3 py-2 tex
                 />
 
                 <div v-if="isWhmcs" class="mt-5">
-                    <p class="text-xs uppercase tracking-wide text-slate-500 dark:text-slate-400">WHMCS package &amp; license</p>
+                    <p class="text-xs uppercase tracking-wide text-slate-500 dark:text-slate-400">{{ t('installer.app.whmcs.title') }}</p>
                     <div class="mt-2 rounded-lg border border-dashed border-slate-300 p-4 text-sm dark:border-slate-700">
                         <p class="text-slate-600 dark:text-slate-300">
-                            Download the full WHMCS zip from your WHMCS client area (Services → your license → Downloads) and upload it here.
+                            {{ t('installer.app.whmcs.help') }}
                         </p>
                         <label class="mt-3 inline-flex cursor-pointer items-center gap-2 rounded-md border border-slate-300 px-3 py-2 text-sm hover:bg-slate-50 dark:border-slate-700 dark:hover:bg-slate-800" :class="{ 'pointer-events-none opacity-50': uploadBusy || installBusy }">
-                            <i class="bi bi-upload"></i> {{ uploadId ? 'Replace zip' : 'Choose WHMCS zip' }}
+                            <i class="bi bi-upload"></i> {{ uploadId ? t('installer.app.whmcs.replace') : t('installer.app.whmcs.choose') }}
                             <input type="file" accept=".zip,application/zip" class="hidden" @change="uploadPackage" />
                         </label>
                         <p v-if="uploadName" class="mt-2 text-xs text-slate-500 dark:text-slate-400">
                             {{ uploadName }} —
-                            <span v-if="uploadBusy">uploading {{ uploadProgress }}%</span>
-                            <span v-else-if="uploadId" class="text-emerald-600 dark:text-emerald-400">uploaded and checked</span>
+                            <span v-if="uploadBusy">{{ t('installer.app.whmcs.uploading', { percent: uploadProgress }) }}</span>
+                            <span v-else-if="uploadId" class="text-emerald-600 dark:text-emerald-400">{{ t('installer.app.whmcs.uploaded') }}</span>
                         </p>
                         <p v-if="uploadError" class="mt-2 text-xs text-red-600 dark:text-red-400">{{ uploadError }}</p>
                     </div>
                     <div class="mt-3 grid gap-3 sm:grid-cols-2">
-                        <label class="text-sm sm:col-span-2">License key<input v-model="whmcs.license_key" type="text" autocomplete="off" placeholder="Owned-xxxxxxxxxxxx" :disabled="installBusy" :class="inputClass" class="font-mono" /></label>
-                        <label class="text-sm">Admin username<input v-model="whmcs.admin_username" type="text" autocomplete="off" :disabled="installBusy" :class="inputClass" /></label>
+                        <label class="text-sm sm:col-span-2">{{ t('installer.app.whmcs.license') }}<input v-model="whmcs.license_key" type="text" autocomplete="off" placeholder="Owned-xxxxxxxxxxxx" :disabled="installBusy" :class="inputClass" class="font-mono" /></label>
+                        <label class="text-sm">{{ t('installer.app.whmcs.adminUser') }}<input v-model="whmcs.admin_username" type="text" autocomplete="off" :disabled="installBusy" :class="inputClass" /></label>
                         <label class="text-sm">
-                            Admin password <span class="text-xs text-slate-500">(12+ characters — save it now)</span>
+                            {{ t('installer.app.whmcs.adminPassword') }} <span class="text-xs text-slate-500">{{ t('installer.app.whmcs.passwordHint') }}</span>
                             <div class="flex gap-2">
                                 <input v-model="whmcs.admin_password" :type="showPassword ? 'text' : 'password'" autocomplete="new-password" :disabled="installBusy" :class="inputClass" class="font-mono" />
-                                <button type="button" class="mt-1 rounded-md border border-slate-300 px-3 text-xs dark:border-slate-700" @click="showPassword = !showPassword">{{ showPassword ? 'Hide' : 'Show' }}</button>
-                                <button type="button" class="mt-1 rounded-md border border-slate-300 px-3 text-xs dark:border-slate-700" :disabled="installBusy" @click="whmcs.admin_password = randomPassword(); showPassword = true">Generate</button>
+                                <button type="button" class="mt-1 rounded-md border border-slate-300 px-3 text-xs dark:border-slate-700" @click="showPassword = !showPassword">{{ showPassword ? t('apps.fields.hide') : t('apps.fields.show') }}</button>
+                                <button type="button" class="mt-1 rounded-md border border-slate-300 px-3 text-xs dark:border-slate-700" :disabled="installBusy" @click="whmcs.admin_password = randomPassword(); showPassword = true">{{ t('apps.fields.generate') }}</button>
                             </div>
                         </label>
                     </div>
@@ -397,25 +397,25 @@ const inputClass = 'mt-1 w-full rounded-md border border-slate-300 px-3 py-2 tex
                 <ul class="mt-5 space-y-1.5 text-sm text-slate-600 dark:text-slate-300">
                     <li v-if="targetPhp">
                         <i class="bi bi-braces mr-2 text-indigo-500"></i>
-                        <template v-if="phpWillChange">PHP will switch from <strong>{{ currentPhp || 'none' }}</strong> to <strong>{{ targetPhp }}</strong>.</template>
-                        <template v-else>Runs on the current PHP <strong>{{ targetPhp }}</strong>.</template>
+                        <template v-if="phpWillChange"><i18n-t keypath="installer.phpSwitch" scope="global"><template #from><strong>{{ currentPhp || t('installer.none') }}</strong></template><template #to><strong>{{ targetPhp }}</strong></template></i18n-t></template>
+                        <template v-else><i18n-t keypath="installer.phpCurrent" scope="global"><template #version><strong>{{ targetPhp }}</strong></template></i18n-t></template>
                     </li>
                     <li v-if="rootHasFiles">
                         <i class="bi bi-trash mr-2 text-rose-500"></i>
-                        Current files in the project root will be moved to the File Manager trash.
+                        {{ t('installer.rootTrash') }}
                     </li>
                     <li>
                         <i class="bi bi-folder2 mr-2 text-emerald-500"></i>
-                        <template v-if="app.document_root">The document root will be set to <code>{{ app.document_root }}/</code>.</template>
-                        <template v-else>The site is served from the project root.</template>
+                        <template v-if="app.document_root"><i18n-t keypath="installer.docRoot" scope="global"><template #path><code>{{ `${app.document_root}/` }}</code></template></i18n-t></template>
+                        <template v-else>{{ t('installer.servedFromRoot') }}</template>
                     </li>
                     <li v-if="isWhmcs">
                         <i class="bi bi-shield-lock mr-2 text-amber-500"></i>
-                        Needs the ionCube Loader for PHP {{ targetPhp || '8.1–8.3' }}. The <code>install/</code> folder is removed, a 5-minute cron for <code>crons/cron.php</code> is added, and the admin area is <code>/admin</code>.
+                        {{ t('installer.app.whmcs.note', { php: targetPhp || '8.1–8.3' }) }}
                     </li>
                     <li v-if="isDrupal">
                         <i class="bi bi-shield-lock mr-2 text-amber-500"></i>
-                        Drush is added to the project (<code>vendor/bin/drush</code>). Log in at <code>/user/login</code>.
+                        {{ t('installer.app.noteDrush') }}
                     </li>
                     <li v-if="te(`apps.${app.key}.note`)">
                         <i class="bi bi-shield-lock mr-2 text-amber-500"></i>
@@ -423,7 +423,7 @@ const inputClass = 'mt-1 w-full rounded-md border border-slate-300 px-3 py-2 tex
                     </li>
                     <li v-if="isJoomla">
                         <i class="bi bi-shield-lock mr-2 text-amber-500"></i>
-                        The <code>installation/</code> folder is removed after setup. Admin panel: <code>/administrator</code>.
+                        {{ t('installer.app.noteJoomlaAdmin') }}
                     </li>
                 </ul>
 
@@ -437,7 +437,7 @@ const inputClass = 'mt-1 w-full rounded-md border border-slate-300 px-3 py-2 tex
                             : 'border-orange-300 text-orange-700 hover:bg-orange-50 dark:border-orange-700 dark:text-orange-300 dark:hover:bg-orange-900/20'"
                         @click="install"
                     >
-                        {{ installBusy ? 'Installing…' : `Install ${app.label}` }}
+                        {{ installBusy ? t('installer.installing') : t('installer.app.install', { app: app.label }) }}
                     </button>
                 </div>
 

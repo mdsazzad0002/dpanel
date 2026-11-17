@@ -1,9 +1,12 @@
 <script setup>
 import { computed } from 'vue';
+import { useI18n } from 'vue-i18n';
 import { engineLabel, optionCardClass } from './engines';
 
 // engines: the ones this installer supports, e.g. ['mariadb', 'postgresql'].
 // Renders nothing when there is only one to choose from.
+const { t } = useI18n();
+
 const props = defineProps({
     engines: { type: Array, default: () => ['mariadb'] },
     postgresql: { type: Object, default: () => ({ installed: false, active: false }) },
@@ -19,7 +22,7 @@ const showPostgresqlOff = computed(() => model.value === 'postgresql' && props.p
 
 <template>
     <div v-if="engines.length > 1">
-        <p class="text-xs uppercase tracking-wide text-slate-500 dark:text-slate-400">Database engine</p>
+        <p class="text-xs uppercase tracking-wide text-slate-500 dark:text-slate-400">{{ t('installer.engine.title') }}</p>
         <div class="mt-2 flex flex-wrap gap-2">
             <label
                 v-for="engine in engines"
@@ -35,10 +38,10 @@ const showPostgresqlOff = computed(() => model.value === 'postgresql' && props.p
             </label>
         </div>
         <p v-if="engines.includes('postgresql') && !postgresql.installed" class="mt-1 text-xs text-slate-500 dark:text-slate-400">
-            PostgreSQL is not installed on this server.
+            {{ t('installer.engine.pgMissing') }}
         </p>
         <p v-else-if="showPostgresqlOff" class="mt-1 text-xs text-amber-600 dark:text-amber-400">
-            PostgreSQL is turned off. Turn it on under Database Management &rarr; PostgreSQL before installing.
+            {{ t('installer.engine.pgOff') }}
         </p>
     </div>
 </template>

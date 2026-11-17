@@ -1,13 +1,16 @@
 <script setup>
 import { computed } from 'vue';
+import { useI18n } from 'vue-i18n';
 import { optionCardClass } from './engines';
 
 // versions: [{ value, label, hint?, disabled? }], newest first. The first
 // `maxCards` show as radio cards; the rest go in an "Older versions" select so
 // long lists (WordPress) stay compact.
+const { t } = useI18n();
+
 const props = defineProps({
     versions: { type: Array, default: () => [] },
-    label: { type: String, default: 'Version' },
+    label: { type: String, default: '' },
     name: { type: String, default: 'version' },
     disabled: { type: Boolean, default: false },
     accent: { type: String, default: 'red' },
@@ -23,7 +26,7 @@ const olderSelected = computed(() => older.value.some((version) => version.value
 
 <template>
     <div>
-        <p class="text-xs uppercase tracking-wide text-slate-500 dark:text-slate-400">{{ label }}</p>
+        <p class="text-xs uppercase tracking-wide text-slate-500 dark:text-slate-400">{{ label || t('installer.version.default') }}</p>
         <div class="mt-2 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
             <label
                 v-for="version in cards"
@@ -49,7 +52,7 @@ const olderSelected = computed(() => older.value.some((version) => version.value
             </label>
         </div>
         <label v-if="older.length" class="mt-2 flex flex-wrap items-center gap-2 text-sm text-slate-600 dark:text-slate-300">
-            Older versions:
+            {{ t('installer.version.older') }}
             <select
                 class="rounded-md border px-2 py-1 text-sm dark:bg-slate-800"
                 :class="olderSelected ? 'border-slate-500 dark:border-slate-400' : 'border-slate-300 dark:border-slate-700'"
@@ -57,12 +60,12 @@ const olderSelected = computed(() => older.value.some((version) => version.value
                 :disabled="disabled"
                 @change="model = $event.target.value || model"
             >
-                <option value="">Choose…</option>
+                <option value="">{{ t('installer.version.choose') }}</option>
                 <option v-for="version in older" :key="version.value" :value="version.value" :disabled="version.disabled">
                     {{ version.label }}
                 </option>
             </select>
         </label>
-        <p v-if="versions.length === 0" class="mt-2 text-sm text-slate-500 dark:text-slate-400">No versions available.</p>
+        <p v-if="versions.length === 0" class="mt-2 text-sm text-slate-500 dark:text-slate-400">{{ t('installer.version.none') }}</p>
     </div>
 </template>
