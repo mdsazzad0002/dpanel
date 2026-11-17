@@ -2,6 +2,9 @@
 import { ref, watch } from 'vue';
 import ResultGrid from './ResultGrid.vue';
 import SqlAiAssistant from './SqlAiAssistant.vue';
+import { useI18n } from 'vue-i18n';
+
+const { t } = useI18n();
 
 const props = defineProps({
     run: { type: Function, required: true },
@@ -60,14 +63,14 @@ const onKey = (event) => {
         <div class="flex flex-wrap items-center gap-2">
             <button @click="execute" :disabled="running || !sql.trim()"
                 class="rounded-md bg-blue-600 px-3 py-1.5 text-xs text-white hover:bg-blue-700 disabled:opacity-50">
-                <i class="bi" :class="running ? 'bi-arrow-repeat inline-block animate-spin' : 'bi-play-fill'"></i> Run
+                <i class="bi" :class="running ? 'bi-arrow-repeat inline-block animate-spin' : 'bi-play-fill'"></i> {{ t('fileManager.sqlite.query.run') }}
             </button>
-            <span v-if="editing" class="text-xs text-amber-600">Ctrl+Enter · editing is on: INSERT, UPDATE, DELETE, CREATE … run for real</span>
-            <span v-else class="text-xs text-slate-400">Ctrl+Enter · read-only: SELECT, WITH, EXPLAIN and read-only PRAGMA</span>
+            <span v-if="editing" class="text-xs text-amber-600">{{ t('fileManager.sqlite.query.editingHint') }}</span>
+            <span v-else class="text-xs text-slate-400">{{ t('fileManager.sqlite.query.readOnlyHint') }}</span>
             <span v-if="result" class="ml-auto text-xs text-slate-500">
-                <template v-if="result.wrote"><span class="text-emerald-600">{{ result.changes.toLocaleString() }} row(s) changed</span> · </template>
-                {{ result.row_count.toLocaleString() }} row(s) in {{ result.duration_ms }} ms
-                <span v-if="result.truncated" class="text-amber-600">· showing the first {{ result.max_rows }}</span>
+                <template v-if="result.wrote"><span class="text-emerald-600">{{ t('fileManager.sqlite.query.changed', { count: result.changes.toLocaleString() }) }}</span> · </template>
+                {{ t('fileManager.sqlite.query.rows', { count: result.row_count.toLocaleString(), ms: result.duration_ms }) }}
+                <span v-if="result.truncated" class="text-amber-600">· {{ t('fileManager.sqlite.query.truncated', { count: result.max_rows }) }}</span>
             </span>
         </div>
 

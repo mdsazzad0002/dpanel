@@ -1,0 +1,53 @@
+{
+    "index": {
+        "title": "计费系统",
+        "subtitle": "连接外部计费平台，自动化管理客户账户。",
+        "configured": "已配置",
+        "setupRequired": "需要设置",
+        "whmcsHelp": "从 WHMCS 安全地开通套餐、更换套餐、暂停账户并生成一次性面板登录链接。",
+        "openGuide": "打开设置指南"
+    },
+    "whmcs": {
+        "title": "使用 WHMCS 计费",
+        "subtitle": "仅后端开通、生命周期自动化和一次性 SSO。",
+        "back": "计费服务",
+        "ready": "集成已就绪",
+        "incomplete": "配置不完整",
+        "step1": "1. 配置 dPanel",
+        "step1Help": "将这些值添加到 dPanel 的 {file} 中。使用 WHMCS 服务器的公网出站 IP；多个 IP 或 CIDR 用逗号分隔。",
+        "set": "已设置",
+        "missing": "缺失",
+        "allowedIps": "允许的 IP",
+        "allowedDomains": "允许的域名",
+        "copied": "已复制",
+        "copy": "复制",
+        "thenRun": "然后运行：",
+        "oneCommand": "一条命令完成设置并同步 .env",
+        "oneCommandHelp": "替换示例 IP 和域名，然后复制粘贴。已有的键会被更新，缺失的键会被添加，已有的密钥会保留。",
+        "generate": "生成密钥",
+        "copyCommand": "复制命令",
+        "reset": "重置",
+        "editHelp": "先编辑 IP/域名，生成密钥，然后复制命令。再次生成只会替换此文本框中的密钥。",
+        "operations": "可用操作",
+        "ops": {
+            "test": "连接测试",
+            "sync": "套餐同步",
+            "create": "创建账户",
+            "change": "更换套餐",
+            "suspend": "暂停",
+            "unsuspend": "解除暂停",
+            "terminate": "终止",
+            "login": "自动登录"
+        },
+        "security": "安全",
+        "sec1": "除非来源 IP 和已签名的 WHMCS 域名都与各自的允许列表匹配，否则 dPanel 会在处理前拒绝请求。",
+        "sec2": "每个请求都使用方法、路径、WHMCS 域名、时间戳、nonce 和原始正文哈希进行 HMAC-SHA256 签名。",
+        "sec3": "超过 {seconds} 秒的时间戳和重复使用的 nonce 会被拒绝。",
+        "sec4": "SSO URL 在 {seconds} 秒后过期，且只能使用一次。只将浏览器重定向到返回的 URL。",
+        "trouble": "故障排查",
+        "e403": "检查 WHMCS 出站 IP 和代理转发。",
+        "e401": "Client ID、共享密钥、签名或服务器时钟不匹配。",
+        "e409": "Nonce 被重放，或该邮箱属于另一个账户。",
+        "e422": "套餐 slug 或必需的服务/客户数据无效。"
+    }
+}

@@ -3,6 +3,9 @@ import { computed, ref } from 'vue';
 import { Head, Link, usePage } from '@inertiajs/vue3';
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
 import SslBadgeMenu from '@/Pages/Websites/components/SslBadgeMenu.vue';
+import { useI18n } from 'vue-i18n';
+
+const { t } = useI18n();
 const props = defineProps({ website: { type: Object, required: true }, aliases: { type: Array, default: () => [] }, aliasApi: { type: Object, required: true } });
 const page = usePage(); const token = computed(() => String(page.props.panel?.token || ''));
 const panelRoute = (name, params = {}) => token.value ? route(name, { token: token.value, ...params }) : route(name, params);
@@ -26,7 +29,7 @@ const result = ref(null);
 const resultType = ref('success');
 const resultMessage = ref('');
 const csrf = () => document.querySelector('meta[name="csrf-token"]')?.content || '';
-const rotate = async () => { if (!confirm('Rotate token? The previous token will stop working.')) return; loading.value = true; try { const r = await fetch(panelRoute('websites.alias-api.rotate', { id: props.website.id }), { method: 'POST', headers: { Accept: 'application/json', 'X-CSRF-TOKEN': csrf() } }); const d = await r.json(); if (r.ok) { plainToken.value = d.token; state.value = { ...state.value, enabled: true, has_token: true, token_hint: d.token.slice(-8), challenge_token: d.challenge_token }; } } finally { loading.value = false; } };
+const rotate = async () => { if (!confirm(t('websites.aliasApi.rotateConfirm'))) return; loading.value = true; try { const r = await fetch(panelRoute('websites.alias-api.rotate', { id: props.website.id }), { method: 'POST', headers: { Accept: 'application/json', 'X-CSRF-TOKEN': csrf() } }); const d = await r.json(); if (r.ok) { plainToken.value = d.token; state.value = { ...state.value, enabled: true, has_token: true, token_hint: d.token.slice(-8), challenge_token: d.challenge_token }; } } finally { loading.value = false; } };
 const toggle = async () => { loading.value = true; try { const r = await fetch(panelRoute('websites.alias-api.toggle', { id: props.website.id }), { method: 'PATCH', headers: { Accept: 'application/json', 'Content-Type': 'application/json', 'X-CSRF-TOKEN': csrf() }, body: JSON.stringify({ enabled: !state.value.enabled }) }); if (r.ok) state.value.enabled = !state.value.enabled; } finally { loading.value = false; } };
 const showResult = (data, type = 'success', fallback = '') => { result.value = data || {}; resultType.value = type; resultMessage.value = data?.message || fallback; };
 const createAlias = async () => {
@@ -42,13 +45,13 @@ const createAlias = async () => {
         const row = response.data?.website;
         if (row?.id) aliasRows.value.unshift({ ...row, ssl_status: response.data?.ssl?.status || (row.enable_ssl ? 'enabled' : 'disabled'), ssl_expires_at: response.data?.ssl?.expires_at || null });
         aliasDomain.value = '';
-        showResult(response.data, 'success', 'Alias created successfully.');
+        showResult(response.data, 'success', t('websites.aliasApi.created'));
     } catch (error) {
         const data = error?.response?.data || {};
         if (data?.website?.id && !aliasRows.value.some((item) => String(item.id) === String(data.website.id))) {
             aliasRows.value.unshift({ ...data.website, ssl_status: data?.ssl?.status || 'failed' });
         }
-        showResult(data, 'error', 'Alias creation failed.');
+        showResult(data, 'error', t('websites.aliasApi.createFailed'));
     } finally { aliasActionId.value = ''; }
 };
 const beginAliasEdit = (alias) => { editingAliasId.value = String(alias.id); editingAliasDomain.value = String(alias.domain || ''); };
@@ -59,18 +62,18 @@ const saveAliasEdit = async (alias) => {
     try {
         const response = await window.axios.patch(panelRoute('websites.alias.update', { id: alias.id }), { domain });
         Object.assign(alias, response.data?.website || {}, { domain }); editingAliasId.value = '';
-        showResult(response.data, 'success', 'Alias updated successfully.');
-    } catch (error) { showResult(error?.response?.data, 'error', 'Alias update failed.'); }
+        showResult(response.data, 'success', t('websites.aliasApi.updated'));
+    } catch (error) { showResult(error?.response?.data, 'error', t('websites.aliasApi.updateFailed')); }
     finally { aliasActionId.value = ''; }
 };
 const removeAlias = async (alias) => {
-    if (aliasActionId.value || !confirm(`Remove alias ${alias.domain}?`)) return;
+    if (aliasActionId.value || !confirm(t('websites.aliasApi.removeConfirm', { domain: alias.domain }))) return;
     aliasActionId.value = String(alias.id);
     try {
         const response = await window.axios.delete(panelRoute('websites.destroy', { id: alias.id }), { headers: { Accept: 'application/json' } });
         aliasRows.value = aliasRows.value.filter((item) => String(item.id) !== String(alias.id));
-        showResult(response.data, 'success', 'Alias removed successfully.');
-    } catch (error) { showResult(error?.response?.data, 'error', 'Alias removal failed.'); }
+        showResult(response.data, 'success', t('websites.aliasApi.removed'));
+    } catch (error) { showResult(error?.response?.data, 'error', t('websites.aliasApi.removeFailed')); }
     finally { aliasActionId.value = ''; }
 };
 const issueAliasSsl = async (alias) => {
@@ -79,17 +82,17 @@ const issueAliasSsl = async (alias) => {
     try {
         const response = await window.axios.post(panelRoute('websites.ssl.issue', { id: alias.id }), {}, { headers: { Accept: 'application/json' } });
         alias.enable_ssl = true; alias.ssl_status = 'valid'; alias.ssl_expires_at = response.data?.ssl?.expires_at || alias.ssl_expires_at;
-        showResult(response.data, 'success', 'SSL issued successfully.');
-    } catch (error) { showResult(error?.response?.data, 'error', 'SSL issue failed.'); }
+        showResult(response.data, 'success', t('websites.aliasApi.sslIssued'));
+    } catch (error) { showResult(error?.response?.data, 'error', t('websites.aliasApi.sslIssueFailed')); }
     finally { aliasActionId.value = ''; }
 };
 const onSslReinstalled = (alias, data) => {
     alias.ssl_status = 'valid'; alias.ssl_expires_at = data?.ssl?.expires_at || alias.ssl_expires_at;
-    showResult(data, 'success', 'SSL reinstalled successfully.');
+    showResult(data, 'success', t('websites.aliasApi.sslReinstalled'));
 };
 const onSslUninstalled = (alias, data) => {
     alias.enable_ssl = false; alias.ssl_status = 'disabled'; alias.ssl_expires_at = null;
-    showResult(data, 'success', 'SSL uninstalled.');
+    showResult(data, 'success', t('websites.aliasApi.sslUninstalled'));
 };
 const toggleAliasSsl = async (alias) => {
     if (sslToggleId.value || isLocalDomain(alias.domain)) return;
@@ -99,8 +102,8 @@ const toggleAliasSsl = async (alias) => {
         const response = await window.axios.patch(panelRoute('websites.ssl.status.update', { id: alias.id }), { enabled }, { headers: { Accept: 'application/json' } });
         alias.enable_ssl = enabled;
         alias.ssl_status = enabled ? 'unknown' : 'disabled';
-        showResult(response.data, 'success', `SSL ${enabled ? 'enabled' : 'disabled'} successfully.`);
-    } catch (error) { showResult(error?.response?.data, 'error', 'SSL status update failed.'); }
+        showResult(response.data, 'success', enabled ? t('websites.aliasApi.sslEnabled') : t('websites.aliasApi.sslDisabled'));
+    } catch (error) { showResult(error?.response?.data, 'error', t('websites.aliasApi.sslStatusFailed')); }
     finally { sslToggleId.value = ''; }
 };
 const sslDaysRemaining = (alias) => {
@@ -118,12 +121,12 @@ const isPrivateIp = (domain) => {
     return a === 10 || a === 127 || (a === 172 && b >= 16 && b <= 31) || (a === 192 && b === 168) || (a === 169 && b === 254) || (a === 100 && b >= 64 && b <= 127);
 };
 const sslValidityLabel = (alias) => {
-    if (!alias?.enable_ssl) return 'SSL disabled';
+    if (!alias?.enable_ssl) return t('websites.aliasApi.validity.disabled');
     const days = sslDaysRemaining(alias);
-    if (days === null) return 'Validity unknown';
-    if (days < 0) return `Expired ${Math.abs(days)}d ago`;
-    if (days === 0) return 'Expires today';
-    return `Valid ${days}d${isPrivateIp(alias.domain) ? ' · self-signed' : ''}`;
+    if (days === null) return t('websites.aliasApi.validity.unknown');
+    if (days < 0) return t('websites.aliasApi.validity.expired', { days: Math.abs(days) });
+    if (days === 0) return t('websites.aliasApi.validity.today');
+    return isPrivateIp(alias.domain) ? t('websites.aliasApi.validity.validSelfSigned', { days }) : t('websites.aliasApi.validity.valid', { days });
 };
 const sslValidityClass = (alias) => {
     const days = sslDaysRemaining(alias);
@@ -134,17 +137,17 @@ const sslValidityClass = (alias) => {
     return 'border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-800 dark:bg-emerald-500/10 dark:text-emerald-400';
 };
 const formatExpiry = (value) => {
-    if (!value) return 'Certificate expiry is unavailable';
+    if (!value) return t('websites.aliasApi.expiryUnavailable');
     const parsed = new Date(value);
-    return Number.isNaN(parsed.getTime()) ? String(value) : `Expires ${parsed.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}`;
+    return Number.isNaN(parsed.getTime()) ? String(value) : t('websites.aliasApi.expires', { date: parsed.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) });
 };
 const visitUrl = (alias) => `${alias.enable_ssl && ['valid', 'issued', 'renewed'].includes(String(alias.ssl_status || '').toLowerCase()) ? 'https' : 'http'}://${alias.domain}`;
-const examples = [
-    ['1. Verify domain', '{"action":"verify","domain":"alias.example.com"}'],
-    ['2. Add alias + SSL', '{"action":"add","domain":"alias.example.com"}'],
-    ['3. Remove/revoke', '{"action":"remove","domain":"alias.example.com"}'],
-    ['4. Paginated list', '{"action":"list","page":1,"per_page":25}'],
-];
+const examples = computed(() => [
+    [t('websites.aliasApi.example.verify'), '{"action":"verify","domain":"alias.example.com"}'],
+    [t('websites.aliasApi.example.add'), '{"action":"add","domain":"alias.example.com"}'],
+    [t('websites.aliasApi.example.remove'), '{"action":"remove","domain":"alias.example.com"}'],
+    [t('websites.aliasApi.example.list'), '{"action":"list","page":1,"per_page":25}'],
+]);
 const phpGuzzleExample = computed(() => `<?php
 require __DIR__ . '/vendor/autoload.php';
 
@@ -203,40 +206,39 @@ if (verification.verified) {
 </script>
 <template>
 
-    <Head :title="`Alias API - ${website.domain}`" />
+    <Head :title="t('websites.aliasApi.headTitle', { domain: website.domain })" />
     <AuthenticatedLayout><template #header>
             <div>
-                <h1 class="text-lg font-semibold">Alias API</h1>
-                <p class="text-sm text-slate-500">Secure alias and SSL automation for {{ website.domain }}</p>
+                <h1 class="text-lg font-semibold">{{ t('websites.aliasApi.title') }}</h1>
+                <p class="text-sm text-slate-500">{{ t('websites.aliasApi.subtitle', { domain: website.domain }) }}</p>
             </div>
         </template>
         <div class="space-y-5">
             <div class="flex flex-wrap justify-end gap-2">
                 <a href="#service-api"
-                    class="rounded bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-500">Alis
-                    API</a>
+                    class="rounded bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-500">{{ t('websites.aliasApi.title') }}</a>
                 <Link :href="panelRoute('websites.manage', { id: website.id })"
-                    class="rounded border px-3 py-2 text-sm dark:border-slate-700">Back to Website Management</Link>
+                    class="rounded border px-3 py-2 text-sm dark:border-slate-700">{{ t('websites.aliasApi.back') }}</Link>
             </div>
             <section id="add-alias" class="scroll-mt-5 rounded-xl border bg-white p-5 dark:border-slate-800 dark:bg-slate-900">
-                <h2 class="font-semibold">Add alias for {{ website.domain }}</h2>
+                <h2 class="font-semibold">{{ t('websites.aliasApi.addFor', { domain: website.domain }) }}</h2>
                 <form class="mt-4 flex flex-col gap-3" @submit.prevent="createAlias">
                     <div class="flex flex-col gap-3 sm:flex-row">
                         <input v-model="aliasDomain" type="text" required placeholder="alias.example.com" class="min-w-0 flex-1 rounded-md border border-slate-300 px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-800" />
-                        <button type="submit" :disabled="Boolean(aliasActionId)" class="rounded bg-cyan-600 px-4 py-2 text-sm font-medium text-white disabled:opacity-60">{{ aliasActionId === 'create' ? 'Creating...' : 'Create Alias' }}</button>
+                        <button type="submit" :disabled="Boolean(aliasActionId)" class="rounded bg-cyan-600 px-4 py-2 text-sm font-medium text-white disabled:opacity-60">{{ aliasActionId === 'create' ? t('websites.aliasApi.creating') : t('websites.aliasApi.create') }}</button>
                     </div>
                     <label class="flex items-center gap-2 text-sm text-slate-600 dark:text-slate-300" :class="{ 'opacity-50': aliasDomainIsLocal }">
                         <input v-model="enableSslOnCreate" type="checkbox" :disabled="aliasDomainIsLocal" class="h-4 w-4 rounded border-slate-300 dark:border-slate-700" />
-                        Issue SSL for this alias
+                        {{ t('websites.aliasApi.issueSslOnCreate') }}
                     </label>
-                    <p v-if="aliasDomainIsLocal" class="text-xs text-amber-600 dark:text-amber-400">Local domain ({{ aliasDomain }}) — SSL is not available and will be skipped.</p>
+                    <p v-if="aliasDomainIsLocal" class="text-xs text-amber-600 dark:text-amber-400">{{ t('websites.aliasApi.localSkipped', { domain: aliasDomain }) }}</p>
                 </form>
             </section>
             <div v-if="resultMessage" :class="['rounded-xl border px-4 py-3 text-sm', resultType === 'success' ? 'border-emerald-300 bg-emerald-50 text-emerald-700' : 'border-red-300 bg-red-50 text-red-700']">{{ resultMessage }}</div>
             <section class="overflow-hidden rounded-xl border bg-white dark:border-slate-800 dark:bg-slate-900">
                 <div class="border-b px-5 py-4 dark:border-slate-800">
-                    <h2 class="font-semibold">Alias Websites</h2>
-                    <p class="mt-1 text-sm text-slate-500">Aliases connected to {{ website.domain }}</p>
+                    <h2 class="font-semibold">{{ t('websites.aliasApi.listTitle') }}</h2>
+                    <p class="mt-1 text-sm text-slate-500">{{ t('websites.aliasApi.listSubtitle', { domain: website.domain }) }}</p>
                 </div>
                 <div v-if="aliasRows.length" class="space-y-3 p-4">
                     <div v-for="alias in aliasRows" :key="alias.id"
@@ -244,23 +246,23 @@ if (verification.verified) {
                         <div class="min-w-0 flex-1">
                             <div v-if="editingAliasId === String(alias.id)" class="flex max-w-lg gap-2">
                                 <input v-model="editingAliasDomain" class="min-w-0 flex-1 rounded border px-3 py-1.5 text-sm dark:border-slate-700 dark:bg-slate-800" @keyup.enter="saveAliasEdit(alias)" />
-                                <button type="button" class="rounded bg-blue-600 px-3 py-1.5 text-sm text-white" @click="saveAliasEdit(alias)">Save</button>
-                                <button type="button" class="rounded border px-3 py-1.5 text-sm dark:border-slate-700" @click="editingAliasId = ''">Cancel</button>
+                                <button type="button" class="rounded bg-blue-600 px-3 py-1.5 text-sm text-white" @click="saveAliasEdit(alias)">{{ t('common.save') }}</button>
+                                <button type="button" class="rounded border px-3 py-1.5 text-sm dark:border-slate-700" @click="editingAliasId = ''">{{ t('common.cancel') }}</button>
                             </div>
                             <div v-else class="flex items-center gap-2">
                                 <p class="truncate font-medium">{{ alias.domain }}</p>
-                                <a :href="visitUrl(alias)" target="_blank" rel="noopener noreferrer" class="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border border-cyan-200 bg-cyan-50 text-cyan-700 transition hover:border-cyan-300 hover:bg-cyan-100 dark:border-cyan-800 dark:bg-cyan-500/10 dark:text-cyan-400" :title="`Quick visit ${alias.domain}`" :aria-label="`Quick visit ${alias.domain}`">
+                                <a :href="visitUrl(alias)" target="_blank" rel="noopener noreferrer" class="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border border-cyan-200 bg-cyan-50 text-cyan-700 transition hover:border-cyan-300 hover:bg-cyan-100 dark:border-cyan-800 dark:bg-cyan-500/10 dark:text-cyan-400" :title="t('websites.aliasApi.visit', { domain: alias.domain })" :aria-label="t('websites.aliasApi.visit', { domain: alias.domain })">
                                     <svg viewBox="0 0 24 24" class="h-3.5 w-3.5 fill-current"><path d="M19 19H5V5h7V3H5c-1.11 0-1.99.9-1.99 2v14c0 1.1.89 2 2 2h14c1.1 0 2-.9 2-2v-7h-2v7zM14 3v2h3.59l-9.83 9.83 1.41 1.41L19 6.41V10h2V3h-7z" /></svg>
                                 </a>
                             </div>
                             <div class="mt-1 flex flex-wrap items-center gap-2 text-xs text-slate-500">
                                 <span class="inline-flex items-center gap-1 rounded-full border border-slate-200 bg-slate-50 px-2 py-0.5 text-[11px] font-medium capitalize text-slate-600 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300">
-                                    <span class="h-1.5 w-1.5 rounded-full bg-emerald-500"></span>{{ alias.status || 'unknown' }}
+                                    <span class="h-1.5 w-1.5 rounded-full bg-emerald-500"></span>{{ alias.status || t('websites.aliasApi.unknown') }}
                                 </span>
-                                <span v-if="isLocalDomain(alias.domain)" class="inline-flex items-center gap-1.5 whitespace-nowrap rounded-full border border-slate-200 bg-slate-50 px-2 py-0.5 text-[11px] font-medium text-slate-500 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-400" title="Local domains cannot use SSL">
-                                    Local domain — SSL unavailable
+                                <span v-if="isLocalDomain(alias.domain)" class="inline-flex items-center gap-1.5 whitespace-nowrap rounded-full border border-slate-200 bg-slate-50 px-2 py-0.5 text-[11px] font-medium text-slate-500 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-400" :title="t('websites.aliasApi.localNoSslHint')">
+                                    {{ t('websites.aliasApi.localNoSsl') }}
                                 </span>
-                                <SslBadgeMenu v-else :website="alias" :badge-class="['px-2 py-0.5 text-[11px]', sslValidityClass(alias)]" :title="formatExpiry(alias.ssl_expires_at)" @reinstalled="(data) => onSslReinstalled(alias, data)" @uninstalled="(data) => onSslUninstalled(alias, data)" @failed="(message) => showResult({ message }, 'error', 'SSL reinstall failed.')">
+                                <SslBadgeMenu v-else :website="alias" :badge-class="['px-2 py-0.5 text-[11px]', sslValidityClass(alias)]" :title="formatExpiry(alias.ssl_expires_at)" @reinstalled="(data) => onSslReinstalled(alias, data)" @uninstalled="(data) => onSslUninstalled(alias, data)" @failed="(message) => showResult({ message }, 'error', t('websites.aliasApi.sslReinstallFailed'))">
                                     <svg viewBox="0 0 24 24" class="h-3 w-3 fill-current"><path d="M12 1L3 5v6c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V5l-9-4z" /></svg>
                                     <span>SSL</span><span class="opacity-40">|</span><span>{{ sslValidityLabel(alias) }}</span>
                                 </SslBadgeMenu>
@@ -268,85 +270,84 @@ if (verification.verified) {
                         </div>
                         <div v-if="editingAliasId !== String(alias.id)" class="flex flex-wrap items-center gap-1.5">
                             <button type="button" :disabled="Boolean(aliasActionId)" @click="beginAliasEdit(alias)"
-                                class="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-slate-50 px-3 py-1.5 text-[12px] font-medium text-slate-700 transition hover:bg-slate-100 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300">Edit</button>
+                                class="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-slate-50 px-3 py-1.5 text-[12px] font-medium text-slate-700 transition hover:bg-slate-100 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300">{{ t('websites.aliasApi.edit') }}</button>
                             <template v-if="!isLocalDomain(alias.domain)">
                                 <button type="button" :disabled="Boolean(sslToggleId)"
                                     class="inline-flex items-center gap-1 rounded-lg border px-3 py-1.5 text-[12px] font-medium transition disabled:opacity-50"
                                     :class="alias.enable_ssl
                                         ? 'border-amber-200 bg-amber-50 text-amber-700 hover:bg-amber-100 dark:border-amber-800 dark:bg-amber-500/10 dark:text-amber-400'
                                         : 'border-blue-200 bg-blue-50 text-blue-700 hover:bg-blue-100 dark:border-blue-800 dark:bg-blue-500/10 dark:text-blue-400'"
-                                    @click="toggleAliasSsl(alias)">{{ sslToggleId === String(alias.id) ? 'Updating...' : (alias.enable_ssl ? 'Disable SSL' : 'Enable SSL') }}</button>
-                                <button type="button" :disabled="Boolean(aliasActionId)" @click="issueAliasSsl(alias)" class="inline-flex items-center gap-1 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-[12px] font-medium text-emerald-700 transition hover:bg-emerald-100 dark:border-emerald-800 dark:bg-emerald-500/10 dark:text-emerald-400">Issue SSL</button>
+                                    @click="toggleAliasSsl(alias)">{{ sslToggleId === String(alias.id) ? t('websites.aliasApi.updating') : (alias.enable_ssl ? t('websites.aliasApi.disableSsl') : t('websites.aliasApi.enableSsl')) }}</button>
+                                <button type="button" :disabled="Boolean(aliasActionId)" @click="issueAliasSsl(alias)" class="inline-flex items-center gap-1 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-[12px] font-medium text-emerald-700 transition hover:bg-emerald-100 dark:border-emerald-800 dark:bg-emerald-500/10 dark:text-emerald-400">{{ t('websites.aliasApi.issueSsl') }}</button>
                             </template>
                             <button type="button" :disabled="Boolean(aliasActionId)"
                                 class="inline-flex items-center gap-1 rounded-lg border border-red-200 bg-red-50 px-3 py-1.5 text-[12px] font-medium text-red-700 transition hover:bg-red-100 disabled:opacity-50 dark:border-red-800 dark:bg-red-500/10 dark:text-red-400"
-                                @click="removeAlias(alias)">Remove</button>
+                                @click="removeAlias(alias)">{{ t('websites.aliasApi.remove') }}</button>
                         </div>
                     </div>
                 </div>
-                <div v-else class="px-5 py-10 text-center text-sm text-slate-500">No alias websites yet.</div>
+                <div v-else class="px-5 py-10 text-center text-sm text-slate-500">{{ t('websites.aliasApi.empty') }}</div>
             </section>
             <section v-if="result" class="rounded-xl border bg-slate-950 p-4 text-slate-100 dark:border-slate-800">
-                <h2 class="mb-2 text-sm font-semibold">Last JSON response</h2>
+                <h2 class="mb-2 text-sm font-semibold">{{ t('websites.aliasApi.lastResponse') }}</h2>
                 <pre class="overflow-x-auto text-xs leading-5">{{ JSON.stringify(result, null, 2) }}</pre>
             </section>
             <section id="service-api"
                 class="flex scroll-mt-5 flex-wrap items-center justify-between gap-4 rounded-xl border bg-white p-5 dark:border-slate-800 dark:bg-slate-900">
                 <div>
-                    <h2 class="font-semibold">Alis API</h2>
-                    <p class="mt-1">Status: <strong>{{ state.enabled ? 'Enabled' : 'Disabled' }}</strong></p>
-                    <p v-if="state.token_hint" class="text-xs text-slate-500">Token ending: {{ state.token_hint }}</p>
+                    <h2 class="font-semibold">{{ t('websites.aliasApi.title') }}</h2>
+                    <p class="mt-1">{{ t('websites.aliasApi.status') }} <strong>{{ state.enabled ? t('websites.aliasApi.enabled') : t('websites.aliasApi.disabled') }}</strong></p>
+                    <p v-if="state.token_hint" class="text-xs text-slate-500">{{ t('websites.aliasApi.tokenEnding', { hint: state.token_hint }) }}</p>
                 </div>
                 <div class="flex gap-2"><button :disabled="loading"
                         class="rounded bg-indigo-600 px-4 py-2 text-sm text-white" @click="rotate">{{
-                            state.has_token ?'Rotate token':'Create token' }}</button><button v-if="state.has_token"
+                            state.has_token ? t('websites.aliasApi.rotate') : t('websites.aliasApi.createToken') }}</button><button v-if="state.has_token"
                         :disabled="loading" class="rounded border px-4 py-2 text-sm dark:border-slate-700"
                         @click="toggle">{{
-                            state.enabled ?'Disable':'Enable' }}</button></div>
+                            state.enabled ? t('websites.aliasApi.disable') : t('websites.aliasApi.enable') }}</button></div>
             </section>
             <div v-if="plainToken" class="rounded-xl border border-amber-300 bg-amber-50 p-4 text-sm text-amber-900">
-                <strong>Copy now — shown once:</strong><code class="mt-2 block break-all">{{ plainToken }}</code>
+                <strong>{{ t('websites.aliasApi.copyNow') }}</strong><code class="mt-2 block break-all">{{ plainToken }}</code>
             </div>
             <div class="grid gap-5 xl:grid-cols-2">
                 <section class="rounded-xl border bg-white p-5 dark:border-slate-800 dark:bg-slate-900">
-                    <h2 class="font-semibold">Endpoint &amp; authentication</h2><code
+                    <h2 class="font-semibold">{{ t('websites.aliasApi.endpoint') }}</h2><code
                         class="mt-3 block rounded bg-slate-100 p-3 text-xs dark:bg-slate-800">POST {{ state.endpoint }}</code>
-                    <p class="mt-3 text-sm text-slate-600 dark:text-slate-300">One token is scoped to this parent website. Send it only from a trusted backend; never embed it in browser JavaScript or a public repository.</p>
+                    <p class="mt-3 text-sm text-slate-600 dark:text-slate-300">{{ t('websites.aliasApi.endpointHelp') }}</p>
                     <pre class="mt-3 overflow-x-auto rounded bg-slate-950 p-4 text-xs leading-6 text-white">Authorization:
                 Bearer YOUR_TOKEN
                 Content-Type: application/json
                 Accept: application/json</pre>
                 </section>
                 <section class="rounded-xl border bg-white p-5 dark:border-slate-800 dark:bg-slate-900">
-                    <h2 class="font-semibold">Safe flow</h2>
+                    <h2 class="font-semibold">{{ t('websites.aliasApi.flow.title') }}</h2>
                     <ol class="mt-3 list-decimal space-y-2 pl-5 text-sm">
-                        <li>Create the scoped token once and store it as an encrypted server-side secret.</li>
-                        <li>Point the alias DNS A/AAAA record to the same public address as {{ website.domain }}.</li>
-                        <li>Call <code>verify</code>; continue only when <code>verified=true</code>.</li>
-                        <li>Call <code>add</code>. Verification runs again to prevent a DNS-change race.</li>
-                        <li>dPanel creates the alias and issues SSL. A failed SSL issue rolls the API-created alias back.</li>
-                        <li>Use <code>list</code> to reconcile state and <code>remove</code>/<code>revoke</code> for cleanup.</li>
+                        <li>{{ t('websites.aliasApi.flow.token') }}</li>
+                        <li>{{ t('websites.aliasApi.flow.dns', { domain: website.domain }) }}</li>
+                        <li><i18n-t keypath="websites.aliasApi.flow.verify" scope="global"><template #verify><code>verify</code></template><template #verified><code>verified=true</code></template></i18n-t></li>
+                        <li><i18n-t keypath="websites.aliasApi.flow.add" scope="global"><template #add><code>add</code></template></i18n-t></li>
+                        <li>{{ t('websites.aliasApi.flow.create') }}</li>
+                        <li><i18n-t keypath="websites.aliasApi.flow.list" scope="global"><template #list><code>list</code></template><template #remove><code>remove</code>/<code>revoke</code></template></i18n-t></li>
                     </ol>
                 </section>
             </div>
             <section class="rounded-xl border bg-white p-5 dark:border-slate-800 dark:bg-slate-900">
-                <h2 class="font-semibold">Domain verification</h2>
-                <p class="mt-2 text-sm text-slate-600 dark:text-slate-300">Verification is mandatory for both <code>verify</code> and <code>add</code>. The verifier is method-based so additional strategies can be added later without changing the request contract.</p>
+                <h2 class="font-semibold">{{ t('websites.aliasApi.verify.title') }}</h2>
+                <p class="mt-2 text-sm text-slate-600 dark:text-slate-300"><i18n-t keypath="websites.aliasApi.verify.help" scope="global"><template #verify><code>verify</code></template><template #add><code>add</code></template></i18n-t></p>
                 <div class="mt-4 grid gap-4 lg:grid-cols-2">
                     <div class="rounded-lg border border-emerald-200 bg-emerald-50 p-4 dark:border-emerald-800 dark:bg-emerald-500/10">
-                        <h3 class="text-sm font-semibold text-emerald-800 dark:text-emerald-300">1. DNS IP match</h3>
-                        <p class="mt-2 text-sm text-emerald-700 dark:text-emerald-400">Passes when the alias and parent resolve to at least one identical public A or AAAA address. Response method: <code>dns_ip_match</code>.</p>
+                        <h3 class="text-sm font-semibold text-emerald-800 dark:text-emerald-300">{{ t('websites.aliasApi.verify.dnsTitle') }}</h3>
+                        <p class="mt-2 text-sm text-emerald-700 dark:text-emerald-400"><i18n-t keypath="websites.aliasApi.verify.dnsHelp" scope="global"><template #method><code>dns_ip_match</code></template></i18n-t></p>
                     </div>
                     <div class="rounded-lg border border-blue-200 bg-blue-50 p-4 dark:border-blue-800 dark:bg-blue-500/10">
-                        <h3 class="text-sm font-semibold text-blue-800 dark:text-blue-300">2. HTTP challenge fallback</h3>
-                        <p class="mt-2 text-sm text-blue-700 dark:text-blue-400">Used when IPs do not match. The alias must resolve publicly and return the exact challenge token with HTTP 200. Redirects and private/reserved destination IPs are rejected.</p>
+                        <h3 class="text-sm font-semibold text-blue-800 dark:text-blue-300">{{ t('websites.aliasApi.verify.httpTitle') }}</h3>
+                        <p class="mt-2 text-sm text-blue-700 dark:text-blue-400">{{ t('websites.aliasApi.verify.httpHelp') }}</p>
                     </div>
                 </div>
                 <div class="mt-4 grid gap-3 lg:grid-cols-2"><code
                         class="break-all rounded bg-slate-100 p-3 text-xs dark:bg-slate-800">http://ALIAS/.well-known/dpanel-alias/{{
                             state.challenge_token }}</code><code
-                        class="break-all rounded bg-slate-100 p-3 text-xs dark:bg-slate-800">Response: {{ state.challenge_token
-                }}</code></div>
+                        class="break-all rounded bg-slate-100 p-3 text-xs dark:bg-slate-800">{{ t('websites.aliasApi.verify.response', { token: state.challenge_token }) }}</code></div>
             </section>
             <div class="grid gap-5 xl:grid-cols-3">
                 <section v-for="item in examples" :key="item[0]"
@@ -357,39 +358,36 @@ if (verification.verified) {
             </div>
             <div class="grid gap-5 xl:grid-cols-2">
                 <section class="min-w-0 rounded-xl border bg-white p-5 dark:border-slate-800 dark:bg-slate-900">
-                    <h2 class="font-semibold">PHP 8+ with GuzzleHTTP</h2>
-                    <p class="mt-2 text-sm text-slate-500">Install with <code>composer require guzzlehttp/guzzle</code>. Keep <code>DPANEL_ALIAS_TOKEN</code> in the server environment.</p>
+                    <h2 class="font-semibold">{{ t('websites.aliasApi.php.title') }}</h2>
+                    <p class="mt-2 text-sm text-slate-500"><i18n-t keypath="websites.aliasApi.php.help" scope="global"><template #command><code>composer require guzzlehttp/guzzle</code></template><template #env><code>DPANEL_ALIAS_TOKEN</code></template></i18n-t></p>
                     <pre class="mt-3 max-h-[34rem] overflow-auto rounded bg-slate-950 p-4 text-xs leading-5 text-white"><code>{{ phpGuzzleExample }}</code></pre>
                 </section>
                 <section class="min-w-0 rounded-xl border bg-white p-5 dark:border-slate-800 dark:bg-slate-900">
-                    <h2 class="font-semibold">JavaScript (Node.js 18+)</h2>
-                    <p class="mt-2 text-sm text-slate-500">Use this from a backend/worker. Calling from public browser code would expose the bearer token.</p>
+                    <h2 class="font-semibold">{{ t('websites.aliasApi.js.title') }}</h2>
+                    <p class="mt-2 text-sm text-slate-500">{{ t('websites.aliasApi.js.help') }}</p>
                     <pre class="mt-3 max-h-[34rem] overflow-auto rounded bg-slate-950 p-4 text-xs leading-5 text-white"><code>{{ javascriptExample }}</code></pre>
                 </section>
             </div>
             <div class="grid gap-5 xl:grid-cols-2">
                 <section class="rounded-xl border bg-white p-5 dark:border-slate-800 dark:bg-slate-900">
-                    <h2 class="font-semibold">Pagination</h2>
-                    <p class="mt-2 text-sm">Default 25, maximum 100. Continue while <code>meta.has_more</code> is true.
-                        Metadata
-                        contains current_page, per_page, total and last_page. Every item includes SSL status and expiry.
-                    </p>
+                    <h2 class="font-semibold">{{ t('websites.aliasApi.pagination.title') }}</h2>
+                    <p class="mt-2 text-sm"><i18n-t keypath="websites.aliasApi.pagination.help" scope="global"><template #field><code>meta.has_more</code></template></i18n-t></p>
                 </section>
                 <section class="rounded-xl border bg-white p-5 dark:border-slate-800 dark:bg-slate-900">
-                    <h2 class="font-semibold">Status codes</h2>
+                    <h2 class="font-semibold">{{ t('websites.aliasApi.codes.title') }}</h2>
                     <dl class="mt-3 grid grid-cols-[4rem_1fr] gap-2 text-sm">
                         <dt>200</dt>
-                        <dd>Verify/list/remove success</dd>
+                        <dd>{{ t('websites.aliasApi.codes.200') }}</dd>
                         <dt>201</dt>
-                        <dd>Alias and SSL created</dd>
+                        <dd>{{ t('websites.aliasApi.codes.201') }}</dd>
                         <dt>401</dt>
-                        <dd>Invalid/disabled token</dd>
+                        <dd>{{ t('websites.aliasApi.codes.401') }}</dd>
                         <dt>404</dt>
-                        <dd>Scoped alias not found</dd>
+                        <dd>{{ t('websites.aliasApi.codes.404') }}</dd>
                         <dt>422</dt>
-                        <dd>Validation, verification, reachability or SSL failure</dd>
+                        <dd>{{ t('websites.aliasApi.codes.422') }}</dd>
                         <dt>429</dt>
-                        <dd>Rate limited</dd>
+                        <dd>{{ t('websites.aliasApi.codes.429') }}</dd>
                     </dl>
                 </section>
             </div>

@@ -3,6 +3,9 @@ import { computed, onBeforeUnmount, onMounted } from 'vue';
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
 import { Head, Link, router, usePage } from '@inertiajs/vue3';
 import ScanHistoryCard from './components/ScanHistoryCard.vue';
+import { useI18n } from 'vue-i18n';
+
+const { t } = useI18n();
 
 const props = defineProps({
     scans: { type: Object, required: true },
@@ -27,13 +30,13 @@ onBeforeUnmount(() => clearInterval(timer));
 </script>
 
 <template>
-    <Head title="Scan History" />
+    <Head :title="t('security.scans.title')" />
 
     <AuthenticatedLayout>
         <template #header>
             <div>
-                <h1 class="text-lg font-semibold">Scan History</h1>
-                <p class="text-sm text-slate-500 dark:text-slate-400">{{ scans.total }} scan(s). The latest completed scan of each type is kept, because the security score uses it.</p>
+                <h1 class="text-lg font-semibold">{{ t('security.scans.title') }}</h1>
+                <p class="text-sm text-slate-500 dark:text-slate-400">{{ t('security.scans.subtitle', { count: scans.total }) }}</p>
             </div>
         </template>
 

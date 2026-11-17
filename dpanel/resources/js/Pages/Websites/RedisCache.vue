@@ -2,6 +2,9 @@
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
 import { Head, Link, useForm, usePage } from '@inertiajs/vue3';
 import { computed, ref } from 'vue';
+import { useI18n } from 'vue-i18n';
+
+const { t } = useI18n();
 
 const props = defineProps({
     website: {
@@ -91,38 +94,38 @@ const copyText = async (label, value) => {
 };
 
 const clearWebsiteCache = () => {
-    if (!confirm(`Clear Redis keys for ${props.website.domain}?`)) return;
+    if (!confirm(t('websites.redisCache.clearConfirm', { domain: props.website.domain }))) return;
     clearForm.post(panelRoute('websites.redis-cache.clear', { id: props.website.id }));
 };
 const applyConfiguration = () => {
-    if (confirm(`Back up and update ${props.application.config_file}?`)) configureForm.post(panelRoute('websites.redis-cache.configure', { id: props.website.id }));
+    if (confirm(t('websites.redisCache.applyConfirm', { file: props.application.config_file }))) configureForm.post(panelRoute('websites.redis-cache.configure', { id: props.website.id }));
 };
 const rollbackRevision = (revision) => {
-    if (confirm('Restore this configuration backup?')) configureForm.post(panelRoute('websites.redis-cache.rollback', { id: props.website.id, revision: revision.id }));
+    if (confirm(t('websites.redisCache.rollbackConfirm'))) configureForm.post(panelRoute('websites.redis-cache.rollback', { id: props.website.id, revision: revision.id }));
 };
 </script>
 
 <template>
-    <Head :title="`Redis Cache - ${website.domain}`" />
+    <Head :title="t('websites.redisCache.headTitle', { domain: website.domain })" />
 
     <AuthenticatedLayout>
         <template #header>
             <div>
-                <h1 class="text-lg font-semibold">Redis Cache Setup Guide</h1>
-                <p class="text-sm text-slate-500 dark:text-slate-400">Configure a fast, isolated cache for {{ website.domain }}.</p>
+                <h1 class="text-lg font-semibold">{{ t('websites.redisCache.title') }}</h1>
+                <p class="text-sm text-slate-500 dark:text-slate-400">{{ t('websites.redisCache.subtitle', { domain: website.domain }) }}</p>
             </div>
         </template>
 
         <div class="space-y-4">
             <div class="flex justify-end gap-2">
                 <button type="button" class="rounded-md bg-blue-600 px-3 py-2 text-sm font-medium text-white hover:bg-blue-700" @click="guideOpen = true">
-                    Setup Guide
+                    {{ t('websites.redisCache.guide') }}
                 </button>
                 <Link :href="panelRoute('websites.redis-explorer.index', { id: website.id })" class="rounded-md border border-slate-300 px-3 py-2 text-sm hover:bg-slate-100 dark:border-slate-700 dark:hover:bg-slate-800">
-                    Open Redis Explorer
+                    {{ t('websites.redisCache.openExplorer') }}
                 </Link>
                 <Link :href="panelRoute('websites.manage', { id: website.id })" class="rounded-md border border-slate-300 px-3 py-2 text-sm hover:bg-slate-100 dark:border-slate-700 dark:hover:bg-slate-800">
-                    Back to Website Management
+                    {{ t('websites.aliasApi.back') }}
                 </Link>
             </div>
 
@@ -136,51 +139,51 @@ const rollbackRevision = (revision) => {
             <section class="rounded-xl border border-slate-200 bg-white p-5 dark:border-slate-800 dark:bg-slate-900">
                 <div class="flex flex-wrap items-center justify-between gap-4">
                     <div>
-                        <p class="text-xs font-semibold uppercase tracking-wide text-slate-500">Detected application</p>
+                        <p class="text-xs font-semibold uppercase tracking-wide text-slate-500">{{ t('websites.redisCache.detected') }}</p>
                         <div class="mt-2 flex items-center gap-2">
                             <span :class="application.detected ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-200' : 'bg-amber-100 text-amber-700 dark:bg-amber-950 dark:text-amber-200'" class="rounded-full px-3 py-1 text-sm font-semibold">
                                 {{ application.label }}
                             </span>
-                            <span class="text-xs text-slate-500">{{ application.detected ? 'Auto-detected' : 'Choose a guide below' }}</span>
+                            <span class="text-xs text-slate-500">{{ application.detected ? t('websites.redisCache.autoDetected') : t('websites.redisCache.chooseGuide') }}</span>
                         </div>
                     </div>
                     <div class="min-w-0 text-sm">
-                        <p class="text-xs text-slate-500">Project root</p>
-                        <code class="mt-1 block max-w-xl truncate rounded bg-slate-100 px-3 py-2 dark:bg-slate-800">{{ application.root || 'Not available' }}</code>
+                        <p class="text-xs text-slate-500">{{ t('websites.redisCache.root') }}</p>
+                        <code class="mt-1 block max-w-xl truncate rounded bg-slate-100 px-3 py-2 dark:bg-slate-800">{{ application.root || t('websites.redisCache.notAvailable') }}</code>
                     </div>
                 </div>
                 <div v-if="application.config_file" class="mt-4 rounded-md border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-800 dark:border-blue-900 dark:bg-blue-950 dark:text-blue-200">
-                    Update this file: <code class="font-semibold">{{ application.config_file }}</code>. Create a backup before editing.
-                    <button type="button" :disabled="configureForm.processing" class="mt-3 block rounded bg-blue-600 px-4 py-2 font-medium text-white disabled:opacity-50" @click="applyConfiguration">Apply Redis Configuration Automatically</button>
+                    <i18n-t keypath="websites.redisCache.updateFile" scope="global"><template #file><code class="font-semibold">{{ application.config_file }}</code></template></i18n-t>
+                    <button type="button" :disabled="configureForm.processing" class="mt-3 block rounded bg-blue-600 px-4 py-2 font-medium text-white disabled:opacity-50" @click="applyConfiguration">{{ t('websites.redisCache.applyAuto') }}</button>
                 </div>
                 <div v-else class="mt-4 rounded-md border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800 dark:border-amber-900 dark:bg-amber-950 dark:text-amber-200">
-                    Laravel, WordPress, or CodeIgniter 4 files were not found. Confirm the project root, then follow the matching manual guide.
+                    {{ t('websites.redisCache.notFound') }}
                 </div>
             </section>
 
             <section v-if="revisions.length" class="rounded-xl border border-slate-200 bg-white p-5 dark:border-slate-800 dark:bg-slate-900">
-                <h2 class="font-semibold">Configuration revision history</h2>
+                <h2 class="font-semibold">{{ t('websites.redisCache.history') }}</h2>
                 <div class="mt-3 divide-y divide-slate-200 dark:divide-slate-800">
                     <div v-for="revision in revisions" :key="revision.id" class="flex flex-wrap items-center justify-between gap-3 py-3 text-sm">
                         <div><strong>{{ revision.framework }}</strong><p class="text-xs text-slate-500">{{ revision.created_at }} · {{ revision.status }}</p></div>
-                        <button v-if="revision.status === 'applied'" type="button" :disabled="configureForm.processing" class="rounded border border-amber-400 px-3 py-1.5 text-amber-700 disabled:opacity-50" @click="rollbackRevision(revision)">Rollback</button>
+                        <button v-if="revision.status === 'applied'" type="button" :disabled="configureForm.processing" class="rounded border border-amber-400 px-3 py-1.5 text-amber-700 disabled:opacity-50" @click="rollbackRevision(revision)">{{ t('websites.redisCache.rollback') }}</button>
                     </div>
                 </div>
             </section>
 
             <section class="rounded-xl border border-slate-200 bg-white p-5 dark:border-slate-800 dark:bg-slate-900">
                 <div :class="redisCache.connected ? 'border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-900 dark:bg-emerald-950 dark:text-emerald-200' : 'border-red-200 bg-red-50 text-red-700 dark:border-red-900 dark:bg-red-950 dark:text-red-200'" class="mb-4 rounded-md border px-4 py-3 text-sm">
-                    <strong>{{ redisCache.connected ? 'Redis connected' : 'Redis unavailable' }}</strong>
+                    <strong>{{ redisCache.connected ? t('websites.redisCache.connected') : t('websites.redisCache.unavailable') }}</strong>
                     <span v-if="redisCache.error"> — {{ redisCache.error }}</span>
                 </div>
-                <h2 class="text-sm font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Namespace</h2>
+                <h2 class="text-sm font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">{{ t('websites.redisCache.namespace') }}</h2>
                 <div class="mt-3 grid gap-3 md:grid-cols-2">
                     <div>
-                        <p class="text-xs text-slate-500 dark:text-slate-400">Redis Prefix</p>
+                        <p class="text-xs text-slate-500 dark:text-slate-400">{{ t('websites.redisCache.prefix') }}</p>
                         <p class="mt-1 break-all rounded-md bg-slate-100 px-3 py-2 text-sm dark:bg-slate-800">{{ redisCache.prefix }}</p>
                     </div>
                     <div>
-                        <p class="text-xs text-slate-500 dark:text-slate-400">Connection</p>
+                        <p class="text-xs text-slate-500 dark:text-slate-400">{{ t('websites.redisCache.connection') }}</p>
                         <p class="mt-1 rounded-md bg-slate-100 px-3 py-2 text-sm dark:bg-slate-800">
                             {{ redisCache.host }}:{{ redisCache.port }} / DB {{ redisCache.database }} ({{ redisCache.connection }})
                         </p>
@@ -188,39 +191,39 @@ const rollbackRevision = (revision) => {
                 </div>
 
                 <div class="mt-4 rounded-md border border-blue-200 bg-blue-50 px-4 py-3 text-xs text-blue-800 dark:border-blue-900 dark:bg-blue-950 dark:text-blue-200">
-                    Use this exact prefix in each website `.env` to avoid cross-website cache conflicts:
+                    {{ t('websites.redisCache.prefixHelp') }}
                     <div class="mt-2 font-mono">CACHE_PREFIX={{ redisCache.prefix }}</div>
                     <div class="font-mono">REDIS_PREFIX={{ redisCache.prefix }}</div>
                 </div>
             </section>
 
-            <div v-if="guideOpen" class="fixed inset-0 z-50 flex justify-end top-0" style="margin-top: 0;" role="dialog" aria-modal="true" aria-label="Redis setup guide">
-                <button type="button" class="absolute inset-0 bg-slate-950/60" aria-label="Close setup guide" @click="guideOpen = false"></button>
+            <div v-if="guideOpen" class="fixed inset-0 z-50 flex justify-end top-0" style="margin-top: 0;" role="dialog" aria-modal="true" :aria-label="t('websites.redisCache.guideLabel')">
+                <button type="button" class="absolute inset-0 bg-slate-950/60" :aria-label="t('websites.redisCache.closeGuide')" @click="guideOpen = false"></button>
                 <aside class="relative flex h-full w-full max-w-3xl flex-col bg-slate-50 shadow-2xl dark:bg-slate-950 border dark:border-slate-800">
                     <div class="flex items-center justify-between border-b border-slate-200 bg-white px-5 py-4 dark:border-slate-800 dark:bg-slate-900">
-                        <div><h2 class="text-lg font-semibold">Redis Setup Guide</h2><p class="text-xs text-slate-500">{{ application.label }} · {{ website.domain }}</p></div>
-                        <button type="button" class="rounded-md border border-slate-300 px-3 py-2 text-sm hover:bg-slate-100 dark:border-slate-700 dark:hover:bg-slate-800" @click="guideOpen = false">Close</button>
+                        <div><h2 class="text-lg font-semibold">{{ t('websites.redisCache.guideTitle') }}</h2><p class="text-xs text-slate-500">{{ application.label }} · {{ website.domain }}</p></div>
+                        <button type="button" class="rounded-md border border-slate-300 px-3 py-2 text-sm hover:bg-slate-100 dark:border-slate-700 dark:hover:bg-slate-800" @click="guideOpen = false">{{ t('common.close') }}</button>
                     </div>
                     <div class="flex-1 space-y-4 overflow-y-auto p-4 sm:p-6">
             <section v-if="showLaravel" class="rounded-xl border border-slate-200 bg-white p-5 dark:border-slate-800 dark:bg-slate-900">
                 <div class="flex flex-wrap items-start justify-between gap-3">
                     <div>
-                        <p class="text-xs font-semibold uppercase tracking-wide text-blue-600 dark:text-blue-400">Recommended</p>
-                        <h2 class="mt-1 text-lg font-semibold">Laravel setup</h2>
-                        <p class="mt-1 text-sm text-slate-500 dark:text-slate-400">Complete these steps from the website project root.</p>
+                        <p class="text-xs font-semibold uppercase tracking-wide text-blue-600 dark:text-blue-400">{{ t('websites.redisCache.recommended') }}</p>
+                        <h2 class="mt-1 text-lg font-semibold">{{ t('websites.redisCache.laravel.title') }}</h2>
+                        <p class="mt-1 text-sm text-slate-500 dark:text-slate-400">{{ t('websites.redisCache.laravel.help') }}</p>
                     </div>
-                    <span class="rounded-full bg-slate-100 px-3 py-1 text-xs dark:bg-slate-800">About 2 minutes</span>
+                    <span class="rounded-full bg-slate-100 px-3 py-1 text-xs dark:bg-slate-800">{{ t('websites.redisCache.laravel.time') }}</span>
                 </div>
 
                 <ol class="mt-5 space-y-5">
                     <li class="grid gap-3 sm:grid-cols-[2rem_1fr]">
                         <span class="flex h-8 w-8 items-center justify-center rounded-full bg-blue-600 text-sm font-semibold text-white">1</span>
                         <div>
-                            <h3 class="font-medium">Update the website <code>.env</code></h3>
-                            <p class="mt-1 text-sm text-slate-500 dark:text-slate-400">Replace existing Redis and cache lines with this website-specific configuration.</p>
+                            <h3 class="font-medium"><i18n-t keypath="websites.redisCache.laravel.step1" scope="global"><template #file><code>.env</code></template></i18n-t></h3>
+                            <p class="mt-1 text-sm text-slate-500 dark:text-slate-400">{{ t('websites.redisCache.laravel.step1Help') }}</p>
                             <div class="relative mt-3 overflow-hidden rounded-lg bg-slate-950 text-slate-100">
                                 <button type="button" class="absolute right-3 top-3 rounded bg-slate-700 px-2.5 py-1 text-xs hover:bg-slate-600" @click="copyText('laravel', laravelEnv)">
-                                    {{ copied === 'laravel' ? 'Copied!' : 'Copy' }}
+                                    {{ copied === 'laravel' ? t('websites.redisCache.copied') : t('websites.redisCache.copy') }}
                                 </button>
                                 <pre class="overflow-x-auto p-4 pr-20 text-xs leading-6"><code>{{ laravelEnv }}</code></pre>
                             </div>
@@ -229,11 +232,11 @@ const rollbackRevision = (revision) => {
                     <li class="grid gap-3 sm:grid-cols-[2rem_1fr]">
                         <span class="flex h-8 w-8 items-center justify-center rounded-full bg-blue-600 text-sm font-semibold text-white">2</span>
                         <div>
-                            <h3 class="font-medium">Clear old configuration and verify Redis</h3>
-                            <p class="mt-1 text-sm text-slate-500 dark:text-slate-400">Run each command in order. The final command should print <strong>Redis is working</strong>.</p>
+                            <h3 class="font-medium">{{ t('websites.redisCache.laravel.step2') }}</h3>
+                            <p class="mt-1 text-sm text-slate-500 dark:text-slate-400"><i18n-t keypath="websites.redisCache.laravel.step2Help" scope="global"><template #text><strong>Redis is working</strong></template></i18n-t></p>
                             <div class="relative mt-3 overflow-hidden rounded-lg bg-slate-950 text-slate-100">
                                 <button type="button" class="absolute right-3 top-3 rounded bg-slate-700 px-2.5 py-1 text-xs hover:bg-slate-600" @click="copyText('commands', laravelCommands)">
-                                    {{ copied === 'commands' ? 'Copied!' : 'Copy' }}
+                                    {{ copied === 'commands' ? t('websites.redisCache.copied') : t('websites.redisCache.copy') }}
                                 </button>
                                 <pre class="overflow-x-auto p-4 pr-20 text-xs leading-6"><code>{{ laravelCommands }}</code></pre>
                             </div>
@@ -242,11 +245,11 @@ const rollbackRevision = (revision) => {
                     <li class="grid gap-3 sm:grid-cols-[2rem_1fr]">
                         <span class="flex h-8 w-8 items-center justify-center rounded-full bg-blue-600 text-sm font-semibold text-white">3</span>
                         <div>
-                            <h3 class="font-medium">If “Driver [phpredis] not supported” appears</h3>
-                            <p class="mt-1 text-sm text-slate-500 dark:text-slate-400">The PHP Redis extension is not enabled for this website’s PHP version. Ask the administrator to enable <code>php{{ website.php_version }}-redis</code>, or use this Composer fallback:</p>
+                            <h3 class="font-medium">{{ t('websites.redisCache.laravel.step3') }}</h3>
+                            <p class="mt-1 text-sm text-slate-500 dark:text-slate-400"><i18n-t keypath="websites.redisCache.laravel.step3Help" scope="global"><template #package><code>php{{ website.php_version }}-redis</code></template></i18n-t></p>
                             <div class="relative mt-3 overflow-hidden rounded-lg bg-slate-950 text-slate-100">
                                 <button type="button" class="absolute right-3 top-3 rounded bg-slate-700 px-2.5 py-1 text-xs hover:bg-slate-600" @click="copyText('predis', predisFallback)">
-                                    {{ copied === 'predis' ? 'Copied!' : 'Copy' }}
+                                    {{ copied === 'predis' ? t('websites.redisCache.copied') : t('websites.redisCache.copy') }}
                                 </button>
                                 <pre class="overflow-x-auto p-4 pr-20 text-xs leading-6"><code>{{ predisFallback }}</code></pre>
                             </div>
@@ -255,35 +258,35 @@ const rollbackRevision = (revision) => {
                     <li class="grid gap-3 sm:grid-cols-[2rem_1fr]">
                         <span class="flex h-8 w-8 items-center justify-center rounded-full bg-blue-600 text-sm font-semibold text-white">4</span>
                         <div>
-                            <h3 class="font-medium">Confirm on this page</h3>
-                            <p class="mt-1 text-sm text-slate-500 dark:text-slate-400">Refresh this page. The key count should increase and the test key should appear below.</p>
+                            <h3 class="font-medium">{{ t('websites.redisCache.laravel.step4') }}</h3>
+                            <p class="mt-1 text-sm text-slate-500 dark:text-slate-400">{{ t('websites.redisCache.laravel.step4Help') }}</p>
                         </div>
                     </li>
                 </ol>
             </section>
 
             <section v-if="showCodeIgniter" class="rounded-xl border border-slate-200 bg-white p-5 dark:border-slate-800 dark:bg-slate-900">
-                <h2 class="text-lg font-semibold">CodeIgniter 4 setup</h2>
-                <p class="mt-1 text-sm text-slate-500 dark:text-slate-400">The automatic action backs up and updates the project <code>.env</code>. The file cache remains the fallback.</p>
+                <h2 class="text-lg font-semibold">{{ t('websites.redisCache.ci.title') }}</h2>
+                <p class="mt-1 text-sm text-slate-500 dark:text-slate-400"><i18n-t keypath="websites.redisCache.ci.help" scope="global"><template #file><code>.env</code></template></i18n-t></p>
                 <div class="relative mt-4 overflow-hidden rounded-lg bg-slate-950 text-slate-100">
                     <button type="button" class="absolute right-3 top-3 rounded bg-slate-700 px-2.5 py-1 text-xs hover:bg-slate-600" @click="copyText('codeigniter', codeIgniterEnv)">
-                        {{ copied === 'codeigniter' ? 'Copied!' : 'Copy' }}
+                        {{ copied === 'codeigniter' ? t('websites.redisCache.copied') : t('websites.redisCache.copy') }}
                     </button>
                     <pre class="overflow-x-auto p-4 pr-20 text-xs leading-6"><code>{{ codeIgniterEnv }}</code></pre>
                 </div>
             </section>
 
             <section v-if="showWordPress" class="rounded-xl border border-slate-200 bg-white p-5 dark:border-slate-800 dark:bg-slate-900">
-                <h2 class="text-lg font-semibold">WordPress setup</h2>
-                <p class="mt-1 text-sm text-slate-500 dark:text-slate-400">Use these steps only for a WordPress website.</p>
+                <h2 class="text-lg font-semibold">{{ t('websites.redisCache.wp.title') }}</h2>
+                <p class="mt-1 text-sm text-slate-500 dark:text-slate-400">{{ t('websites.redisCache.wp.help') }}</p>
                 <ol class="mt-4 list-decimal space-y-2 pl-5 text-sm">
-                    <li>Install and activate the <strong>Redis Object Cache</strong> plugin from WordPress Plugins.</li>
-                    <li>Add the configuration below to <code>wp-config.php</code>, immediately above the “stop editing” line.</li>
-                    <li>Open <strong>Settings → Redis</strong> and click <strong>Enable Object Cache</strong>.</li>
+                    <li><i18n-t keypath="websites.redisCache.wp.step1" scope="global"><template #plugin><strong>Redis Object Cache</strong></template></i18n-t></li>
+                    <li><i18n-t keypath="websites.redisCache.wp.step2" scope="global"><template #file><code>wp-config.php</code></template></i18n-t></li>
+                    <li><i18n-t keypath="websites.redisCache.wp.step3" scope="global"><template #menu><strong>Settings → Redis</strong></template><template #button><strong>Enable Object Cache</strong></template></i18n-t></li>
                 </ol>
                 <div class="relative mt-4 overflow-hidden rounded-lg bg-slate-950 text-slate-100">
                     <button type="button" class="absolute right-3 top-3 rounded bg-slate-700 px-2.5 py-1 text-xs hover:bg-slate-600" @click="copyText('wordpress', wordpressConfig)">
-                        {{ copied === 'wordpress' ? 'Copied!' : 'Copy' }}
+                        {{ copied === 'wordpress' ? t('websites.redisCache.copied') : t('websites.redisCache.copy') }}
                     </button>
                     <pre class="overflow-x-auto p-4 pr-20 text-xs leading-6"><code>{{ wordpressConfig }}</code></pre>
                 </div>
@@ -291,21 +294,21 @@ const rollbackRevision = (revision) => {
 
             <section class="grid gap-4 lg:grid-cols-2">
                 <div class="rounded-xl border border-slate-200 bg-white p-5 dark:border-slate-800 dark:bg-slate-900">
-                    <h2 class="font-semibold">Before you finish</h2>
+                    <h2 class="font-semibold">{{ t('websites.redisCache.finish.title') }}</h2>
                     <ul class="mt-3 space-y-2 text-sm text-slate-600 dark:text-slate-300">
-                        <li>✓ Use the exact prefix shown above for this website only.</li>
-                        <li>✓ Keep Redis on <code>127.0.0.1</code>; do not expose port 6379 publicly.</li>
-                        <li>✓ Never use <code>FLUSHDB</code> or <code>FLUSHALL</code> on a shared server.</li>
-                        <li>✓ Clear application config after changing <code>.env</code>.</li>
+                        <li>✓ {{ t('websites.redisCache.finish.prefix') }}</li>
+                        <li>✓ <i18n-t keypath="websites.redisCache.finish.local" scope="global"><template #host><code>127.0.0.1</code></template></i18n-t></li>
+                        <li>✓ <i18n-t keypath="websites.redisCache.finish.flush" scope="global"><template #a><code>FLUSHDB</code></template><template #b><code>FLUSHALL</code></template></i18n-t></li>
+                        <li>✓ <i18n-t keypath="websites.redisCache.finish.clear" scope="global"><template #file><code>.env</code></template></i18n-t></li>
                     </ul>
                 </div>
                 <div class="rounded-xl border border-amber-200 bg-amber-50 p-5 dark:border-amber-900 dark:bg-amber-950">
-                    <h2 class="font-semibold text-amber-900 dark:text-amber-100">Troubleshooting</h2>
+                    <h2 class="font-semibold text-amber-900 dark:text-amber-100">{{ t('websites.redisCache.trouble.title') }}</h2>
                     <ul class="mt-3 space-y-2 text-sm text-amber-800 dark:text-amber-200">
-                        <li><strong>Connection refused:</strong> ask the server administrator to start Redis.</li>
-                        <li><strong>Class Redis not found:</strong> enable the PHP Redis extension for this website’s PHP version.</li>
-                        <li><strong>No keys in Redis Explorer:</strong> open a few pages of the website so it writes its cache and sessions, then press Refresh there.</li>
-                        <li><strong>Old values:</strong> use “Clear Website Cache” below; it deletes only this website’s namespace.</li>
+                        <li><strong>{{ t('websites.redisCache.trouble.refused') }}</strong> {{ t('websites.redisCache.trouble.refusedHelp') }}</li>
+                        <li><strong>{{ t('websites.redisCache.trouble.class') }}</strong> {{ t('websites.redisCache.trouble.classHelp') }}</li>
+                        <li><strong>{{ t('websites.redisCache.trouble.noKeys') }}</strong> {{ t('websites.redisCache.trouble.noKeysHelp') }}</li>
+                        <li><strong>{{ t('websites.redisCache.trouble.old') }}</strong> {{ t('websites.redisCache.trouble.oldHelp') }}</li>
                     </ul>
                 </div>
             </section>
@@ -314,11 +317,10 @@ const rollbackRevision = (revision) => {
             </div>
 
             <section class="rounded-xl border border-slate-200 bg-white p-5 dark:border-slate-800 dark:bg-slate-900">
-                <h2 class="text-sm font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Manage cache</h2>
+                <h2 class="text-sm font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">{{ t('websites.redisCache.manage') }}</h2>
                 <div class="mt-3 flex flex-wrap items-center justify-between gap-3">
                     <p class="text-sm text-slate-600 dark:text-slate-300">
-                        See and inspect this website's keys in
-                        <Link :href="panelRoute('websites.redis-explorer.index', { id: website.id })" class="font-medium text-blue-600 hover:underline dark:text-blue-400">Redis Explorer</Link>.
+                        <i18n-t keypath="websites.redisCache.inspect" scope="global"><template #link><Link :href="panelRoute('websites.redis-explorer.index', { id: website.id })" class="font-medium text-blue-600 hover:underline dark:text-blue-400">Redis Explorer</Link></template></i18n-t>
                     </p>
                     <button
                         type="button"
@@ -326,7 +328,7 @@ const rollbackRevision = (revision) => {
                         class="rounded-md bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-700 disabled:opacity-60"
                         @click="clearWebsiteCache"
                     >
-                        Clear Website Cache
+                        {{ t('websites.redisCache.clear') }}
                     </button>
                 </div>
             </section>

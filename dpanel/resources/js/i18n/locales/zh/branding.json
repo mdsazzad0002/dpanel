@@ -1,0 +1,13 @@
+{
+    "title": "品牌",
+    "serverHelp": "所有人看到的名称、徽标和颜色，除非其代理商有自己的设置。",
+    "resellerHelp": "您和您的客户看到的名称、徽标和颜色。",
+    "name": "面板名称",
+    "color": "颜色",
+    "logo": "徽标",
+    "logoHelp": "PNG、JPG 或 WebP，最大 512 KB。",
+    "removeLogo": "移除徽标",
+    "fallback": "留空的项先取服务器的品牌设置，再取 dPanel 默认值。",
+    "save": "保存",
+    "failed": "未能保存品牌设置。"
+}

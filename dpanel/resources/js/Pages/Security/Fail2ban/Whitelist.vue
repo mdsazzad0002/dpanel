@@ -3,6 +3,9 @@ import { onMounted } from 'vue';
 import Fail2banShell from './components/Fail2banShell.vue';
 import WhitelistCard from './components/WhitelistCard.vue';
 import { useFail2ban } from './useFail2ban';
+import { useI18n } from 'vue-i18n';
+
+const { t } = useI18n();
 
 const props = defineProps({
     clientIp: { type: String, default: '' },
@@ -15,8 +18,8 @@ onMounted(load);
 
 <template>
     <Fail2banShell
-        title="Whitelist"
-        description="IPs fail2ban never blocks, however many logins fail."
+        :title="t('security.fail2ban.pages.whitelistTitle')"
+        :description="t('security.fail2ban.pages.whitelistDesc')"
         :status="status"
         :loading="loading"
         :load-error="loadError"

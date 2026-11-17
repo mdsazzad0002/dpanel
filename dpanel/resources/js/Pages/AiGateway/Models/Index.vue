@@ -4,6 +4,9 @@ import Modal from '@/Components/Modal.vue';
 import { computed, reactive, ref, watch } from 'vue';
 import { Head, Link, useForm, usePage } from '@inertiajs/vue3';
 import axios from 'axios';
+import { useI18n } from 'vue-i18n';
+
+const { t } = useI18n();
 
 const page = usePage();
 const panelToken = page.props.panel?.token;
@@ -20,25 +23,25 @@ const props = defineProps({
 });
 
 // drust's whisper.cpp: the voice-to-text gateway, not a provider model, so it has its own card
-const LOCAL_MODES = {
-    first: 'Used first for every voice note; the transcription models below only when it fails',
-    fallback: 'Used only when the transcription models below fail or none are set up',
-    off: 'Turned off (AIGATEWAY_LOCAL_TRANSCRIPTION=off)',
-};
+const LOCAL_MODES = computed(() => ({
+    first: t('aiGateway.models.mode.first'),
+    fallback: t('aiGateway.models.mode.fallback'),
+    off: t('aiGateway.models.mode.off'),
+}));
 
 const filteredProvider = props.providers.find((p) => p.id === props.providerFilter);
 
 const addForm = useForm({ provider_id: props.providerFilter || '', name: '', display_name: '', context_window: 0, max_output_tokens: 0, capabilities: [], is_active: true });
 
 // What each capability changes; vision, image_generation and transcription steer routing.
-const CAPABILITIES = [
-    { value: 'chat', label: 'chat', hint: 'Answers chat messages' },
-    { value: 'vision', label: 'vision', hint: 'Sees images itself; without it, images are read by OCR first' },
-    { value: 'tools', label: 'tools', hint: 'Function calling (server tools)' },
-    { value: 'code', label: 'code', hint: 'Good at code' },
-    { value: 'image_generation', label: 'image generation', hint: 'Makes images; without "chat" it gets no chat requests' },
-    { value: 'transcription', label: 'transcription', hint: 'Turns voice into text (/audio/transcriptions); without "chat" it gets no chat requests' },
-];
+const CAPABILITIES = computed(() => [
+    { value: 'chat', label: 'chat', hint: t('aiGateway.models.cap.chat') },
+    { value: 'vision', label: 'vision', hint: t('aiGateway.models.cap.vision') },
+    { value: 'tools', label: 'tools', hint: t('aiGateway.models.cap.tools') },
+    { value: 'code', label: 'code', hint: t('aiGateway.models.cap.code') },
+    { value: 'image_generation', label: 'image generation', hint: t('aiGateway.models.cap.image') },
+    { value: 'transcription', label: 'transcription', hint: t('aiGateway.models.cap.transcription') },
+]);
 const statusForm = useForm({});
 const delForm = useForm({});
 
@@ -68,7 +71,7 @@ const fetchRemoteModels = async (providerId) => {
             status: 'error',
             models: localSeedFor(id),
             source: 'seed',
-            message: e.response?.data?.message || 'Could not reach the provider — showing the local model list instead.',
+            message: e.response?.data?.message || t('aiGateway.models.remoteFailed'),
         };
     }
 };
@@ -116,7 +119,7 @@ const toggle = async (m) => {
         m.auto_disabled = data.model.auto_disabled;
         m.failure_count = data.model.failure_count;
     } catch (e) {
-        alert(e.response?.data?.message || 'Could not update the model.');
+        alert(e.response?.data?.message || t('aiGateway.models.updateFailed'));
     }
 };
 // Model tester: one short chat straight to the model (no failover).
@@ -130,7 +133,7 @@ const testModel = async (m) => {
         // The server already saved what the probes found.
         if (data.capabilities) m.capabilities = data.capabilities;
     } catch (e) {
-        m.last_test = { ok: false, message: e.response?.data?.message || 'The test request failed.', latency_ms: 0, tested_at: new Date().toISOString() };
+        m.last_test = { ok: false, message: e.response?.data?.message || t('aiGateway.models.testFailed'), latency_ms: 0, tested_at: new Date().toISOString() };
     } finally {
         delete testing[m.id];
     }
@@ -148,18 +151,18 @@ const testedSummary = computed(() => {
     return { ok: tested.filter((m) => m.last_test.ok).length, failed: tested.filter((m) => !m.last_test.ok).length };
 });
 const PROBE_LABELS = { chat: 'chat', code: 'code', tools: 'tools', vision: 'vision' };
-const capsChanged = (t) => t?.capabilities
-    && [...t.capabilities].sort().join() !== [...(t.previous_capabilities || [])].sort().join();
+const capsChanged = (lt) => lt?.capabilities
+    && [...lt.capabilities].sort().join() !== [...(lt.previous_capabilities || [])].sort().join();
 const fmtSeconds = (ms) => (ms >= 1000 ? `${(ms / 1000).toFixed(1)}s` : `${ms}ms`);
 const ago = (iso) => {
     const s = Math.max(0, Math.round((Date.now() - new Date(iso)) / 1000));
-    if (s < 60) return 'just now';
-    if (s < 3600) return `${Math.floor(s / 60)}m ago`;
-    if (s < 86400) return `${Math.floor(s / 3600)}h ago`;
-    return `${Math.floor(s / 86400)}d ago`;
+    if (s < 60) return t('aiGateway.models.ago.now');
+    if (s < 3600) return t('aiGateway.models.ago.m', { n: Math.floor(s / 60) });
+    if (s < 86400) return t('aiGateway.models.ago.h', { n: Math.floor(s / 3600) });
+    return t('aiGateway.models.ago.d', { n: Math.floor(s / 86400) });
 };
 
-const remove = (m) => { if (confirm(`Remove model "${m.name}"?`)) delForm.delete(panelRoute('ai-gateway.models.destroy', { model: m.id })); };
+const remove = (m) => { if (confirm(t('aiGateway.models.removeConfirm', { name: m.name }))) delForm.delete(panelRoute('ai-gateway.models.destroy', { model: m.id })); };
 
 const editingId = ref(null);
 const editForm = useForm({ provider_id: '', name: '', display_name: '', context_window: 0, max_output_tokens: 0, capabilities: [] });
@@ -234,21 +237,20 @@ const saveEdit = (m) => {
 
 <template>
 
-    <Head title="AI Models" />
+    <Head :title="t('aiGateway.models.title')" />
 
     <AuthenticatedLayout>
         <template #header>
             <div>
-                <h1 class="text-lg font-semibold">AI Models</h1>
-                <p class="text-sm text-slate-500 dark:text-slate-400">Model catalog with context limits per
-                    provider.</p>
+                <h1 class="text-lg font-semibold">{{ t('aiGateway.models.title') }}</h1>
+                <p class="text-sm text-slate-500 dark:text-slate-400">{{ t('aiGateway.models.subtitle') }}</p>
             </div>
         </template>
 
         <div class="space-y-4">
             <div v-if="filteredProvider" class="flex items-center justify-between rounded-md border border-blue-200 bg-blue-50 px-4 py-2 text-sm text-blue-700 dark:border-blue-800 dark:bg-blue-950 dark:text-blue-300">
-                <span>Showing models for <strong>{{ filteredProvider.name }}</strong></span>
-                <Link :href="panelRoute('ai-gateway.models.index')" class="text-xs hover:underline">Clear filter</Link>
+                <span><i18n-t keypath="aiGateway.models.showingFor" scope="global"><template #name><strong>{{ filteredProvider.name }}</strong></template></i18n-t></span>
+                <Link :href="panelRoute('ai-gateway.models.index')" class="text-xs hover:underline">{{ t('aiGateway.models.clearFilter') }}</Link>
             </div>
             <div v-if="page.props.flash?.success"
                 class="rounded-md border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">{{
@@ -263,54 +265,54 @@ const saveEdit = (m) => {
                 <div class="flex items-center gap-2 font-medium">
                     <span class="inline-block h-2 w-2 rounded-full"
                         :class="localTranscription.mode === 'off' ? 'bg-slate-400' : (localTranscription.reachable ? 'bg-emerald-500' : 'bg-red-500')"></span>
-                    Voice to text (local) · {{ localTranscription.model }}
+                    {{ t('aiGateway.models.localVoice') }} · {{ localTranscription.model }}
                 </div>
-                <Link :href="panelRoute('ai-gateway.voice.index')" class="text-xs text-blue-600 hover:underline">Settings, restart &amp; test →</Link>
+                <Link :href="panelRoute('ai-gateway.voice.index')" class="text-xs text-blue-600 hover:underline">{{ t('aiGateway.models.voiceSettings') }} →</Link>
                 <span class="rounded bg-slate-100 px-1.5 py-0.5 text-[11px] text-slate-600 dark:bg-slate-700 dark:text-slate-300">transcription</span>
                 <span class="text-xs text-slate-500">
-                    {{ localTranscription.mode === 'off' ? 'Off' : (localTranscription.reachable ? 'Running' : 'drust not reachable') }}
+                    {{ localTranscription.mode === 'off' ? t('aiGateway.models.off') : (localTranscription.reachable ? t('aiGateway.models.running') : t('aiGateway.models.unreachable')) }}
                     · {{ LOCAL_MODES[localTranscription.mode] || localTranscription.mode }}
                 </span>
                 <span class="ml-auto text-xs text-slate-400">
-                    {{ localTranscription.uses_7d }} in 7 days<template v-if="localTranscription.last_used_at"> · last {{ new Date(localTranscription.last_used_at).toLocaleString() }}</template>
+                    {{ t('aiGateway.models.uses7d', { count: localTranscription.uses_7d }) }}<template v-if="localTranscription.last_used_at"> · {{ t('aiGateway.models.lastUsed', { time: new Date(localTranscription.last_used_at).toLocaleString() }) }}</template>
                 </span>
             </div>
 
             <form @submit.prevent="add"
                 class="grid grid-cols-1 gap-3 rounded-lg border border-slate-200 bg-white p-4 dark:border-slate-700 dark:bg-slate-800 sm:grid-cols-2 lg:grid-cols-4">
                 <div>
-                    <label class="mb-1 block text-xs font-medium">Provider</label>
+                    <label class="mb-1 block text-xs font-medium">{{ t('aiGateway.models.col.provider') }}</label>
                     <select v-model="addForm.provider_id"
                         class="w-full rounded-md border border-slate-300 px-2 py-1.5 text-sm dark:border-slate-600 dark:bg-slate-900">
-                        <option value="">Select…</option>
+                        <option value="">{{ t('aiGateway.models.select') }}</option>
                         <option v-for="p in providers" :key="p.id" :value="p.id">{{ p.name }}</option>
                     </select>
                     <div v-if="addForm.errors.provider_id" class="text-xs text-red-600">{{ addForm.errors.provider_id }}
                     </div>
                 </div>
                 <div>
-                    <label class="mb-1 block text-xs font-medium">Model ID</label>
+                    <label class="mb-1 block text-xs font-medium">{{ t('aiGateway.models.modelId') }}</label>
                     <div class="flex gap-1">
                         <input v-model="addForm.name" type="text" list="add-model-suggestions" @input="onAddModelInput"
                             class="w-full rounded-md border border-slate-300 px-2 py-1.5 text-sm dark:border-slate-600 dark:bg-slate-900"
                             placeholder="gpt-4o" />
                         <button type="button" @click="openPicker('add')" :disabled="!addForm.provider_id"
-                            title="Browse the provider's models"
-                            class="shrink-0 rounded-md border border-slate-300 px-2 py-1.5 text-sm hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-50 dark:border-slate-600 dark:hover:bg-slate-700">Browse…</button>
+                            :title="t('aiGateway.models.browseHint')"
+                            class="shrink-0 rounded-md border border-slate-300 px-2 py-1.5 text-sm hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-50 dark:border-slate-600 dark:hover:bg-slate-700">{{ t('aiGateway.models.browse') }}</button>
                     </div>
                     <datalist id="add-model-suggestions">
                         <option v-for="s in addSuggestions" :key="s.name" :value="s.name">{{ s.display_name || s.name }}</option>
                     </datalist>
-                    <div v-if="addModelInfo.loading" class="mt-0.5 text-xs text-slate-400">Loading models from provider…</div>
-                    <div v-else-if="addModelInfo.source === 'seed' && addForm.provider_id" class="mt-0.5 text-xs text-amber-600" :title="addModelInfo.message || ''">Showing local list — couldn't reach the provider.</div>
+                    <div v-if="addModelInfo.loading" class="mt-0.5 text-xs text-slate-400">{{ t('aiGateway.models.loadingRemote') }}</div>
+                    <div v-else-if="addModelInfo.source === 'seed' && addForm.provider_id" class="mt-0.5 text-xs text-amber-600" :title="addModelInfo.message || ''">{{ t('aiGateway.models.localList') }}</div>
                 </div>
                 <div>
-                    <label class="mb-1 block text-xs font-medium">Display Name</label>
+                    <label class="mb-1 block text-xs font-medium">{{ t('aiGateway.models.displayName') }}</label>
                     <input v-model="addForm.display_name" type="text"
                         class="w-full rounded-md border border-slate-300 px-2 py-1.5 text-sm dark:border-slate-600 dark:bg-slate-900" />
                 </div>
                 <div class="sm:col-span-2 lg:col-span-4">
-                    <label class="mb-1 block text-xs font-medium">Capabilities</label>
+                    <label class="mb-1 block text-xs font-medium">{{ t('aiGateway.models.col.capabilities') }}</label>
                     <div class="flex flex-wrap gap-x-4 gap-y-1 text-xs">
                         <label v-for="c in CAPABILITIES" :key="c.value" class="flex items-center gap-1" :title="c.hint">
                             <input v-model="addForm.capabilities" type="checkbox" :value="c.value" class="rounded border-slate-300" />
@@ -321,8 +323,7 @@ const saveEdit = (m) => {
                 </div>
                 <div class="flex items-end">
                     <button type="submit" :disabled="addForm.processing"
-                        class="rounded-md bg-blue-600 px-4 py-2 text-sm text-white hover:bg-blue-700 disabled:opacity-50">Add
-                        Model</button>
+                        class="rounded-md bg-blue-600 px-4 py-2 text-sm text-white hover:bg-blue-700 disabled:opacity-50">{{ t('aiGateway.models.add') }}</button>
                 </div>
             </form>
 
@@ -330,28 +331,28 @@ const saveEdit = (m) => {
                 class="overflow-hidden rounded-lg border border-slate-200 bg-white dark:border-slate-700 dark:bg-slate-800">
                     <div class="flex flex-wrap items-center justify-between gap-2 border-b border-slate-200 px-4 py-2 dark:border-slate-700">
                         <div class="text-xs text-slate-500">
-                            Test asks the model directly (no failover): a reply, a code question, a tool call and a picture. What it passes becomes its capabilities.
+                            {{ t('aiGateway.models.testHelp') }}
                             <span v-if="testedSummary.ok || testedSummary.failed" class="ml-1">
-                                <span class="text-emerald-600">{{ testedSummary.ok }} working</span><template v-if="testedSummary.failed"> · <span class="text-red-600">{{ testedSummary.failed }} failing</span></template>
+                                <span class="text-emerald-600">{{ t('aiGateway.models.working', { count: testedSummary.ok }) }}</span><template v-if="testedSummary.failed"> · <span class="text-red-600">{{ t('aiGateway.models.failing', { count: testedSummary.failed }) }}</span></template>
                             </span>
                         </div>
                         <button @click="testAll" :disabled="testAllRunning"
                             class="rounded-md border border-slate-300 px-3 py-1 text-xs hover:bg-slate-100 disabled:opacity-50 dark:border-slate-600 dark:hover:bg-slate-700">
-                            <i class="bi bi-play-circle"></i> {{ testAllRunning ? 'Testing…' : 'Test all active' }}
+                            <i class="bi bi-play-circle"></i> {{ testAllRunning ? t('aiGateway.models.testing') : t('aiGateway.models.testAll') }}
                         </button>
                     </div>
                     <div class="overflow-x-auto">
                     <table class="min-w-full divide-y divide-slate-200 text-sm dark:divide-slate-700">
                         <thead class="bg-slate-50 text-left text-xs text-slate-500 dark:bg-slate-800">
                             <tr>
-                                <th class="px-4 py-3 font-medium">Provider</th>
-                                <th class="px-4 py-3 font-medium">Model</th>
-                                <th class="px-4 py-3 font-medium">Context</th>
-                                <th class="px-4 py-3 font-medium">Max Output</th>
-                                <th class="px-4 py-3 font-medium">Capabilities</th>
-                                <th class="px-4 py-3 font-medium">Last test</th>
-                                <th class="px-4 py-3 font-medium">Default</th>
-                                <th class="px-4 py-3 text-right font-medium">Actions</th>
+                                <th class="px-4 py-3 font-medium">{{ t('aiGateway.models.col.provider') }}</th>
+                                <th class="px-4 py-3 font-medium">{{ t('aiGateway.models.col.model') }}</th>
+                                <th class="px-4 py-3 font-medium">{{ t('aiGateway.models.col.context') }}</th>
+                                <th class="px-4 py-3 font-medium">{{ t('aiGateway.models.col.maxOutput') }}</th>
+                                <th class="px-4 py-3 font-medium">{{ t('aiGateway.models.col.capabilities') }}</th>
+                                <th class="px-4 py-3 font-medium">{{ t('aiGateway.models.col.lastTest') }}</th>
+                                <th class="px-4 py-3 font-medium">{{ t('aiGateway.models.col.default') }}</th>
+                                <th class="px-4 py-3 text-right font-medium">{{ t('aiGateway.models.col.actions') }}</th>
                             </tr>
                         </thead>
                         <tbody class="divide-y divide-slate-200 dark:divide-slate-700">
@@ -365,21 +366,21 @@ const saveEdit = (m) => {
                                         <div v-if="editForm.errors.provider_id" class="mt-0.5 text-xs text-red-600">{{ editForm.errors.provider_id }}</div>
                                     </td>
                                     <td class="px-4 py-3">
-                                        <input v-model="editForm.display_name" type="text" placeholder="Display name"
+                                        <input v-model="editForm.display_name" type="text" :placeholder="t('aiGateway.models.displayName')"
                                             class="w-full rounded border border-slate-300 px-2 py-1 text-sm dark:border-slate-600 dark:bg-slate-900" />
                                         <div v-if="editForm.errors.display_name" class="text-xs text-red-600">{{ editForm.errors.display_name }}</div>
                                         <div class="mt-1 flex gap-1">
-                                            <input v-model="editForm.name" type="text" list="edit-model-suggestions" @input="onEditModelInput" placeholder="Model ID"
+                                            <input v-model="editForm.name" type="text" list="edit-model-suggestions" @input="onEditModelInput" :placeholder="t('aiGateway.models.modelId')"
                                                 class="w-full rounded border border-slate-300 px-2 py-1 text-xs dark:border-slate-600 dark:bg-slate-900" />
                                             <button type="button" @click="openPicker('edit')" :disabled="!editForm.provider_id"
-                                                title="Browse the provider's models"
-                                                class="shrink-0 rounded border border-slate-300 px-2 py-1 text-xs hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-50 dark:border-slate-600 dark:hover:bg-slate-700">Browse…</button>
+                                                :title="t('aiGateway.models.browseHint')"
+                                                class="shrink-0 rounded border border-slate-300 px-2 py-1 text-xs hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-50 dark:border-slate-600 dark:hover:bg-slate-700">{{ t('aiGateway.models.browse') }}</button>
                                         </div>
                                         <datalist id="edit-model-suggestions">
                                             <option v-for="s in editSuggestions" :key="s.name" :value="s.name">{{ s.display_name || s.name }}</option>
                                         </datalist>
-                                        <div v-if="editModelInfo.loading" class="mt-0.5 text-xs text-slate-400">Loading models from provider…</div>
-                                        <div v-else-if="editModelInfo.source === 'seed'" class="mt-0.5 text-xs text-amber-600" :title="editModelInfo.message || ''">Showing local list — couldn't reach the provider.</div>
+                                        <div v-if="editModelInfo.loading" class="mt-0.5 text-xs text-slate-400">{{ t('aiGateway.models.loadingRemote') }}</div>
+                                        <div v-else-if="editModelInfo.source === 'seed'" class="mt-0.5 text-xs text-amber-600" :title="editModelInfo.message || ''">{{ t('aiGateway.models.localList') }}</div>
                                         <div v-if="editForm.errors.name" class="text-xs text-red-600">{{ editForm.errors.name }}</div>
                                     </td>
                                     <td class="px-4 py-3">
@@ -399,15 +400,15 @@ const saveEdit = (m) => {
                                     <td class="px-4 py-3"></td>
                                     <td class="px-4 py-3">
                                         <button v-if="m.is_default"
-                                            class="rounded bg-emerald-100 px-2 py-0.5 text-xs text-emerald-700">Default</button>
+                                            class="rounded bg-emerald-100 px-2 py-0.5 text-xs text-emerald-700">{{ t('aiGateway.models.default') }}</button>
                                         <button v-else @click="setDefault(m)"
-                                            class="rounded border border-slate-300 px-2 py-0.5 text-xs hover:bg-slate-100 dark:border-slate-600">Set</button>
+                                            class="rounded border border-slate-300 px-2 py-0.5 text-xs hover:bg-slate-100 dark:border-slate-600">{{ t('aiGateway.models.set') }}</button>
                                     </td>
                                     <td class="space-x-1 px-4 py-3 text-right">
                                         <button @click="saveEdit(m)" :disabled="editForm.processing"
-                                            class="rounded bg-blue-600 px-2 py-1 text-xs text-white hover:bg-blue-700 disabled:opacity-50">Save</button>
+                                            class="rounded bg-blue-600 px-2 py-1 text-xs text-white hover:bg-blue-700 disabled:opacity-50">{{ t('common.save') }}</button>
                                         <button @click="cancelEdit"
-                                            class="rounded border border-slate-300 px-2 py-1 text-xs hover:bg-slate-100 dark:border-slate-600">Cancel</button>
+                                            class="rounded border border-slate-300 px-2 py-1 text-xs hover:bg-slate-100 dark:border-slate-600">{{ t('common.cancel') }}</button>
                                     </td>
                                 </tr>
                                 <tr v-else class="hover:bg-slate-50 dark:hover:bg-slate-700/40">
@@ -420,11 +421,11 @@ const saveEdit = (m) => {
                                     <td class="px-4 py-3 text-slate-500">{{ m.max_output_tokens || '—' }}</td>
                                     <td class="px-4 py-3 text-slate-500">{{ (m.capabilities || []).join(', ') || '—' }}</td>
                                     <td class="max-w-xs px-4 py-3 text-xs">
-                                        <span v-if="testing[m.id]" class="text-amber-600"><i class="bi bi-hourglass-split"></i> Testing…</span>
+                                        <span v-if="testing[m.id]" class="text-amber-600"><i class="bi bi-hourglass-split"></i> {{ t('aiGateway.models.testing') }}</span>
                                         <template v-else-if="m.last_test">
                                             <div :class="m.last_test.ok ? 'text-emerald-600' : 'text-red-600'">
                                                 <i class="bi" :class="m.last_test.ok ? 'bi-check-circle' : 'bi-x-circle'"></i>
-                                                {{ m.last_test.ok ? 'Working' : 'Failed' }}
+                                                {{ m.last_test.ok ? t('aiGateway.models.statusWorking') : t('aiGateway.models.statusFailed') }}
                                                 <span class="text-slate-400">· {{ fmtSeconds(m.last_test.latency_ms) }}<template v-if="m.last_test.ok && m.last_test.tokens_per_second"> · {{ m.last_test.tokens_per_second }} tok/s</template> · {{ ago(m.last_test.tested_at) }}</span>
                                             </div>
                                             <div v-if="m.last_test.probes && Object.keys(m.last_test.probes).length" class="mt-0.5 flex flex-wrap gap-1">
@@ -434,31 +435,31 @@ const saveEdit = (m) => {
                                                     {{ PROBE_LABELS[key] || key }}
                                                 </span>
                                             </div>
-                                            <div v-if="capsChanged(m.last_test)" class="mt-0.5 text-indigo-600">Capabilities updated from the test</div>
+                                            <div v-if="capsChanged(m.last_test)" class="mt-0.5 text-indigo-600">{{ t('aiGateway.models.capsUpdated') }}</div>
                                             <div class="truncate text-slate-500" :title="m.last_test.message">{{ m.last_test.message }}</div>
                                         </template>
-                                        <span v-else-if="!m.testable" class="text-slate-400">Not a chat model</span>
-                                        <span v-else class="text-slate-400">Not tested</span>
+                                        <span v-else-if="!m.testable" class="text-slate-400">{{ t('aiGateway.models.notChat') }}</span>
+                                        <span v-else class="text-slate-400">{{ t('aiGateway.models.notTested') }}</span>
                                     </td>
                                     <td class="px-4 py-3">
                                         <button v-if="m.is_default"
-                                            class="rounded bg-emerald-100 px-2 py-0.5 text-xs text-emerald-700">Default</button>
+                                            class="rounded bg-emerald-100 px-2 py-0.5 text-xs text-emerald-700">{{ t('aiGateway.models.default') }}</button>
                                         <button v-else @click="setDefault(m)"
-                                            class="rounded border border-slate-300 px-2 py-0.5 text-xs hover:bg-slate-100 dark:border-slate-600">Set</button>
+                                            class="rounded border border-slate-300 px-2 py-0.5 text-xs hover:bg-slate-100 dark:border-slate-600">{{ t('aiGateway.models.set') }}</button>
                                     </td>
                                     <td class="space-x-1 px-4 py-3 text-right">
                                         <button v-if="m.testable" @click="testModel(m)" :disabled="!!testing[m.id]"
-                                            title="Probe chat, code, tools and vision, and update the capabilities"
-                                            class="rounded border border-slate-300 px-2 py-1 text-xs hover:bg-slate-100 disabled:opacity-50 dark:border-slate-600"><i class="bi bi-play"></i> Test</button>
+                                            :title="t('aiGateway.models.testHint')"
+                                            class="rounded border border-slate-300 px-2 py-1 text-xs hover:bg-slate-100 disabled:opacity-50 dark:border-slate-600"><i class="bi bi-play"></i> {{ t('aiGateway.models.test') }}</button>
                                         <button @click="startEdit(m)"
-                                            class="rounded border border-slate-300 px-2 py-1 text-xs hover:bg-slate-100 dark:border-slate-600">Edit</button>
+                                            class="rounded border border-slate-300 px-2 py-1 text-xs hover:bg-slate-100 dark:border-slate-600">{{ t('aiGateway.models.edit') }}</button>
                                         <button @click="toggle(m)"
-                                            :title="m.auto_disabled ? `Auto-disabled after ${m.failure_count} rate-limit failures — click to re-enable` : ''"
+                                            :title="m.auto_disabled ? t('aiGateway.models.autoDisabledHint', { count: m.failure_count }) : ''"
                                             class="rounded border px-2 py-1 text-xs hover:bg-slate-100 dark:border-slate-600"
                                             :class="m.auto_disabled ? 'border-amber-300 text-amber-700' : 'border-slate-300'">{{
-                                                m.auto_disabled ? 'Auto-disabled' : (m.is_active ? 'Active' : 'Inactive') }}</button>
+                                                m.auto_disabled ? t('aiGateway.models.autoDisabled') : (m.is_active ? t('aiGateway.models.active') : t('aiGateway.models.inactive')) }}</button>
                                         <button @click="remove(m)"
-                                            class="rounded border border-red-300 px-2 py-1 text-xs text-red-600 hover:bg-red-50 dark:border-red-700">Delete</button>
+                                            class="rounded border border-red-300 px-2 py-1 text-xs text-red-600 hover:bg-red-50 dark:border-red-700">{{ t('aiGateway.models.delete') }}</button>
                                     </td>
                                 </tr>
                             </template>
@@ -470,17 +471,17 @@ const saveEdit = (m) => {
 
         <Modal :show="pickerOpen" max-width="lg" @close="closePicker">
             <div class="flex items-center justify-between border-b border-slate-200 px-5 py-3 dark:border-slate-700">
-                <h2 class="text-sm font-semibold">Pick a model</h2>
+                <h2 class="text-sm font-semibold">{{ t('aiGateway.models.pick') }}</h2>
                 <button @click="closePicker" class="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200">&times;</button>
             </div>
             <div class="border-b border-slate-200 px-5 py-2 dark:border-slate-700">
-                <input v-model="pickerSearch" type="text" placeholder="Search models…" autofocus
+                <input v-model="pickerSearch" type="text" :placeholder="t('aiGateway.models.search')" autofocus
                     class="w-full rounded-md border border-slate-300 px-2 py-1.5 text-sm dark:border-slate-600 dark:bg-slate-900" />
             </div>
             <div class="max-h-96 overflow-y-auto px-2 py-2">
-                <div v-if="pickerInfo.loading" class="px-3 py-6 text-center text-sm text-slate-500">Loading models from provider…</div>
-                <div v-else-if="!pickerInfo.models.length" class="px-3 py-6 text-center text-sm text-slate-500">No models found for this provider.</div>
-                <div v-else-if="!pickerModels.length" class="px-3 py-6 text-center text-sm text-slate-500">No models match "{{ pickerSearch }}".</div>
+                <div v-if="pickerInfo.loading" class="px-3 py-6 text-center text-sm text-slate-500">{{ t('aiGateway.models.loadingRemote') }}</div>
+                <div v-else-if="!pickerInfo.models.length" class="px-3 py-6 text-center text-sm text-slate-500">{{ t('aiGateway.models.noneFound') }}</div>
+                <div v-else-if="!pickerModels.length" class="px-3 py-6 text-center text-sm text-slate-500">{{ t('aiGateway.models.noMatch', { query: pickerSearch }) }}</div>
                 <table v-else class="w-full text-left text-sm">
                     <tbody>
                         <tr v-for="m in pickerModels" :key="m.name" @click="pickModel(m)"
@@ -494,7 +495,7 @@ const saveEdit = (m) => {
                 </table>
             </div>
             <div v-if="pickerInfo.source === 'seed'" class="border-t border-slate-200 px-5 py-2 text-xs text-amber-600 dark:border-slate-700">
-                Showing local list — couldn't reach the provider.
+                {{ t('aiGateway.models.localList') }}
             </div>
         </Modal>
         

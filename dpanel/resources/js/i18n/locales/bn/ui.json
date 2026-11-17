@@ -1,0 +1,38 @@
+{
+    "markdown": {
+        "copy": "Copy করুন",
+        "copied": "Copy হয়েছে"
+    },
+    "searchableSelect": {
+        "placeholder": "বেছে নিন…",
+        "search": "খুঁজুন…",
+        "noMatches": "কিছু মেলেনি।",
+        "showing": "{total}টির মধ্যে {shown}টি দেখানো হচ্ছে — ফল কমাতে আরও লিখুন"
+    },
+    "terminal": {
+        "connecting": "সংযোগ করা হচ্ছে…",
+        "openFailed": "Terminal খোলা যায়নি।",
+        "connected": "সংযুক্ত",
+        "error": "সংযোগে সমস্যা",
+        "closed": "Session বন্ধ হয়েছে (code {code})",
+        "title": "Terminal",
+        "reconnect": "আবার সংযোগ করুন",
+        "clear": "মুছুন"
+    },
+    "legal": {
+        "back": "ফিরে যান",
+        "updated": "সর্বশেষ হালনাগাদ: {date}",
+        "privacy": "গোপনীয়তা নীতি",
+        "terms": "শর্তাবলি"
+    },
+    "location": {
+        "unsupported": "এই browser-এ location সুবিধা নেই।",
+        "needsHttps": "এই browser সাধারণ HTTP-তে location দেয় না। Panel-টি HTTPS-এ খুলুন।",
+        "failed": "আপনার location পড়া যায়নি।",
+        "errors": {
+            "blocked": "Location access বন্ধ করা আছে। Browser settings-এ এই site-এর জন্য location চালু করুন, তারপর আবার চেষ্টা করুন।",
+            "unavailable": "আপনার device তার location খুঁজে পায়নি। Location services চালু করে আবার চেষ্টা করুন।",
+            "timeout": "Location পেতে অনেক সময় লেগেছে। আবার চেষ্টা করুন।"
+        }
+    }
+}

@@ -3,6 +3,9 @@ import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
 import { Head, Link, router, useForm, usePage } from '@inertiajs/vue3';
 import { ref, watch } from 'vue';
 import Modal from '@/Components/Modal.vue';
+import { useI18n } from 'vue-i18n';
+
+const { t } = useI18n();
 
 const page = usePage();
 const deleteForm = useForm({});
@@ -40,7 +43,7 @@ const props = defineProps({
 // The mailbox the panel sends login codes, reset and verification links from.
 const settingSystemId = ref('');
 const useAsSystemEmail = (item) => {
-    if (!confirm(`Send the panel's login codes, password reset and verification emails from ${item.email}?`)) return;
+    if (!confirm(t('email.list.systemConfirm', { email: item.email }))) return;
     settingSystemId.value = item.id;
     router.put(panelRoute('emails.system-mail.update'), { mailbox_id: item.id }, {
         preserveScroll: true,
@@ -70,9 +73,9 @@ const assignReseller = async (item, resellerId) => {
     try {
         const { data } = await window.axios.patch(panelRoute('emails.assign-reseller', { id: item.id }), { reseller_id: resellerId || null }, { headers: { Accept: 'application/json' } });
         item.reseller = data.reseller;
-        result.value = { ok: true, title: 'Reseller updated', message: data.message, checks: [] };
+        result.value = { ok: true, title: t('email.list.resellerUpdated'), message: data.message, checks: [] };
     } catch (error) {
-        result.value = { ok: false, title: 'Could not assign the reseller', message: error?.response?.data?.message || 'Request failed.', checks: [] };
+        result.value = { ok: false, title: t('email.list.resellerFailed'), message: error?.response?.data?.message || t('email.list.requestFailed'), checks: [] };
     } finally {
         assigningId.value = '';
     }
@@ -88,10 +91,10 @@ const assignOwner = async (item, event) => {
         item.created_by = data.owner.id;
         item.created_by_name = data.owner.name;
         item.reseller = data.reseller;
-        result.value = { ok: true, title: 'Owner updated', message: data.message, checks: [] };
+        result.value = { ok: true, title: t('email.list.ownerUpdated'), message: data.message, checks: [] };
     } catch (error) {
         event.target.value = item.created_by ?? '';
-        result.value = { ok: false, title: 'Could not change the owner', message: error?.response?.data?.message || 'Request failed.', checks: [] };
+        result.value = { ok: false, title: t('email.list.ownerFailed'), message: error?.response?.data?.message || t('email.list.requestFailed'), checks: [] };
     } finally {
         assigningOwnerId.value = '';
     }
@@ -101,7 +104,7 @@ const isOn = (item) => (item.status || 'active') === 'active';
 
 const toggleMailbox = async (item) => {
     const turningOn = !isOn(item);
-    if (!turningOn && !confirm(`Turn off ${item.email}? Mail for it will be refused and it cannot log in until it is turned on again.`)) return;
+    if (!turningOn && !confirm(t('email.list.offConfirm', { email: item.email }))) return;
     togglingId.value = item.id;
     try {
         const { data } = await window.axios.post(panelRoute(turningOn ? 'emails.enable' : 'emails.disable', { id: item.id }), {}, { headers: { Accept: 'application/json' } });
@@ -111,7 +114,7 @@ const toggleMailbox = async (item) => {
             result.value = { ok: Boolean(data?.enabled), title: data?.title ?? '', message: data?.message ?? '', checks: data?.checks ?? [] };
         }
     } catch (error) {
-        result.value = { ok: false, title: 'Could not change the mailbox', message: error?.response?.data?.message || error?.message || 'Request failed.', checks: [] };
+        result.value = { ok: false, title: t('email.list.toggleFailed'), message: error?.response?.data?.message || error?.message || t('email.list.requestFailed'), checks: [] };
     } finally {
         togglingId.value = '';
     }
@@ -123,33 +126,33 @@ const isSandbox = (item) => item.delivery_mode === 'sandbox';
 
 const setDeliveryMode = async (item, mode) => {
     if (mode === (item.delivery_mode || 'live')) return;
-    if (mode === 'live' && !confirm(`Make ${item.email} live? Its mail will be delivered to real recipients outside this server.`)) return;
+    if (mode === 'live' && !confirm(t('email.list.liveConfirm', { email: item.email }))) return;
     modeSavingId.value = item.id;
     try {
         const { data } = await window.axios.patch(panelRoute('emails.delivery-mode', { id: item.id }), { delivery_mode: mode }, { headers: { Accept: 'application/json' } });
         Object.assign(item, data?.mailbox ?? {});
     } catch (error) {
-        result.value = { ok: false, title: 'Could not change the mode', message: error?.response?.data?.message || error?.message || 'Request failed.', checks: [] };
+        result.value = { ok: false, title: t('email.list.modeFailed'), message: error?.response?.data?.message || error?.message || t('email.list.requestFailed'), checks: [] };
     } finally {
         modeSavingId.value = '';
     }
 };
 
 const deleteMailbox = (id) => {
-    if (!confirm('Delete this mailbox?')) return;
+    if (!confirm(t('email.list.deleteConfirm'))) return;
     deleteForm.delete(panelRoute('emails.destroy', { id }));
 };
 
 </script>
 
 <template>
-    <Head title="List Emails" />
+    <Head :title="t('email.list.title')" />
 
     <AuthenticatedLayout>
         <template #header>
             <div>
-                <h1 class="text-lg font-semibold">List Emails</h1>
-                <p class="text-sm text-slate-500 dark:text-slate-400">View and manage mailbox accounts.</p>
+                <h1 class="text-lg font-semibold">{{ t('email.list.title') }}</h1>
+                <p class="text-sm text-slate-500 dark:text-slate-400">{{ t('email.list.subtitle') }}</p>
             </div>
         </template>
 
@@ -163,27 +166,27 @@ const deleteMailbox = (id) => {
 
             <div class="flex justify-end gap-2">
                 <Link v-if="canOpenDnsGuide" :href="panelRoute('emails.guide')" class="rounded-md border border-blue-300 px-3 py-2 text-sm font-medium text-blue-700 hover:bg-blue-50 dark:border-blue-700 dark:text-blue-300 dark:hover:bg-blue-900/20">
-                    <i class="bi bi-book mr-1"></i> Mail DNS Guide
+                    <i class="bi bi-book mr-1"></i> {{ t('email.list.dnsGuide') }}
                 </Link>
                 <Link :href="panelRoute('emails.create')" class="rounded-md bg-blue-600 px-3 py-2 text-sm text-white hover:bg-blue-700">
-                    Create Email
+                    {{ t('email.list.create') }}
                 </Link>
             </div>
 
             <div class="rounded-xl border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-900">
                 <div class="flex flex-wrap items-center justify-between gap-3">
                     <div>
-                        <h2 class="text-sm font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">DNS Management</h2>
+                        <h2 class="text-sm font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">{{ t('email.list.dnsManagement') }}</h2>
                         <p class="mt-1 text-sm text-slate-600 dark:text-slate-300">
-                            Mail DNS and DKIM helpers now live in the DNS management area.
+                            {{ t('email.list.dnsMoved') }}
                         </p>
                     </div>
                     <div class="flex flex-wrap gap-2">
                         <Link :href="panelRoute('dns.zones')" class="rounded-md border border-blue-300 px-3 py-2 text-sm text-blue-700 hover:bg-blue-50 dark:border-blue-700 dark:text-blue-300 dark:hover:bg-blue-900/20">
-                            DNS Zones
+                            {{ t('email.list.dnsZones') }}
                         </Link>
                         <Link :href="panelRoute('dns.zones')" class="rounded-md border border-slate-300 px-3 py-2 text-sm hover:bg-slate-100 dark:border-slate-700 dark:hover:bg-slate-800">
-                            DNS Zones
+                            {{ t('email.list.dnsZones') }}
                         </Link>
                     </div>
                 </div>
@@ -193,15 +196,15 @@ const deleteMailbox = (id) => {
                 <table class="min-w-full text-left text-sm">
                     <thead class="bg-slate-50 dark:bg-slate-800">
                         <tr>
-                            <th class="px-4 py-3">Attached Website</th>
-                            <th class="px-4 py-3">Email</th>
-                            <th class="px-4 py-3">Owner</th>
-                            <th class="px-4 py-3">Plan</th>
-                            <th class="px-4 py-3">Quota</th>
-                            <th class="px-4 py-3">Status</th>
-                            <th class="px-4 py-3">Mode</th>
-                            <th class="px-4 py-3">Created</th>
-                            <th class="px-4 py-3">Actions</th>
+                            <th class="px-4 py-3">{{ t('email.list.col.website') }}</th>
+                            <th class="px-4 py-3">{{ t('email.list.col.email') }}</th>
+                            <th class="px-4 py-3">{{ t('email.list.col.owner') }}</th>
+                            <th class="px-4 py-3">{{ t('email.list.col.plan') }}</th>
+                            <th class="px-4 py-3">{{ t('email.list.col.quota') }}</th>
+                            <th class="px-4 py-3">{{ t('email.list.col.status') }}</th>
+                            <th class="px-4 py-3">{{ t('email.list.col.mode') }}</th>
+                            <th class="px-4 py-3">{{ t('email.list.col.created') }}</th>
+                            <th class="px-4 py-3">{{ t('email.list.col.actions') }}</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -213,9 +216,9 @@ const deleteMailbox = (id) => {
                                     v-if="canSetSystemMail && systemMailboxId === item.id"
                                     :href="panelRoute('emails.system-mail')"
                                     class="mt-1 inline-flex items-center gap-1 rounded-full bg-violet-100 px-2 py-0.5 text-[11px] font-medium text-violet-700 hover:bg-violet-200 dark:bg-violet-900/40 dark:text-violet-300"
-                                    title="The panel sends login codes, password reset and verification links from this mailbox"
+                                    :title="t('email.list.systemBadgeTitle')"
                                 >
-                                    <i class="bi bi-envelope-check"></i> System email
+                                    <i class="bi bi-envelope-check"></i> {{ t('email.list.systemBadge') }}
                                 </Link>
                             </td>
                             <td class="px-4 py-3 text-xs">
@@ -224,32 +227,32 @@ const deleteMailbox = (id) => {
                                     :value="item.created_by ?? ''"
                                     :disabled="assigningOwnerId === item.id"
                                     class="w-40 rounded-md border-slate-300 py-1 text-xs dark:border-slate-700 dark:bg-slate-800"
-                                    title="Owner of this mailbox"
-                                    :aria-label="`Owner of ${item.email}`"
+                                    :title="t('email.list.ownerTitle')"
+                                    :aria-label="t('email.list.ownerOf', { email: item.email })"
                                     @change="assignOwner(item, $event)"
                                 >
-                                    <option v-if="!isListedOwner(item)" :value="item.created_by ?? ''" disabled>{{ item.created_by_name || 'No owner' }}</option>
+                                    <option v-if="!isListedOwner(item)" :value="item.created_by ?? ''" disabled>{{ item.created_by_name || t('email.list.noOwner') }}</option>
                                     <option v-for="owner in owners" :key="owner.id" :value="owner.id">{{ owner.name }}</option>
                                 </select>
-                                <p v-else class="text-slate-700 dark:text-slate-200" title="Owner">{{ item.created_by_name || '—' }}</p>
+                                <p v-else class="text-slate-700 dark:text-slate-200" :title="t('email.list.col.owner')">{{ item.created_by_name || '—' }}</p>
                                 <select
                                     v-if="resellers.length"
                                     :value="item.reseller?.id ?? ''"
                                     :disabled="assigningId === item.id"
                                     class="mt-1 w-40 rounded-md border-slate-300 py-1 text-xs dark:border-slate-700 dark:bg-slate-800"
-                                    title="Reseller who can also manage this mailbox"
+                                    :title="t('email.list.resellerTitle')"
                                     @change="assignReseller(item, $event.target.value)"
                                 >
-                                    <option value="">No reseller</option>
+                                    <option value="">{{ t('email.list.noReseller') }}</option>
                                     <option v-for="reseller in resellers" :key="reseller.id" :value="reseller.id">{{ reseller.name }}</option>
                                 </select>
-                                <p v-else-if="item.reseller" class="mt-0.5 text-slate-500">Reseller: {{ item.reseller.name }}</p>
+                                <p v-else-if="item.reseller" class="mt-0.5 text-slate-500">{{ t('email.list.reseller', { name: item.reseller.name }) }}</p>
                             </td>
                             <td class="px-4 py-3">
                                 <span v-if="item.plan" class="rounded-full bg-blue-100 px-2 py-1 text-xs text-blue-700">
                                     {{ item.plan.name }}
                                 </span>
-                                <span v-else class="text-xs text-slate-400">No plan</span>
+                                <span v-else class="text-xs text-slate-400">{{ t('email.list.noPlan') }}</span>
                             </td>
                             <td class="px-4 py-3">{{ item.quota_mb }} MB</td>
                             <td class="px-4 py-3">
@@ -259,7 +262,7 @@ const deleteMailbox = (id) => {
                                         role="switch"
                                         :aria-checked="isOn(item)"
                                         :disabled="togglingId === item.id"
-                                        :title="isOn(item) ? 'Turn off' : 'Turn on (runs all checks first)'"
+                                        :title="isOn(item) ? t('email.list.turnOff') : t('email.list.turnOn')"
                                         class="relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition disabled:opacity-60"
                                         :class="isOn(item) ? 'bg-emerald-500' : 'bg-slate-300 dark:bg-slate-600'"
                                         @click="toggleMailbox(item)"
@@ -267,7 +270,7 @@ const deleteMailbox = (id) => {
                                         <span class="inline-block h-4 w-4 rounded-full bg-white shadow transition" :class="isOn(item) ? 'translate-x-4' : 'translate-x-0.5'"></span>
                                     </button>
                                     <span class="text-xs" :class="isOn(item) ? 'text-emerald-700 dark:text-emerald-400' : 'text-slate-500'">
-                                        {{ togglingId === item.id ? (isOn(item) ? 'Turning off…' : 'Checking…') : (isOn(item) ? 'On' : 'Off') }}
+                                        {{ togglingId === item.id ? (isOn(item) ? t('email.list.turningOff') : t('email.list.checking')) : (isOn(item) ? t('email.list.on') : t('email.list.off')) }}
                                     </span>
                                 </div>
                                 <p v-if="item.health_error" class="mt-1 max-w-xs break-words text-xs" :class="isOn(item) ? 'text-amber-600 dark:text-amber-400' : 'text-red-600 dark:text-red-400'">
@@ -275,79 +278,79 @@ const deleteMailbox = (id) => {
                                 </p>
                             </td>
                             <td class="px-4 py-3">
-                                <div class="inline-flex overflow-hidden rounded-md border border-slate-300 text-xs dark:border-slate-700" role="radiogroup" :aria-label="`Delivery mode for ${item.email}`">
+                                <div class="inline-flex overflow-hidden rounded-md border border-slate-300 text-xs dark:border-slate-700" role="radiogroup" :aria-label="t('email.list.modeFor', { email: item.email })">
                                     <button
                                         type="button"
                                         role="radio"
                                         :aria-checked="!isSandbox(item)"
                                         :disabled="modeSavingId === item.id"
-                                        title="Live: mail is delivered to real recipients everywhere"
+                                        :title="t('email.list.liveTitle')"
                                         class="px-2 py-1 transition disabled:opacity-60"
                                         :class="!isSandbox(item) ? 'bg-emerald-600 text-white' : 'text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800'"
                                         @click="setDeliveryMode(item, 'live')"
                                     >
-                                        Live
+                                        {{ t('email.form.live') }}
                                     </button>
                                     <button
                                         type="button"
                                         role="radio"
                                         :aria-checked="isSandbox(item)"
                                         :disabled="modeSavingId === item.id"
-                                        title="Sandbox (test): mail reaches mailboxes on this server only, never the outside"
+                                        :title="t('email.list.sandboxTitle')"
                                         class="border-l border-slate-300 px-2 py-1 transition disabled:opacity-60 dark:border-slate-700"
                                         :class="isSandbox(item) ? 'bg-amber-500 text-white' : 'text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800'"
                                         @click="setDeliveryMode(item, 'sandbox')"
                                     >
-                                        Sandbox
+                                        {{ t('email.list.sandbox') }}
                                     </button>
                                 </div>
-                                <p v-if="isSandbox(item)" class="mt-1 text-xs text-amber-600 dark:text-amber-400">Test only: nothing leaves this server.</p>
+                                <p v-if="isSandbox(item)" class="mt-1 text-xs text-amber-600 dark:text-amber-400">{{ t('email.list.testOnly') }}</p>
                             </td>
                             <td class="px-4 py-3">{{ formatDate(item.created_at) }}</td>
                             <td class="px-4 py-3">
                                 <div class="flex items-center gap-2">
                                     <Link :href="panelRoute('emails.connect-device', { id: item.id })" class="rounded-md border border-violet-300 px-2 py-1 text-xs text-violet-700 hover:bg-violet-50 dark:border-violet-700 dark:text-violet-300 dark:hover:bg-violet-900/20">
-                                        Connect Device
+                                        {{ t('email.connectGuide.title') }}
                                     </Link>
                                     <Link
                                         v-if="item.autologin_ready"
                                         :href="panelRoute('mailbox.open', { id: item.id })"
                                         class="rounded-md border border-blue-300 px-2 py-1 text-xs text-blue-700 hover:bg-blue-50 dark:border-blue-700 dark:text-blue-300 dark:hover:bg-blue-900/20"
                                     >
-                                        Open Mailbox
+                                        {{ t('email.list.open') }}
                                     </Link>
                                     <span
                                         v-else
                                         class="cursor-not-allowed rounded-md border border-slate-300 px-2 py-1 text-xs text-slate-400 dark:border-slate-700 dark:text-slate-500"
-                                        :title="item.autologin_message || 'Auto login check failed.'"
+                                        :title="item.autologin_message || t('email.list.autologinFailed')"
                                     >
-                                        Login Blocked
+                                        {{ t('email.list.blocked') }}
                                     </span>
                                     <button
                                         v-if="canSetSystemMail && systemMailboxId !== item.id"
                                         type="button"
                                         :disabled="Boolean(item.system_mail_problem) || settingSystemId === item.id"
-                                        :title="item.system_mail_problem || 'Send panel login codes, reset and verification links from this mailbox'"
+                                        :title="item.system_mail_problem || t('email.list.useSystemTitle')"
                                         class="rounded-md border border-violet-300 px-2 py-1 text-xs text-violet-700 hover:bg-violet-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-violet-700 dark:text-violet-300 dark:hover:bg-violet-900/20"
                                         @click="useAsSystemEmail(item)"
                                     >
-                                        {{ settingSystemId === item.id ? 'Saving…' : 'Use as system email' }}
+                                        {{ settingSystemId === item.id ? t('email.list.saving') : t('email.list.useSystem') }}
                                     </button>
                                     <Link :href="panelRoute('emails.edit', { id: item.id })" class="rounded-md border border-slate-300 px-2 py-1 text-xs hover:bg-slate-100 dark:border-slate-700 dark:hover:bg-slate-800">
-                                        Edit
+                                        {{ t('email.list.edit') }}
                                     </Link>
                                     <button
                                         :disabled="deleteForm.processing"
                                         class="rounded-md border border-red-300 px-2 py-1 text-xs text-red-700 hover:bg-red-50 disabled:opacity-50 dark:border-red-700 dark:text-red-400"
                                         @click="deleteMailbox(item.id)"
                                     >
-                                        Delete
+                                        {{ t('email.list.delete') }}
                                     </button>
                                 </div>
                             </td>
                         </tr>
                         <tr v-if="mailboxes.length === 0">
-                            <td colspan="8" class="px-4 py-6 text-center text-slate-500">No mailbox found.</td>
+                            <td colspan="8" class="px-4 py-6 text-center text-slate-500">{{ t('email.list.empty') }}</td>
                         </tr>
                     </tbody>
                 </table>
@@ -371,7 +374,7 @@ const deleteMailbox = (id) => {
                     </li>
                 </ul>
                 <div class="mt-6 flex justify-end">
-                    <button type="button" class="rounded-md bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-700 dark:bg-slate-100 dark:text-slate-900 dark:hover:bg-white" @click="result = null">Close</button>
+                    <button type="button" class="rounded-md bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-700 dark:bg-slate-100 dark:text-slate-900 dark:hover:bg-white" @click="result = null">{{ t('common.close') }}</button>
                 </div>
             </div>
         </Modal>

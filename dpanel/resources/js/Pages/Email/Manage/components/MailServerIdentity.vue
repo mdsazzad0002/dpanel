@@ -1,5 +1,8 @@
 <script setup>
 import { computed } from 'vue';
+import { useI18n } from 'vue-i18n';
+
+const { t } = useI18n();
 
 // One IP has one PTR, shared by every mail domain, so PTR, the Postfix
 // hostname and the system hostname should all be the same name.
@@ -11,18 +14,18 @@ const host = computed(() => props.state.current || props.state.best || '');
 
 const checks = computed(() => [
     {
-        label: `Reverse DNS (PTR) of ${props.state.ip || 'server IP'}`,
-        value: props.state.ptr || 'not set',
+        label: t('email.serverIdentity.ptrLabel', { ip: props.state.ip || t('email.serverIdentity.serverIp') }),
+        value: props.state.ptr || t('email.serverIdentity.notSet'),
         ok: !!host.value && props.state.ptr === host.value,
         hint: props.state.ip
-            ? `Set it in your server provider's panel (Hetzner, DigitalOcean, Vultr…), not in DNS: ${props.state.ip} → ${host.value || 'your mail hostname'}. One PTR covers every domain.`
-            : 'Server IP unknown; set dPanel_MAIL_SERVER_IP.',
+            ? t('email.serverIdentity.ptrHint', { ip: props.state.ip, host: host.value || t('email.serverIdentity.yourHostname') })
+            : t('email.serverIdentity.ipUnknown', { env: 'dPanel_MAIL_SERVER_IP' }),
     },
     {
-        label: 'System hostname',
+        label: t('email.serverIdentity.systemHostname'),
         value: props.state.system || '—',
         ok: !!host.value && props.state.system === host.value,
-        hint: 'Applying a mail hostname here also sets the system hostname and /etc/hosts.',
+        hint: t('email.serverIdentity.systemHint'),
     },
 ]);
 </script>

@@ -3,6 +3,9 @@ import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
 import { Head, router, useForm, usePage } from '@inertiajs/vue3';
 import BulkDeleteBar from './components/BulkDeleteBar.vue';
 import { ref } from 'vue';
+import { useI18n } from 'vue-i18n';
+
+const { t } = useI18n();
 
 const props = defineProps({
     backups: { type: Array, default: () => [] },
@@ -42,7 +45,7 @@ const downloadBackup = async (backup) => {
         });
         if (!response.ok) {
             const payload = await response.json().catch(() => ({}));
-            throw new Error(payload.message || `Download failed with HTTP ${response.status}.`);
+            throw new Error(payload.message || t('trashBackups.index.downloadHttp', { status: response.status }));
         }
 
         const blob = await response.blob();
@@ -55,14 +58,14 @@ const downloadBackup = async (backup) => {
         link.remove();
         URL.revokeObjectURL(url);
     } catch (error) {
-        downloadError.value = error?.message || 'Trash backup download failed.';
+        downloadError.value = error?.message || t('trashBackups.index.downloadFailed');
     } finally {
         downloading.value = '';
     }
 };
 
 const restoreBackup = async (backup) => {
-    if (!confirm(`Restore ${backup.domain} from Trash Backup?`)) return;
+    if (!confirm(t('trashBackups.index.restoreConfirm', { domain: backup.domain }))) return;
     restoring.value = backup.id;
     downloadError.value = '';
     noticeType.value = 'error';
@@ -78,12 +81,12 @@ const restoreBackup = async (backup) => {
             credentials: 'same-origin',
         });
         const payload = await response.json().catch(() => ({}));
-        if (!response.ok) throw new Error(payload.message || `Recovery failed with HTTP ${response.status}.`);
+        if (!response.ok) throw new Error(payload.message || t('trashBackups.index.recoverHttp', { status: response.status }));
         backup.can_restore = false;
-        downloadError.value = payload.message || 'Website recovered successfully.';
+        downloadError.value = payload.message || t('trashBackups.index.recovered');
         noticeType.value = 'success';
     } catch (error) {
-        downloadError.value = error?.message || 'Website recovery failed.';
+        downloadError.value = error?.message || t('trashBackups.index.recoverFailed');
     } finally {
         restoring.value = '';
     }
@@ -106,12 +109,12 @@ const saveRetention = () => {
 </script>
 
 <template>
-    <Head title="Trash Backup" />
+    <Head :title="t('trashBackups.index.title')" />
     <AuthenticatedLayout>
         <template #header>
             <div>
-                <h1 class="text-lg font-semibold">Trash Backup</h1>
-                <p class="text-sm text-slate-500 dark:text-slate-400">Recover deleted websites or download their automatic archives.</p>
+                <h1 class="text-lg font-semibold">{{ t('trashBackups.index.title') }}</h1>
+                <p class="text-sm text-slate-500 dark:text-slate-400">{{ t('trashBackups.index.subtitle') }}</p>
             </div>
         </template>
 
@@ -127,31 +130,31 @@ const saveRetention = () => {
             <section class="rounded-xl border border-slate-200 bg-white p-5 dark:border-slate-800 dark:bg-slate-900">
                 <div class="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
                     <div>
-                        <h2 class="font-semibold">Automatic Cleanup</h2>
-                        <p class="mt-1 text-sm text-slate-500">Configured automatically. No manual Artisan command is required.</p>
+                        <h2 class="font-semibold">{{ t('trashBackups.index.cleanup') }}</h2>
+                        <p class="mt-1 text-sm text-slate-500">{{ t('trashBackups.index.cleanupHelp') }}</p>
                     </div>
                     <form v-if="canManageRetention" class="grid gap-3 sm:grid-cols-[auto_140px_140px_auto] sm:items-end" @submit.prevent="saveRetention">
                         <label class="flex h-10 items-center gap-2 text-sm font-medium">
                             <input v-model="retentionForm.enabled" type="checkbox" class="rounded border-slate-300 text-emerald-600 focus:ring-emerald-500" />
-                            Enabled
+                            {{ t('trashBackups.index.enabled') }}
                         </label>
                         <div>
-                            <label class="mb-1 block text-xs font-medium text-slate-500">Keep For</label>
+                            <label class="mb-1 block text-xs font-medium text-slate-500">{{ t('trashBackups.index.keepFor') }}</label>
                             <div class="flex items-center gap-2">
                                 <input v-model.number="retentionForm.days" type="number" min="1" max="3650" class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-800" />
-                                <span class="text-sm">days</span>
+                                <span class="text-sm">{{ t('trashBackups.index.days') }}</span>
                             </div>
                         </div>
                         <div>
-                            <label class="mb-1 block text-xs font-medium text-slate-500">Daily Time</label>
+                            <label class="mb-1 block text-xs font-medium text-slate-500">{{ t('trashBackups.index.dailyTime') }}</label>
                             <input v-model="retentionForm.time" type="time" class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-800" />
                         </div>
                         <button type="submit" :disabled="retentionForm.processing" class="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-700 disabled:opacity-60">
-                            {{ retentionForm.processing ? 'Saving...' : 'Save' }}
+                            {{ retentionForm.processing ? t('trashBackups.index.saving') : t('common.save') }}
                         </button>
                     </form>
                     <p v-else class="text-sm font-medium text-slate-500">
-                        {{ retention.enabled ? `${retention.days} days · Daily at ${retention.time}` : 'Disabled' }}
+                        {{ retention.enabled ? t('trashBackups.index.schedule', { days: retention.days, time: retention.time }) : t('trashBackups.index.disabled') }}
                     </p>
                 </div>
             </section>
@@ -159,8 +162,8 @@ const saveRetention = () => {
             <div class="overflow-hidden rounded-xl border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900">
             <div v-if="backups.length === 0" class="px-6 py-14 text-center">
                 <i class="bi bi-trash3 text-3xl text-slate-300"></i>
-                <p class="mt-3 font-medium">No deleted website backups</p>
-                <p class="mt-1 text-sm text-slate-500">A downloadable ZIP will appear here after a website is deleted.</p>
+                <p class="mt-3 font-medium">{{ t('trashBackups.index.empty') }}</p>
+                <p class="mt-1 text-sm text-slate-500">{{ t('trashBackups.index.emptyHelp') }}</p>
             </div>
             <template v-else>
             <BulkDeleteBar v-model="selected" :backups="backups" @done="onBulkDeleted" />
@@ -174,7 +177,7 @@ const saveRetention = () => {
                             <p class="truncate font-semibold">{{ backup.domain }}</p>
                         </div>
                         <p class="mt-1 truncate text-xs text-slate-500">{{ backup.file_name }}</p>
-                        <p class="mt-1 text-xs text-slate-400">{{ formatSize(backup.file_size) }} · Deleted {{ backup.created_at || '-' }}</p>
+                        <p class="mt-1 text-xs text-slate-400">{{ formatSize(backup.file_size) }} · {{ t('trashBackups.index.deleted', { date: backup.created_at || '-' }) }}</p>
                     </div>
                     </div>
                     <div v-if="backup.available" class="flex shrink-0 flex-wrap gap-2">
@@ -186,9 +189,9 @@ const saveRetention = () => {
                             @click="restoreBackup(backup)"
                         >
                             <i :class="restoring === backup.id ? 'bi bi-arrow-repeat animate-spin' : 'bi bi-arrow-counterclockwise'"></i>
-                            {{ restoring === backup.id ? 'Recovering...' : 'Restore Website' }}
+                            {{ restoring === backup.id ? t('trashBackups.index.recovering') : t('trashBackups.index.restore') }}
                         </button>
-                        <span v-else class="inline-flex items-center px-2 text-xs font-medium text-slate-500">Website already exists</span>
+                        <span v-else class="inline-flex items-center px-2 text-xs font-medium text-slate-500">{{ t('trashBackups.index.exists') }}</span>
                         <button
                             type="button"
                             :disabled="downloading === backup.id"
@@ -196,10 +199,10 @@ const saveRetention = () => {
                             @click="downloadBackup(backup)"
                         >
                             <i :class="downloading === backup.id ? 'bi bi-arrow-repeat animate-spin' : 'bi bi-download'"></i>
-                            {{ downloading === backup.id ? 'Downloading...' : 'Download ZIP' }}
+                            {{ downloading === backup.id ? t('trashBackups.index.downloading') : t('trashBackups.index.download') }}
                         </button>
                     </div>
-                    <span v-else class="text-sm font-medium text-red-500">Archive missing</span>
+                    <span v-else class="text-sm font-medium text-red-500">{{ t('trashBackups.index.missing') }}</span>
                 </div>
             </div>
             </template>

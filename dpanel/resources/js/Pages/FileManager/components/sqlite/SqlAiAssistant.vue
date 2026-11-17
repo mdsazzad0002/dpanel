@@ -1,5 +1,8 @@
 <script setup>
 import { ref } from 'vue';
+import { useI18n } from 'vue-i18n';
+
+const { t } = useI18n();
 
 const props = defineProps({
     // (prompt) => Promise<string>: the generated SQL.
@@ -42,7 +45,7 @@ function onKey(event) {
                 v-model="prompt"
                 rows="1"
                 :disabled="busy"
-                placeholder="Ask AI: e.g. last 10 users who signed up this month / gmail user der list dao"
+                :placeholder="t('fileManager.sqlite.ai.placeholder')"
                 class="min-h-[2.1rem] flex-1 resize-y rounded-md border border-violet-200 bg-white px-2 py-1.5 text-xs outline-none focus:border-violet-400 dark:border-violet-900 dark:bg-slate-900"
                 @keydown="onKey"
             ></textarea>
@@ -53,10 +56,10 @@ function onKey(event) {
                 @click="generate"
             >
                 <i class="bi" :class="busy ? 'bi-arrow-repeat inline-block animate-spin' : 'bi-magic'"></i>
-                {{ busy ? 'Writing…' : 'Generate SQL' }}
+                {{ busy ? t('fileManager.sqlite.ai.writing') : t('fileManager.sqlite.ai.generate') }}
             </button>
         </div>
         <p v-if="error" class="mt-1.5 pl-6 text-xs text-red-600 dark:text-red-400">{{ error }}</p>
-        <p v-else class="mt-1 pl-6 text-[11px] text-slate-500">The SQL goes into the editor below. Check it, then press Run — nothing runs on its own.</p>
+        <p v-else class="mt-1 pl-6 text-[11px] text-slate-500">{{ t('fileManager.sqlite.ai.hint') }}</p>
     </div>
 </template>

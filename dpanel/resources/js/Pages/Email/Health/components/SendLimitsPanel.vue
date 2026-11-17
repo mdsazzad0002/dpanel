@@ -2,6 +2,9 @@
 // Each account's outbound mail this hour and today against its package limit (backlog P5).
 import { usePage } from '@inertiajs/vue3';
 import { onMounted, ref } from 'vue';
+import { useI18n } from 'vue-i18n';
+
+const { t } = useI18n();
 
 const emit = defineEmits(['result']);
 
@@ -23,7 +26,7 @@ const load = async () => {
         const { data } = await window.axios.get(panelRoute('mail-health.send-limits'), { headers: { Accept: 'application/json' } });
         report.value = data;
     } catch (error) {
-        loadError.value = error?.response?.data?.message || error?.message || 'Request failed.';
+        loadError.value = error?.response?.data?.message || error?.message || t('email.health.requestFailed');
     } finally {
         loading.value = false;
     }
@@ -34,9 +37,9 @@ const apply = async () => {
     try {
         const { data } = await window.axios.post(panelRoute('mail-health.send-limits.apply'), {}, { headers: { Accept: 'application/json' } });
         report.value = data;
-        emit('result', { level: data.ready ? 'success' : 'warning', title: 'Mail limits', message: data.message });
+        emit('result', { level: data.ready ? 'success' : 'warning', title: t('email.sendLimits.resultTitle'), message: data.message });
     } catch (error) {
-        emit('result', { level: 'error', title: 'Mail limits were not applied', message: error?.response?.data?.message || error?.message || 'Request failed.' });
+        emit('result', { level: 'error', title: t('email.sendLimits.notApplied'), message: error?.response?.data?.message || error?.message || t('email.health.requestFailed') });
     } finally {
         applying.value = false;
     }
@@ -57,15 +60,15 @@ onMounted(load);
     <section class="space-y-3">
         <div class="flex flex-wrap items-center justify-between gap-3">
             <div>
-                <h2 class="font-semibold">Sending limits</h2>
-                <p class="text-xs text-slate-500">Set per package. Counted per recipient in fixed UTC hours and days; new mailboxes and domains are included within five minutes.</p>
+                <h2 class="font-semibold">{{ t('email.health.tab.limits') }}</h2>
+                <p class="text-xs text-slate-500">{{ t('email.sendLimits.help') }}</p>
             </div>
             <div class="flex gap-2">
                 <button type="button" :disabled="loading" class="inline-flex items-center gap-1.5 rounded-md border border-slate-300 px-2.5 py-1 text-xs font-medium hover:bg-slate-100 disabled:opacity-50 dark:border-slate-700 dark:hover:bg-slate-800" @click="load">
-                    <i class="bi bi-arrow-clockwise" :class="{ 'animate-spin': loading }"></i> Refresh
+                    <i class="bi bi-arrow-clockwise" :class="{ 'animate-spin': loading }"></i> {{ t('common.refresh') }}
                 </button>
                 <button type="button" :disabled="applying" class="inline-flex items-center gap-1.5 rounded-md bg-cyan-600 px-2.5 py-1 text-xs font-medium text-white hover:bg-cyan-700 disabled:opacity-50" @click="apply">
-                    <i class="bi bi-check2-circle"></i> {{ applying ? 'Applying…' : 'Apply now' }}
+                    <i class="bi bi-check2-circle"></i> {{ applying ? t('email.sendLimits.applying') : t('email.sendLimits.apply') }}
                 </button>
             </div>
         </div>
@@ -74,19 +77,19 @@ onMounted(load);
 
         <template v-if="report">
             <div v-if="!report.ready" class="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800 dark:border-amber-900 dark:bg-amber-950/40 dark:text-amber-200">
-                <p class="font-semibold">Limits are not enforced on this server</p>
-                <p class="mt-1">{{ report.reason || 'Unknown reason.' }}</p>
+                <p class="font-semibold">{{ t('email.sendLimits.notEnforced') }}</p>
+                <p class="mt-1">{{ report.reason || t('email.sendLimits.unknownReason') }}</p>
             </div>
-            <p v-if="!report.counters" class="text-xs text-amber-600">Redis could not be read, so usage is not shown.</p>
+            <p v-if="!report.counters" class="text-xs text-amber-600">{{ t('email.sendLimits.noRedis') }}</p>
 
             <div v-if="report.accounts.length" class="overflow-x-auto rounded-xl border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900">
                 <table class="min-w-full text-sm">
                     <thead class="bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500 dark:bg-slate-950/50">
                         <tr>
-                            <th class="px-4 py-2">Account</th>
-                            <th class="px-4 py-2">This hour</th>
-                            <th class="px-4 py-2">Today</th>
-                            <th class="px-4 py-2">State</th>
+                            <th class="px-4 py-2">{{ t('email.sendLimits.col.account') }}</th>
+                            <th class="px-4 py-2">{{ t('email.sendLimits.col.hour') }}</th>
+                            <th class="px-4 py-2">{{ t('email.sendLimits.col.today') }}</th>
+                            <th class="px-4 py-2">{{ t('email.sendLimits.col.state') }}</th>
                         </tr>
                     </thead>
                     <tbody class="divide-y divide-slate-100 dark:divide-slate-800">
@@ -102,11 +105,11 @@ onMounted(load);
                                         <div class="h-1.5 rounded-full" :class="barClass(slot.used, slot.limit)" :style="{ width: `${percent(slot.used, slot.limit)}%` }"></div>
                                     </div>
                                 </template>
-                                <p v-else class="text-slate-500">{{ slot.used }} · no limit</p>
+                                <p v-else class="text-slate-500">{{ slot.used }} · {{ t('email.sendLimits.noLimit') }}</p>
                             </td>
                             <td class="px-4 py-2">
-                                <span v-if="account.held" class="rounded-full bg-red-100 px-2 py-0.5 text-xs font-semibold text-red-700 dark:bg-red-950/50 dark:text-red-300">Held back</span>
-                                <span v-else class="rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-semibold text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-300">Sending</span>
+                                <span v-if="account.held" class="rounded-full bg-red-100 px-2 py-0.5 text-xs font-semibold text-red-700 dark:bg-red-950/50 dark:text-red-300">{{ t('email.sendLimits.held') }}</span>
+                                <span v-else class="rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-semibold text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-300">{{ t('email.sendLimits.sending') }}</span>
                             </td>
                         </tr>
                     </tbody>
@@ -114,8 +117,8 @@ onMounted(load);
             </div>
             <div v-else class="rounded-xl border border-dashed border-slate-300 p-10 text-center text-slate-500 dark:border-slate-700">
                 <i class="bi bi-envelope-slash text-3xl"></i>
-                <p class="mt-2 font-medium">No package sets a sending limit</p>
-                <p class="text-xs">Set emails per hour or per day on a package to limit its accounts.</p>
+                <p class="mt-2 font-medium">{{ t('email.sendLimits.empty') }}</p>
+                <p class="text-xs">{{ t('email.sendLimits.emptyHelp') }}</p>
             </div>
         </template>
     </section>

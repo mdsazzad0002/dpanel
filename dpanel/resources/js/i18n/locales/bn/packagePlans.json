@@ -1,0 +1,78 @@
+{
+    "enforcement": {
+        "disk": "Disk limit পেরোলে",
+        "report": "Report: শুধু জানানো হবে",
+        "enforce": "Enforce: server আর লিখতে দেবে না",
+        "diskHelp": "Enforce-এর জন্য site-এর filesystem-এ user quota লাগবে। Disk ব্যবহার প্রতি ঘণ্টায় check করা হয়।",
+        "bandwidth": "মাসিক bandwidth limit পেরোলে",
+        "notify": "শুধু জানানো হবে",
+        "block": "Block: মাস শেষ না হওয়া পর্যন্ত website 503 page দেখাবে",
+        "bandwidthHelp": "0 GB মানে কোনো limit নেই। প্রতি মাসের প্রথম দিনে ব্যবহার reset হয়।",
+        "emailsHour": "প্রতি ঘণ্টায় email",
+        "emailsDay": "প্রতিদিন email",
+        "cpu": "CPU limit (%)",
+        "memory": "Memory limit (MB)",
+        "processes": "Process limit",
+        "phpHelp": "Account-এর website-গুলোর PHP-র জন্য, সব site মিলিয়ে। 100% CPU মানে একটি পূর্ণ core; 0 মানে কোনো limit নেই। Limit থাকলে account-এর PHP নিজস্ব PHP-FPM-এ চলে, তাই অন্য account-কে ধীর করতে পারে না। systemd সহ Linux server লাগবে; পাঁচ মিনিটের মধ্যে প্রয়োগ হয়।",
+        "mailHelp": "Account-এর mailbox ও website থেকে যাওয়া mail, প্রতিটি প্রাপক একবার গোনা হয়। 0 মানে কোনো limit নেই। Limit পেরোলে ঘণ্টা বা দিন শেষ না হওয়া পর্যন্ত mail আটকে রাখা হয় (website-এর mail queue-তে অপেক্ষা করে, mail app-কে পরে চেষ্টা করতে বলা হয়) এবং account-কে জানানো হয়। Rspamd module লাগবে।"
+    },
+    "create": {
+        "title": "Resource package তৈরি",
+        "subtitle": "Domain user-দের জন্য কঠোর resource limit set করুন।",
+        "namePh": "যেমন Basic, Pro, Enterprise",
+        "submit": "Package তৈরি করুন"
+    },
+    "form": {
+        "name": "Package-এর নাম",
+        "storage": "সর্বোচ্চ storage (MB)",
+        "mailboxes": "সর্বোচ্চ mailbox",
+        "websites": "সর্বোচ্চ website",
+        "databases": "সর্বোচ্চ database",
+        "bandwidth": "Bandwidth limit (GB)",
+        "sortOrder": "সাজানোর ক্রম",
+        "features": "সুবিধা",
+        "forwarding": "Email forwarding অনুমতি দিন",
+        "aliases": "Alias অনুমতি দিন",
+        "priority": "অগ্রাধিকার support",
+        "back": "Package-এ ফিরে যান"
+    },
+    "edit": {
+        "headTitle": "Package সম্পাদনা - {name}",
+        "title": "Package সম্পাদনা: {name}",
+        "subtitle": "নির্ধারিত domain user-দের উপর প্রযোজ্য কঠোর limit update করুন।",
+        "usage": "বর্তমান ব্যবহার",
+        "mailboxes": "Mailbox:",
+        "unlimited": "সীমাহীন",
+        "storageUsed": "ব্যবহৃত storage:",
+        "submit": "Package update করুন"
+    },
+    "list": {
+        "deleteConfirm": "এই package মুছবেন? এতে কোনো নির্ধারিত user বা mailbox থাকা চলবে না।",
+        "unlimited": "সীমাহীন",
+        "title": "Resource package",
+        "subtitle": "Domain user-দের দেওয়া কঠোর quota পরিচালনা করুন।",
+        "manageUsers": "User পরিচালনা",
+        "create": "Package তৈরি করুন",
+        "th": {
+            "package": "Package",
+            "owner": "মালিক",
+            "storage": "Storage",
+            "mailboxes": "Mailbox",
+            "features": "সুবিধা",
+            "usage": "ব্যবহার",
+            "actions": "কাজ"
+        },
+        "admin": "Admin",
+        "nMailboxes": "{n}টি mailbox",
+        "sitesDbs": "{sites}টি website · {dbs}টি database",
+        "bandwidth": "{n} GB bandwidth",
+        "forwarding": "Forwarding",
+        "aliases": "Alias",
+        "priority": "অগ্রাধিকার support",
+        "used": "{size} ব্যবহৃত",
+        "assigned": "{n}জন নির্ধারিত user",
+        "edit": "সম্পাদনা",
+        "delete": "মুছুন",
+        "empty": "কোনো package পাওয়া যায়নি। শুরু করতে একটি তৈরি করুন।"
+    }
+}

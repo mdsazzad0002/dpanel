@@ -1,3 +1,7 @@
+import { i18n } from '@/i18n';
+
+const t = (...args) => i18n.global.t(...args);
+
 export const fmtBytes = (bytes) => {
     if (!bytes) return '0 B';
     const units = ['B', 'KB', 'MB', 'GB', 'TB'];
@@ -18,7 +22,7 @@ export const fmtProgress = (pull) => {
     if (!pull.speed_bps) return '';
     const parts = [`${fmtBytes(pull.speed_bps)}/s`];
     if (pull.total_bytes) {
-        parts.push(`${fmtIdle(Math.ceil((pull.total_bytes - pull.downloaded_bytes) / pull.speed_bps))} left`);
+        parts.push(t('aiGateway.localLlm.format.timeLeft', { time: fmtIdle(Math.ceil((pull.total_bytes - pull.downloaded_bytes) / pull.speed_bps)) }));
     }
     return parts.join(' · ');
 };

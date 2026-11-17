@@ -1,0 +1,23 @@
+{
+    "panel": {
+        "title": "经销商面板",
+        "subtitle": "管理客户的网站、数据库和请求。",
+        "websiteRequests": "网站请求",
+        "databaseRequests": "数据库请求",
+        "pending": "待处理：{count}",
+        "quick": "快捷操作",
+        "createWebsite": "创建网站",
+        "websiteList": "网站列表",
+        "createDatabase": "创建数据库",
+        "databaseList": "数据库列表",
+        "userPanel": "用户面板",
+        "recentWebsite": "最近的网站请求",
+        "recentDatabase": "最近的数据库请求",
+        "domain": "域名",
+        "status": "状态",
+        "created": "创建时间",
+        "database": "数据库",
+        "noWebsite": "未找到网站请求。",
+        "noDatabase": "未找到数据库请求。"
+    }
+}

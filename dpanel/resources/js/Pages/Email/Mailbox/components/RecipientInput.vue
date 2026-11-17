@@ -2,6 +2,9 @@
 import { computed, ref } from 'vue';
 import { useMailContacts } from '../composables/useMailContacts';
 import { avatarColorOf, formatAddress, initialsOf, splitAddresses } from './mailAddresses';
+import { useI18n } from 'vue-i18n';
+
+const { t } = useI18n();
 
 // A comma-separated address field that suggests saved and recent contacts
 // for the address being typed.
@@ -94,7 +97,7 @@ defineExpose({ focus: () => input.value?.focus() });
                     <span class="block truncate text-sm font-medium">{{ contact.name || contact.email }}</span>
                     <span v-if="contact.name" :class="[ui.muted, 'block truncate text-xs']">{{ contact.email }}</span>
                 </span>
-                <i v-if="contact.saved" class="bi bi-person-check text-blue-500" title="Saved contact"></i>
+                <i v-if="contact.saved" class="bi bi-person-check text-blue-500" :title="t('email.mailbox.savedContact')"></i>
             </li>
         </ul>
     </div>

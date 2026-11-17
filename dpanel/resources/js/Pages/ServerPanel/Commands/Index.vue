@@ -2,6 +2,9 @@
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
 import { Head, router, useForm } from '@inertiajs/vue3';
 import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue';
+import { useI18n } from 'vue-i18n';
+
+const { t } = useI18n();
 
 const props = defineProps({
     jobs: { type: Object, required: true },
@@ -50,12 +53,12 @@ const buildAdminUserCommand = () => {
     const shell = String(adminUserForm.shell || '/usr/sbin/nologin').trim() || '/usr/sbin/nologin';
 
     if (!username) {
-        requestError.value = 'Username is required to build the admin user command.';
+        requestError.value = t('serverPanel.commands.index.errUsername');
         return;
     }
 
     if (!password) {
-        requestError.value = 'Panel password is required to build the admin user command.';
+        requestError.value = t('serverPanel.commands.index.errPassword');
         return;
     }
 
@@ -93,7 +96,7 @@ const openCommand = (jobId) => {
 };
 
 const deleteCommand = (jobId) => {
-    if (!confirm('Delete this command log?')) return;
+    if (!confirm(t('serverPanel.commands.index.deleteConfirm'))) return;
 
     router.delete(route('commands.destroy', jobId), {
         data: {
@@ -138,9 +141,9 @@ const runNewCommand = () => {
     ).then((response) => {
         if (response?.data?.chat_mode) {
             transientChatItems.value.push(
-                { id: `chat-user-${Date.now()}`, role: 'user', title: 'You', body: commandForm.command, meta: new Date().toISOString() },
-                { id: `chat-ai-${Date.now()}-a`, role: 'assistant', title: 'AI Assistant', body: String(response?.data?.message || ''), meta: new Date().toISOString() },
-                { id: `chat-ai-${Date.now()}-s`, role: 'system', title: 'Server', body: String(response?.data?.system_info || ''), meta: new Date().toISOString() },
+                { id: `chat-user-${Date.now()}`, role: 'user', title: t('serverPanel.commands.show.you'), body: commandForm.command, meta: new Date().toISOString() },
+                { id: `chat-ai-${Date.now()}-a`, role: 'assistant', title: t('serverPanel.commands.show.aiAssistant'), body: String(response?.data?.message || ''), meta: new Date().toISOString() },
+                { id: `chat-ai-${Date.now()}-s`, role: 'system', title: t('serverPanel.commands.show.server'), body: String(response?.data?.system_info || ''), meta: new Date().toISOString() },
             );
             commandForm.command = '';
             return;
@@ -159,7 +162,7 @@ const runNewCommand = () => {
         }, { preserveState: true, preserveScroll: true, only: ['jobs', 'selectedCommand', 'upgradeLogs'] });
         commandForm.command = '';
     }).catch((error) => {
-        requestError.value = String(error?.response?.data?.message || error?.response?.data?.error || 'Command failed.');
+        requestError.value = String(error?.response?.data?.message || error?.response?.data?.error || t('serverPanel.commands.index.failed'));
         router.reload({ only: ['jobs', 'selectedCommand'] });
     }).finally(() => {
         sending.value = false;
@@ -178,28 +181,28 @@ const chatItems = computed(() => {
 
     const items = [];
     jobs.forEach((entry) => {
-        items.push({ id: `user-${entry.id}`, role: 'user', title: 'You', body: entry.command || '(empty)', meta: entry.created_at });
+        items.push({ id: `user-${entry.id}`, role: 'user', title: t('serverPanel.commands.show.you'), body: entry.command || t('serverPanel.commands.index.empty'), meta: entry.created_at });
         if (entry.output || entry.error_output) {
             const output = [];
             if (entry.output) output.push(`STDOUT\n${entry.output}`);
             if (entry.error_output) output.push(`STDERR\n${entry.error_output}`);
-            output.push(`Exit: ${entry.exit_code ?? '-'}`);
-            items.push({ id: `system-${entry.id}`, role: 'system', title: 'Server', body: output.join('\n\n'), meta: entry.finished_at || entry.updated_at });
+            output.push(t('serverPanel.commands.show.exit', { code: entry.exit_code ?? '-' }));
+            items.push({ id: `system-${entry.id}`, role: 'system', title: t('serverPanel.commands.show.server'), body: output.join('\n\n'), meta: entry.finished_at || entry.updated_at });
         }
         if (entry.ai_summary || entry.ai_fix_suggestion) {
             items.push({
                 id: `assistant-${entry.id}`,
                 role: 'assistant',
-                title: 'AI Assistant',
+                title: t('serverPanel.commands.show.aiAssistant'),
                 body: [
-                    entry.ai_summary ? `Summary:\n${entry.ai_summary}` : null,
-                    entry.ai_fix_suggestion ? `Suggested Fix:\n${entry.ai_fix_suggestion}` : null,
+                    entry.ai_summary ? `${t('serverPanel.commands.show.summary')}\n${entry.ai_summary}` : null,
+                    entry.ai_fix_suggestion ? `${t('serverPanel.commands.show.suggestedFix')}\n${entry.ai_fix_suggestion}` : null,
                 ].filter(Boolean).join('\n\n'),
                 meta: entry.updated_at,
             });
         }
         (entry.events || []).forEach((event) => {
-            items.push({ id: `event-${entry.id}-${event.id}`, role: 'event', title: `Event: ${event.type}`, body: event.message, meta: event.created_at });
+            items.push({ id: `event-${entry.id}-${event.id}`, role: 'event', title: t('serverPanel.commands.show.event', { type: event.type }), body: event.message, meta: event.created_at });
         });
     });
 
@@ -223,7 +226,7 @@ const stepStatuses = computed(() => {
             if (!key) return;
             map.set(key, {
                 step_no: key,
-                label: String(meta.label || `Step ${key}`),
+                label: String(meta.label || t('serverPanel.commands.index.step', { n: key })),
                 status: String(meta.status || 'pending'),
             });
         });
@@ -294,46 +297,46 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-    <Head title="Terminal Chat Commands" />
+    <Head :title="t('serverPanel.commands.index.headTitle')" />
     <AuthenticatedLayout>
-        <template #header><h1 class="text-lg font-semibold">Terminal Command Chat</h1></template>
+        <template #header><h1 class="text-lg font-semibold">{{ t('serverPanel.commands.index.title') }}</h1></template>
 
         <div class="grid gap-4 xl:grid-cols-[380px_1fr]">
             <section class="flex min-h-[82vh] max-h-[82vh] overflow-auto flex-col rounded-xl border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-900">
                 <div class="mb-3 flex items-center justify-between">
-                    <h2 class="text-sm font-semibold">Recent Commands</h2>
-                    <button class="rounded-md bg-cyan-700 px-3 py-1 text-xs font-semibold text-white" @click="newChat">New Chat</button>
+                    <h2 class="text-sm font-semibold">{{ t('serverPanel.servers.show.recentCommands') }}</h2>
+                    <button class="rounded-md bg-cyan-700 px-3 py-1 text-xs font-semibold text-white" @click="newChat">{{ t('serverPanel.commands.index.newChat') }}</button>
                 </div>
 
                 <form class="space-y-2 rounded-lg border border-slate-200 p-3 dark:border-slate-700" @submit.prevent="applyFilters">
-                    <input v-model="filterForm.q" type="text" class="w-full rounded border border-slate-300 px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-800" placeholder="Search command" />
-                    <select v-model="filterForm.status" class="w-full rounded border border-slate-300 px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-800"><option value="">All Status</option><option>pending_approval</option><option>queued</option><option>running</option><option>success</option><option>failed</option><option>blocked</option></select>
-                    <select v-model="filterForm.risk" class="w-full rounded border border-slate-300 px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-800"><option value="">All Risk</option><option>safe</option><option>approval_required</option><option>blocked</option></select>
-                    <select v-model="filterForm.server_id" class="w-full rounded border border-slate-300 px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-800"><option value="">All Servers</option><option v-for="server in servers" :key="server.id" :value="server.id">{{ server.name }}</option></select>
-                    <button class="w-full rounded bg-cyan-700 px-3 py-2 text-sm font-semibold text-white">Filter</button>
+                    <input v-model="filterForm.q" type="text" class="w-full rounded border border-slate-300 px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-800" :placeholder="t('serverPanel.commands.index.search')" />
+                    <select v-model="filterForm.status" class="w-full rounded border border-slate-300 px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-800"><option value="">{{ t('serverPanel.commands.index.allStatus') }}</option><option>pending_approval</option><option>queued</option><option>running</option><option>success</option><option>failed</option><option>blocked</option></select>
+                    <select v-model="filterForm.risk" class="w-full rounded border border-slate-300 px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-800"><option value="">{{ t('serverPanel.commands.index.allRisk') }}</option><option>safe</option><option>approval_required</option><option>blocked</option></select>
+                    <select v-model="filterForm.server_id" class="w-full rounded border border-slate-300 px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-800"><option value="">{{ t('serverPanel.commands.index.allServers') }}</option><option v-for="server in servers" :key="server.id" :value="server.id">{{ server.name }}</option></select>
+                    <button class="w-full rounded bg-cyan-700 px-3 py-2 text-sm font-semibold text-white">{{ t('serverPanel.commands.index.filter') }}</button>
                 </form>
 
                 <div class="mt-3 flex-1 space-y-3 overflow-y-auto pr-1">
                     <div class="rounded-lg border border-slate-200 p-2 dark:border-slate-700">
-                        <p class="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Markdown History</p>
+                        <p class="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">{{ t('serverPanel.commands.index.markdownHistory') }}</p>
                         <div class="mt-2 space-y-2">
                             <article v-for="md in markdownHistory" :key="md.path" class="rounded border border-slate-200 bg-slate-50 p-2 text-xs dark:border-slate-700 dark:bg-slate-800/60">
                                 <p class="font-mono">{{ md.title }}</p>
                                 <p class="mt-1 text-slate-600 dark:text-slate-300">{{ md.user_input || '-' }}</p>
                                 <p v-if="md.ai_summary" class="mt-1 text-emerald-700 dark:text-emerald-300">{{ md.ai_summary }}</p>
                             </article>
-                            <p v-if="markdownHistory.length === 0" class="text-xs text-slate-500 dark:text-slate-400">No markdown history yet.</p>
+                            <p v-if="markdownHistory.length === 0" class="text-xs text-slate-500 dark:text-slate-400">{{ t('serverPanel.commands.index.noMarkdown') }}</p>
                         </div>
                     </div>
 
                     <div class="rounded-lg border border-slate-200 p-2 dark:border-slate-700">
-                        <p class="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">System Upgrade Logs</p>
+                        <p class="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">{{ t('serverPanel.commands.index.upgradeLogs') }}</p>
                         <div class="mt-2 space-y-2">
                             <article v-for="log in upgradeLogs" :key="`upgrade-${log.id}`" class="rounded border border-amber-200 bg-amber-50 p-2 text-xs dark:border-amber-900/40 dark:bg-amber-900/20">
                                 <p class="font-mono">{{ log.command }}</p>
                                 <p class="mt-1 text-slate-600 dark:text-slate-300">{{ log.server?.name }} | {{ log.status }}</p>
                             </article>
-                            <p v-if="upgradeLogs.length === 0" class="text-xs text-slate-500 dark:text-slate-400">No upgrade logs yet.</p>
+                            <p v-if="upgradeLogs.length === 0" class="text-xs text-slate-500 dark:text-slate-400">{{ t('serverPanel.commands.index.noUpgradeLogs') }}</p>
                         </div>
                     </div>
 
@@ -358,7 +361,7 @@ onBeforeUnmount(() => {
                                     class="rounded border border-red-300 px-2 py-1 text-[11px] text-red-700 hover:bg-red-50 dark:border-red-700 dark:text-red-300 dark:hover:bg-red-900/20"
                                     @click.stop="deleteCommand(job.id)"
                                 >
-                                    Delete
+                                    {{ t('serverPanel.commands.index.delete') }}
                                 </button>
                             </div>
                         </div>
@@ -368,19 +371,19 @@ onBeforeUnmount(() => {
             </section>
 
             <section class="flex min-h-[82vh] max-h-[82vh] overflow-auto flex-col rounded-xl border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-900">
-                <div v-if="!selectedCommandRef" class="text-sm text-slate-500 dark:text-slate-400">Select a command from left side to open chat history.</div>
+                <div v-if="!selectedCommandRef" class="text-sm text-slate-500 dark:text-slate-400">{{ t('serverPanel.commands.index.selectHint') }}</div>
                 <template v-else>
                     <div class="mb-3 flex items-center justify-between">
-                        <h2 class="text-sm font-semibold">Chat History: {{ selectedCommandRef.uuid }}</h2>
+                        <h2 class="text-sm font-semibold">{{ t('serverPanel.commands.index.history', { id: selectedCommandRef.uuid }) }}</h2>
                         <div class="flex gap-2">
-                            <button class="rounded border border-slate-300 px-3 py-1 text-xs dark:border-slate-700" @click="router.post(route('commands.retry', selectedCommandRef.id))">Retry</button>
-                            <a :href="route('commands.report', selectedCommandRef.id)" class="rounded border border-slate-300 px-3 py-1 text-xs dark:border-slate-700">Report</a>
-                            <button class="rounded bg-slate-800 px-3 py-1 text-xs text-white dark:bg-slate-200 dark:text-slate-900" @click="closeChat">End & Close</button>
+                            <button class="rounded border border-slate-300 px-3 py-1 text-xs dark:border-slate-700" @click="router.post(route('commands.retry', selectedCommandRef.id))">{{ t('serverPanel.commands.show.retry') }}</button>
+                            <a :href="route('commands.report', selectedCommandRef.id)" class="rounded border border-slate-300 px-3 py-1 text-xs dark:border-slate-700">{{ t('serverPanel.commands.index.report') }}</a>
+                            <button class="rounded bg-slate-800 px-3 py-1 text-xs text-white dark:bg-slate-200 dark:text-slate-900" @click="closeChat">{{ t('serverPanel.commands.index.endClose') }}</button>
                         </div>
                     </div>
 
                     <div v-if="stepStatuses.length" class="mb-3 rounded-lg border border-slate-200 p-3 dark:border-slate-700">
-                        <p class="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Installer Steps</p>
+                        <p class="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">{{ t('serverPanel.commands.index.installerSteps') }}</p>
                         <div class="space-y-1">
                             <div v-for="step in stepStatuses" :key="`step-${step.step_no}`" class="flex items-center justify-between rounded border border-slate-200 px-2 py-1 text-xs dark:border-slate-800">
                                 <p class="font-mono">{{ String(step.step_no).padStart(2, '0') }} {{ step.label }}</p>
@@ -417,43 +420,43 @@ onBeforeUnmount(() => {
                     </div>
 
                     <div class="mt-3 flex flex-wrap gap-2 text-xs" v-if="selectedCommandRef.status === 'pending_approval' && canApprove">
-                        <button class="rounded bg-emerald-600 px-3 py-2 font-semibold text-white" @click="router.post(route('commands.approve', selectedCommandRef.id))">Approve Command</button>
-                        <button class="rounded bg-red-600 px-3 py-2 font-semibold text-white" @click="router.post(route('commands.cancel', selectedCommandRef.id))">Cancel</button>
+                        <button class="rounded bg-emerald-600 px-3 py-2 font-semibold text-white" @click="router.post(route('commands.approve', selectedCommandRef.id))">{{ t('serverPanel.commands.show.approve') }}</button>
+                        <button class="rounded bg-red-600 px-3 py-2 font-semibold text-white" @click="router.post(route('commands.cancel', selectedCommandRef.id))">{{ t('common.cancel') }}</button>
                     </div>
                 </template>
 
                 <form class="mt-3 space-y-2 rounded-lg border border-slate-200 bg-slate-50 p-3 dark:border-slate-700 dark:bg-slate-800/50" @submit.prevent="runNewCommand">
-                    <p class="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Terminal Input</p>
+                    <p class="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">{{ t('serverPanel.commands.index.terminalInput') }}</p>
                     <select v-model="commandForm.server_id" class="w-full rounded border border-slate-300 px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-900">
-                        <option value="" disabled>Select server</option>
+                        <option value="" disabled>{{ t('serverPanel.commands.index.selectServer') }}</option>
                         <option v-for="server in servers" :key="`cmd-server-${server.id}`" :value="server.id">{{ server.name }}</option>
                     </select>
-                    <textarea v-model="commandForm.command" rows="3" class="w-full rounded border border-slate-300 px-3 py-2 text-sm font-mono dark:border-slate-700 dark:bg-slate-900" placeholder="Type full command (stored for next matching use)"></textarea>
+                    <textarea v-model="commandForm.command" rows="3" class="w-full rounded border border-slate-300 px-3 py-2 text-sm font-mono dark:border-slate-700 dark:bg-slate-900" :placeholder="t('serverPanel.commands.index.commandPlaceholder')"></textarea>
                     <label class="flex items-center gap-2 text-xs text-slate-600 dark:text-slate-300">
                         <input v-model="commandForm.auto_fix" type="checkbox" class="rounded border-slate-300 dark:border-slate-700" />
-                        Auto replay task: if error, run AI safe fix commands automatically
+                        {{ t('serverPanel.commands.index.autoFix') }}
                     </label>
                     <button class="w-full rounded bg-emerald-600 px-3 py-2 text-sm font-semibold text-white disabled:opacity-60" :disabled="sending">
-                        {{ sending ? 'Sending...' : 'Send Command' }}
+                        {{ sending ? t('serverPanel.commands.index.sending') : t('serverPanel.commands.index.send') }}
                     </button>
                     <p v-if="requestError" class="text-xs text-red-600 dark:text-red-400">{{ requestError }}</p>
                 </form>
 
                 <form class="mt-3 space-y-2 rounded-lg border border-cyan-200 bg-cyan-50 p-3 dark:border-cyan-900/60 dark:bg-cyan-950/20" @submit.prevent="buildAdminUserCommand">
-                    <p class="text-xs font-semibold uppercase tracking-wide text-cyan-800 dark:text-cyan-200">Admin User Helper</p>
-                    <p class="text-xs text-cyan-700 dark:text-cyan-300">Builds a `panel user:create` command for portal access. Shell defaults to `nologin`, so the account stays separated from interactive shell users unless you explicitly change it.</p>
-                    <input v-model="adminUserForm.username" type="text" class="w-full rounded border border-cyan-200 px-3 py-2 text-sm dark:border-cyan-900 dark:bg-slate-900" placeholder="Username" />
-                    <input v-model="adminUserForm.panel_email" type="email" class="w-full rounded border border-cyan-200 px-3 py-2 text-sm dark:border-cyan-900 dark:bg-slate-900" placeholder="Panel email" />
-                    <input v-model="adminUserForm.panel_password" type="text" class="w-full rounded border border-cyan-200 px-3 py-2 text-sm font-mono dark:border-cyan-900 dark:bg-slate-900" placeholder="Panel password" />
+                    <p class="text-xs font-semibold uppercase tracking-wide text-cyan-800 dark:text-cyan-200">{{ t('serverPanel.commands.index.helper.title') }}</p>
+                    <p class="text-xs text-cyan-700 dark:text-cyan-300"><i18n-t keypath="serverPanel.commands.index.helper.help" scope="global"><template #cmd>`panel user:create`</template><template #shell>`nologin`</template></i18n-t></p>
+                    <input v-model="adminUserForm.username" type="text" class="w-full rounded border border-cyan-200 px-3 py-2 text-sm dark:border-cyan-900 dark:bg-slate-900" :placeholder="t('serverPanel.commands.index.helper.username')" />
+                    <input v-model="adminUserForm.panel_email" type="email" class="w-full rounded border border-cyan-200 px-3 py-2 text-sm dark:border-cyan-900 dark:bg-slate-900" :placeholder="t('serverPanel.commands.index.helper.email')" />
+                    <input v-model="adminUserForm.panel_password" type="text" class="w-full rounded border border-cyan-200 px-3 py-2 text-sm font-mono dark:border-cyan-900 dark:bg-slate-900" :placeholder="t('serverPanel.commands.index.helper.password')" />
                     <input v-model="adminUserForm.shell" type="text" class="w-full rounded border border-cyan-200 px-3 py-2 text-sm font-mono dark:border-cyan-900 dark:bg-slate-900" placeholder="/usr/sbin/nologin" />
                     <label class="flex items-center gap-2 text-xs text-cyan-900 dark:text-cyan-100">
                         <input v-model="adminUserForm.disable_root" type="checkbox" class="rounded border-cyan-300 dark:border-cyan-700" />
-                        Disable SSH root login
+                        {{ t('serverPanel.commands.index.helper.disableRoot') }}
                     </label>
                     <button class="w-full rounded bg-cyan-700 px-3 py-2 text-sm font-semibold text-white hover:bg-cyan-800">
-                        Build Admin User Command
+                        {{ t('serverPanel.commands.index.helper.build') }}
                     </button>
-                    <p class="text-[11px] text-cyan-700 dark:text-cyan-300">Result is inserted into the terminal command box, then you can submit it to the selected server.</p>
+                    <p class="text-[11px] text-cyan-700 dark:text-cyan-300">{{ t('serverPanel.commands.index.helper.result') }}</p>
                 </form>
             </section>
         </div>

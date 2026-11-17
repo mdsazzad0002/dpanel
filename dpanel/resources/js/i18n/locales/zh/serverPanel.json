@@ -1,0 +1,180 @@
+{
+    "controlCenter": {
+        "title": "ServerPanel 控制中心",
+        "subtitle": "服务器、命令和任务的统一视图。",
+        "servers": "服务器",
+        "online": "在线",
+        "runningTasks": "运行中的任务",
+        "failedTasks": "失败的任务",
+        "terminal": "终端",
+        "removed": "已移除",
+        "recentServers": "最近的服务器",
+        "openAll": "全部打开",
+        "commandTerminal": "命令终端",
+        "terminalRemoved": "出于安全考虑，SSH 终端和基于内存的命令聊天已被移除。请改用服务器、任务和其他管理页面。",
+        "recentTasks": "最近的任务"
+    },
+    "form": {
+        "name": "名称",
+        "host": "主机",
+        "port": "端口",
+        "username": "用户名",
+        "authType": "认证方式",
+        "password": "密码",
+        "privateKey": "私钥",
+        "passphrase": "密钥口令",
+        "mode": "模式",
+        "modes": {
+            "setup": "设置",
+            "normal": "正常",
+            "emergency": "紧急"
+        },
+        "notes": "备注"
+    },
+    "servers": {
+        "form": {
+            "edit": "编辑服务器",
+            "add": "添加服务器",
+            "encrypted": "凭据已加密，且不会再次显示。",
+            "update": "更新服务器",
+            "save": "保存服务器"
+        },
+        "show": {
+            "title": "服务器 {name}",
+            "testing": "正在测试...",
+            "test": "测试连接",
+            "scanning": "正在扫描...",
+            "scan": "扫描",
+            "openControlCenter": "打开控制中心",
+            "settings": "设置",
+            "field": {
+                "status": "状态：",
+                "mode": "模式：",
+                "username": "用户名：",
+                "os": "操作系统：",
+                "kernel": "内核：",
+                "architecture": "架构：",
+                "cpuCores": "CPU 核心：",
+                "ram": "内存：",
+                "disk": "磁盘："
+            },
+            "recentCommands": "最近的命令",
+            "logRemoved": "终端日志已移除",
+            "connectionTests": "最近的连接测试"
+        },
+        "index": {
+            "title": "服务器",
+            "subtitle": "简洁的服务器列表和快捷操作",
+            "online": "在线",
+            "errors": "错误",
+            "failedCommands": "失败的命令",
+            "hostAs": "{host}，用户 {user}",
+            "lastConnected": "上次连接：{time}",
+            "openCommands": "打开命令",
+            "openDetails": "打开详情",
+            "edit": "编辑"
+        }
+    },
+    "tasks": {
+        "title": "服务器任务",
+        "create": "创建任务",
+        "taskTitle": "任务标题",
+        "taskGoal": "任务目标",
+        "priority": {
+            "critical": "严重",
+            "high": "高",
+            "medium": "中",
+            "low": "低",
+            "info": "信息"
+        },
+        "tasks": "任务",
+        "open": "打开任务",
+        "show": {
+            "title": "任务 {title}",
+            "start": "开始",
+            "field": {
+                "goal": "目标：",
+                "status": "状态：",
+                "priority": "优先级：",
+                "server": "服务器："
+            },
+            "aiPlan": "AI 计划占位",
+            "steps": "任务步骤",
+            "detailsRemoved": "命令详情已移除",
+            "timeline": "命令时间线"
+        }
+    },
+    "commands": {
+        "show": {
+            "you": "你",
+            "emptyCommand": "（空命令）",
+            "exit": "退出码：{code}",
+            "server": "服务器",
+            "summary": "摘要：",
+            "suggestedFix": "建议的修复：",
+            "aiAssistant": "AI 助手",
+            "noAnalysis": "尚无 AI 分析。",
+            "event": "事件：{type}",
+            "title": "命令 {id}",
+            "heading": "命令聊天记录",
+            "retry": "重试",
+            "report": "下载 TXT 报告",
+            "chatPanel": "聊天面板",
+            "structure": "对话结构",
+            "statusLine": "状态：{status}",
+            "riskLine": "风险：{risk}",
+            "analysisReady": "分析就绪",
+            "waitingAnalysis": "等待分析",
+            "meta": "命令元数据",
+            "status": "状态：",
+            "risk": "风险：",
+            "fixCommands": "建议的修复命令",
+            "runFix": "运行修复",
+            "open": "打开",
+            "noFixes": "没有建议的修复命令。",
+            "approve": "批准命令"
+        },
+        "index": {
+            "errUsername": "构建管理员用户命令需要用户名。",
+            "errPassword": "构建管理员用户命令需要面板密码。",
+            "deleteConfirm": "删除此命令日志？",
+            "failed": "命令失败。",
+            "empty": "（空）",
+            "step": "第 {n} 步",
+            "headTitle": "终端聊天命令",
+            "title": "终端命令聊天",
+            "newChat": "新对话",
+            "search": "搜索命令",
+            "allStatus": "所有状态",
+            "allRisk": "所有风险",
+            "allServers": "所有服务器",
+            "filter": "筛选",
+            "markdownHistory": "Markdown 历史",
+            "noMarkdown": "还没有 Markdown 历史。",
+            "upgradeLogs": "系统升级日志",
+            "noUpgradeLogs": "还没有升级日志。",
+            "delete": "删除",
+            "selectHint": "从左侧选择一条命令以打开聊天记录。",
+            "history": "聊天记录：{id}",
+            "report": "报告",
+            "endClose": "结束并关闭",
+            "installerSteps": "安装步骤",
+            "terminalInput": "终端输入",
+            "selectServer": "选择服务器",
+            "commandPlaceholder": "输入完整命令（将保存以便下次匹配时使用）",
+            "autoFix": "自动重放任务：如果出错，自动运行 AI 安全修复命令",
+            "sending": "正在发送...",
+            "send": "发送命令",
+            "helper": {
+                "title": "管理员用户助手",
+                "help": "构建一个用于门户访问的 {cmd} 命令。Shell 默认为 {shell}，因此除非你明确更改，该账户会与交互式 shell 用户隔离。",
+                "username": "用户名",
+                "email": "面板邮箱",
+                "password": "面板密码",
+                "disableRoot": "禁用 SSH root 登录",
+                "build": "构建管理员用户命令",
+                "result": "结果会插入终端命令框，然后你可以将其提交到所选服务器。"
+            }
+        }
+    }
+}

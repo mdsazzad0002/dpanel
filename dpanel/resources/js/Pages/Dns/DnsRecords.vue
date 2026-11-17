@@ -3,6 +3,9 @@ import { ref } from 'vue';
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
 import { Head, useForm, usePage } from '@inertiajs/vue3';
 import { computed } from 'vue';
+import { useI18n } from 'vue-i18n';
+
+const { t } = useI18n();
 
 const props = defineProps({
     records: { type: Array, default: () => [] },
@@ -56,19 +59,19 @@ const resetForm = () => {
 };
 
 const deleteItem = (id) => {
-    if (!confirm('Delete this record?')) return;
+    if (!confirm(t('dns.records.deleteConfirm'))) return;
     deleteForm.delete(panelRoute('dns.records.destroy', { id }));
 };
 </script>
 
 <template>
-    <Head title="DNS Records" />
+    <Head :title="t('dns.records.title')" />
 
     <AuthenticatedLayout>
         <template #header>
             <div>
-                <h1 class="text-lg font-semibold">DNS Records</h1>
-                <p class="text-sm text-slate-500 dark:text-slate-400">PowerDNS record editor (records table).</p>
+                <h1 class="text-lg font-semibold">{{ t('dns.records.title') }}</h1>
+                <p class="text-sm text-slate-500 dark:text-slate-400">{{ t('dns.records.subtitle') }}</p>
             </div>
         </template>
 
@@ -80,20 +83,20 @@ const deleteItem = (id) => {
                 {{ page.props.flash.error }}
             </div>
             <div class="rounded-md border border-blue-200 bg-blue-50 px-4 py-3 text-xs text-blue-800 dark:border-blue-900 dark:bg-blue-950 dark:text-blue-200">
-                Name supports <strong>@</strong> for zone root. Relative names (like <strong>www</strong>) are expanded to FQDN automatically.
+                <i18n-t keypath="dns.records.notice" scope="global"><template #at><strong>@</strong></template><template #example><strong>www</strong></template></i18n-t>
             </div>
 
             <form class="grid gap-4 rounded-xl border border-slate-200 bg-white p-6 md:grid-cols-3 dark:border-slate-800 dark:bg-slate-900" @submit.prevent="submit">
                 <div>
-                    <label class="mb-1 block text-sm">Zone Domain</label>
+                    <label class="mb-1 block text-sm">{{ t('dns.records.zoneDomain') }}</label>
                     <select v-model="form.zone_domain" class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-800">
-                        <option value="">Select zone</option>
+                        <option value="">{{ t('dns.records.selectZone') }}</option>
                         <option v-for="domain in zoneDomains" :key="domain" :value="domain">{{ domain }}</option>
                     </select>
-                    <p class="mt-1 text-xs text-slate-500">Create zone first if it does not appear here.</p>
+                    <p class="mt-1 text-xs text-slate-500">{{ t('dns.records.zoneHelp') }}</p>
                 </div>
                 <div>
-                    <label class="mb-1 block text-sm">Type</label>
+                    <label class="mb-1 block text-sm">{{ t('dns.records.type') }}</label>
                     <select v-model="form.type" class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-800">
                         <option value="A">A</option>
                         <option value="AAAA">AAAA</option>
@@ -105,34 +108,34 @@ const deleteItem = (id) => {
                     </select>
                 </div>
                 <div>
-                    <label class="mb-1 block text-sm">Name</label>
-                    <input v-model="form.name" type="text" placeholder="@ or www" class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-800" />
+                    <label class="mb-1 block text-sm">{{ t('dns.records.name') }}</label>
+                    <input v-model="form.name" type="text" :placeholder="t('dns.records.namePlaceholder')" class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-800" />
                 </div>
                 <div class="md:col-span-2">
-                    <label class="mb-1 block text-sm">Content</label>
-                    <input v-model="form.content" type="text" placeholder="IP, hostname, or text value" class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-800" />
+                    <label class="mb-1 block text-sm">{{ t('dns.records.content') }}</label>
+                    <input v-model="form.content" type="text" :placeholder="t('dns.records.contentPlaceholder')" class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-800" />
                 </div>
                 <div>
                     <label class="mb-1 block text-sm">TTL</label>
                     <input v-model.number="form.ttl" type="number" min="60" max="86400" class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-800" />
                 </div>
                 <div>
-                    <label class="mb-1 block text-sm">Priority (MX/SRV)</label>
+                    <label class="mb-1 block text-sm">{{ t('dns.records.priorityLabel') }}</label>
                     <input v-model.number="form.priority" type="number" min="0" max="65535" class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-800" />
                 </div>
                 <div>
-                    <label class="mb-1 block text-sm">Status</label>
+                    <label class="mb-1 block text-sm">{{ t('dns.records.status') }}</label>
                     <select v-model="form.status" class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-800">
-                        <option value="active">active</option>
-                        <option value="disabled">disabled</option>
+                        <option value="active">{{ t('dns.records.statuses.active') }}</option>
+                        <option value="disabled">{{ t('dns.records.statuses.disabled') }}</option>
                     </select>
                 </div>
                 <div class="md:col-span-3 flex items-center gap-2">
                     <button type="submit" :disabled="form.processing" class="rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-60">
-                        {{ editingId ? 'Update Record' : 'Create Record' }}
+                        {{ editingId ? t('dns.records.update') : t('dns.records.create') }}
                     </button>
                     <button v-if="editingId" type="button" class="rounded-md border border-slate-300 px-4 py-2 text-sm hover:bg-slate-100 dark:border-slate-700 dark:hover:bg-slate-800" @click="resetForm">
-                        Cancel
+                        {{ t('common.cancel') }}
                     </button>
                 </div>
             </form>
@@ -141,14 +144,14 @@ const deleteItem = (id) => {
                 <table class="min-w-full text-left text-sm">
                     <thead class="bg-slate-50 dark:bg-slate-800">
                         <tr>
-                            <th class="px-4 py-3">Zone</th>
-                            <th class="px-4 py-3">Type</th>
-                            <th class="px-4 py-3">Name</th>
-                            <th class="px-4 py-3">Content</th>
+                            <th class="px-4 py-3">{{ t('dns.records.zone') }}</th>
+                            <th class="px-4 py-3">{{ t('dns.records.type') }}</th>
+                            <th class="px-4 py-3">{{ t('dns.records.name') }}</th>
+                            <th class="px-4 py-3">{{ t('dns.records.content') }}</th>
                             <th class="px-4 py-3">TTL</th>
-                            <th class="px-4 py-3">Priority</th>
-                            <th class="px-4 py-3">Status</th>
-                            <th class="px-4 py-3">Actions</th>
+                            <th class="px-4 py-3">{{ t('dns.records.priority') }}</th>
+                            <th class="px-4 py-3">{{ t('dns.records.status') }}</th>
+                            <th class="px-4 py-3">{{ t('dns.records.actions') }}</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -159,16 +162,16 @@ const deleteItem = (id) => {
                             <td class="px-4 py-3">{{ item.content }}</td>
                             <td class="px-4 py-3">{{ item.ttl }}</td>
                             <td class="px-4 py-3">{{ item.priority ?? '-' }}</td>
-                            <td class="px-4 py-3">{{ item.status }}</td>
+                            <td class="px-4 py-3">{{ t(`dns.records.statuses.${item.status}`) }}</td>
                             <td class="px-4 py-3">
                                 <div class="flex items-center gap-2">
-                                    <button type="button" class="rounded-md border border-slate-300 px-2 py-1 text-xs hover:bg-slate-100 dark:border-slate-700 dark:hover:bg-slate-800" @click="editItem(item)">Edit</button>
-                                    <button type="button" class="rounded-md border border-red-300 px-2 py-1 text-xs text-red-700 hover:bg-red-50 dark:border-red-700 dark:text-red-400" @click="deleteItem(item.id)">Delete</button>
+                                    <button type="button" class="rounded-md border border-slate-300 px-2 py-1 text-xs hover:bg-slate-100 dark:border-slate-700 dark:hover:bg-slate-800" @click="editItem(item)">{{ t('dns.records.edit') }}</button>
+                                    <button type="button" class="rounded-md border border-red-300 px-2 py-1 text-xs text-red-700 hover:bg-red-50 dark:border-red-700 dark:text-red-400" @click="deleteItem(item.id)">{{ t('dns.records.delete') }}</button>
                                 </div>
                             </td>
                         </tr>
                         <tr v-if="records.length === 0">
-                            <td colspan="10" class="px-4 py-6 text-center text-slate-500">No DNS records found.</td>
+                            <td colspan="10" class="px-4 py-6 text-center text-slate-500">{{ t('dns.records.empty') }}</td>
                         </tr>
                     </tbody>
                 </table>

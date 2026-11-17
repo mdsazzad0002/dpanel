@@ -1,6 +1,9 @@
 <script setup>
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { previewKind } from '../helpers/previewTypes';
+import { useI18n } from 'vue-i18n';
+
+const { t } = useI18n();
 
 const props = defineProps({
     fm: {
@@ -92,18 +95,18 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown));
                     target="_blank"
                     rel="noopener"
                     class="rounded-md border border-slate-300 px-2.5 py-1.5 text-xs font-medium text-slate-600 hover:bg-slate-100 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800"
-                    title="Open in new tab"
+                    :title="t('fileManager.preview.openNewTab')"
                 >
                     <i class="bi bi-box-arrow-up-right"></i>
                 </a>
                 <a
                     :href="downloadUrl"
                     class="rounded-md border border-slate-300 px-2.5 py-1.5 text-xs font-medium text-slate-600 hover:bg-slate-100 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800"
-                    title="Download"
+                    :title="t('fileManager.preview.download')"
                 >
                     <i class="bi bi-download"></i>
                 </a>
-                <button type="button" class="rounded-md px-2 py-1.5 text-slate-500 hover:bg-slate-100 hover:text-slate-800 dark:hover:bg-slate-800 dark:hover:text-white" title="Close (Esc)" @click="close">
+                <button type="button" class="rounded-md px-2 py-1.5 text-slate-500 hover:bg-slate-100 hover:text-slate-800 dark:hover:bg-slate-800 dark:hover:text-white" :title="t('fileManager.preview.close')" @click="close">
                     <i class="bi bi-x-lg"></i>
                 </button>
             </header>
@@ -115,8 +118,8 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown));
 
                 <div v-if="loadError" class="text-center text-sm text-slate-500">
                     <i class="bi bi-exclamation-triangle mb-2 block text-3xl text-amber-500"></i>
-                    This file could not be previewed.
-                    <a :href="downloadUrl" class="mt-2 block text-sky-600 underline dark:text-sky-400">Download instead</a>
+                    {{ t('fileManager.preview.failed') }}
+                    <a :href="downloadUrl" class="mt-2 block text-sky-600 underline dark:text-sky-400">{{ t('fileManager.preview.downloadInstead') }}</a>
                 </div>
 
                 <template v-else>
@@ -153,10 +156,10 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown));
                 </template>
 
                 <template v-if="siblings.length > 1">
-                    <button type="button" class="absolute left-3 top-1/2 -translate-y-1/2 rounded-full bg-black/40 p-2.5 text-white hover:bg-black/60" title="Previous (←)" @click="step(-1)">
+                    <button type="button" class="absolute left-3 top-1/2 -translate-y-1/2 rounded-full bg-black/40 p-2.5 text-white hover:bg-black/60" :title="t('fileManager.preview.previous')" @click="step(-1)">
                         <i class="bi bi-chevron-left"></i>
                     </button>
-                    <button type="button" class="absolute right-3 top-1/2 -translate-y-1/2 rounded-full bg-black/40 p-2.5 text-white hover:bg-black/60" title="Next (→)" @click="step(1)">
+                    <button type="button" class="absolute right-3 top-1/2 -translate-y-1/2 rounded-full bg-black/40 p-2.5 text-white hover:bg-black/60" :title="t('fileManager.preview.next')" @click="step(1)">
                         <i class="bi bi-chevron-right"></i>
                     </button>
                 </template>

@@ -5,6 +5,9 @@ import InputLabel from '@/Components/InputLabel.vue';
 import PrimaryButton from '@/Components/PrimaryButton.vue';
 import TextInput from '@/Components/TextInput.vue';
 import { Head, useForm } from '@inertiajs/vue3';
+import { useI18n } from 'vue-i18n';
+
+const { t } = useI18n();
 
 defineProps({
     status: {
@@ -23,23 +26,23 @@ const submit = () => {
 
 <template>
     <GuestLayout>
-        <Head title="Forgot Password" />
+        <Head :title="t('auth.forgot.headTitle')" />
 
         <div class="space-y-6">
             <div class="space-y-2">
                 <p class="font-mono text-xs uppercase tracking-[0.32em] text-emerald-300/80">
-                    Password recovery
+                    {{ t('auth.forgot.eyebrow') }}
                 </p>
                 <h2 class="text-2xl font-semibold tracking-tight text-slate-50">
-                    Reset access
+                    {{ t('auth.forgot.title') }}
                 </h2>
                 <p class="text-sm leading-6 text-slate-300">
-                    Enter your email address and we will send a reset link.
+                    {{ t('auth.forgot.subtitle') }}
                 </p>
             </div>
 
             <div class="text-sm leading-6 text-slate-300">
-                Forgot your password? No problem. We will email you a password reset link that lets you choose a new one.
+                {{ t('auth.forgot.intro') }}
             </div>
         </div>
 
@@ -52,7 +55,7 @@ const submit = () => {
 
         <form class="mt-6 space-y-5" @submit.prevent="submit">
             <div>
-                <InputLabel for="email" value="Email" class="text-slate-200" />
+                <InputLabel for="email" :value="t('auth.forgot.email')" class="text-slate-200" />
 
                 <TextInput
                     id="email"
@@ -73,7 +76,7 @@ const submit = () => {
                     :class="{ 'opacity-25': form.processing }"
                     :disabled="form.processing"
                 >
-                    Email Password Reset Link
+                    {{ t('auth.forgot.submit') }}
                 </PrimaryButton>
             </div>
         </form>

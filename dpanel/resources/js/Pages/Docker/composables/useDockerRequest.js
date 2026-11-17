@@ -1,6 +1,9 @@
 import { computed, ref } from 'vue';
 import { usePage } from '@inertiajs/vue3';
 import axios from 'axios';
+import { i18n } from '@/i18n';
+
+const t = (...args) => i18n.global.t(...args);
 
 /**
  * What every Docker page needs to talk to the panel: token-aware routes,
@@ -19,7 +22,7 @@ export function useDockerRequest() {
     const errorText = (e) => {
         const errors = e.response?.data?.errors;
         if (errors) return Object.values(errors).flat().join(' ');
-        return e.response?.data?.message || e.message || 'Request failed.';
+        return e.response?.data?.message || e.message || t('docker.request.failed');
     };
 
     /**

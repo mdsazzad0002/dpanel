@@ -2,6 +2,9 @@
 import { computed, ref, watch } from 'vue';
 import { Link } from '@inertiajs/vue3';
 import { formatBytes, formatCount } from '../lib/useMongoAdmin';
+import { useI18n } from 'vue-i18n';
+
+const { t } = useI18n();
 
 // The fixed left rail of the standalone Mongo Admin app, like dPanel Mail's:
 // the server, then every database with its collections.
@@ -69,17 +72,17 @@ const active = 'bg-emerald-500/10 font-medium text-emerald-700 dark:text-emerald
                     <span class="block truncate text-[11px] text-slate-500">{{ version ? `MongoDB ${version}` : 'MongoDB' }}</span>
                 </span>
             </button>
-            <button type="button" class="hidden h-8 w-8 items-center justify-center rounded-md text-slate-500 hover:bg-slate-100 hover:text-slate-900 md:flex dark:hover:bg-slate-800 dark:hover:text-slate-100" :title="compact ? 'Expand sidebar' : 'Collapse sidebar'" @click="emit('toggle-collapse')">
+            <button type="button" class="hidden h-8 w-8 items-center justify-center rounded-md text-slate-500 hover:bg-slate-100 hover:text-slate-900 md:flex dark:hover:bg-slate-800 dark:hover:text-slate-100" :title="compact ? t('databases.mongoAdmin.sidebar.expand') : t('databases.mongoAdmin.sidebar.collapse')" @click="emit('toggle-collapse')">
                 <i :class="['bi text-base', compact ? 'bi-layout-sidebar' : 'bi-layout-sidebar-inset']"></i>
             </button>
-            <button type="button" class="flex h-8 w-8 items-center justify-center rounded-md text-slate-500 hover:bg-slate-100 md:hidden dark:hover:bg-slate-800" aria-label="Close" @click="emit('close-mobile')">
+            <button type="button" class="flex h-8 w-8 items-center justify-center rounded-md text-slate-500 hover:bg-slate-100 md:hidden dark:hover:bg-slate-800" :aria-label="t('common.close')" @click="emit('close-mobile')">
                 <i class="bi bi-x-lg"></i>
             </button>
         </div>
 
         <!-- Collapsed rail: one icon per database -->
         <nav v-if="compact" class="flex-1 space-y-1 overflow-y-auto p-2">
-            <button v-if="!scoped" type="button" :class="[item, 'justify-center', !location.db ? active : idle]" title="Server" @click="go()"><i class="bi bi-hdd-rack text-base"></i></button>
+            <button v-if="!scoped" type="button" :class="[item, 'justify-center', !location.db ? active : idle]" :title="t('databases.mongoAdmin.sidebar.server')" @click="go()"><i class="bi bi-hdd-rack text-base"></i></button>
             <button v-for="db in databases" :key="db.name" type="button" :class="[item, 'justify-center', location.db === db.name ? active : idle]" :title="db.name" @click="go(db.name)">
                 <span class="text-xs font-semibold uppercase">{{ db.name.slice(0, 2) }}</span>
             </button>
@@ -88,22 +91,22 @@ const active = 'bg-emerald-500/10 font-medium text-emerald-700 dark:text-emerald
         <template v-else>
             <div class="space-y-2 p-3">
                 <button v-if="!scoped" type="button" class="flex w-full items-center justify-center gap-2 rounded-lg bg-emerald-600 px-3 py-2 text-sm font-medium text-white shadow-sm hover:bg-emerald-700" @click="go()">
-                    <i class="bi bi-plus-lg"></i> New database
+                    <i class="bi bi-plus-lg"></i> {{ t('databases.mongoAdmin.sidebar.newDatabase') }}
                 </button>
                 <div class="relative">
                     <i class="bi bi-search pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-xs text-slate-400"></i>
-                    <input v-model="filter" type="search" placeholder="Find database or collection" class="w-full rounded-md border-slate-200 bg-slate-50 py-1.5 pl-7 text-xs dark:border-slate-800 dark:bg-slate-900" />
+                    <input v-model="filter" type="search" :placeholder="t('databases.mongoAdmin.sidebar.find')" class="w-full rounded-md border-slate-200 bg-slate-50 py-1.5 pl-7 text-xs dark:border-slate-800 dark:bg-slate-900" />
                 </div>
             </div>
 
             <nav class="flex-1 overflow-y-auto px-3 pb-3">
                 <button v-if="!scoped" type="button" :class="[item, !location.db ? active : idle]" @click="go()">
-                    <i class="bi bi-hdd-rack"></i> Server
+                    <i class="bi bi-hdd-rack"></i> {{ t('databases.mongoAdmin.sidebar.server') }}
                 </button>
-                <p :class="scoped ? 'mt-1' : 'mt-4'" class="mb-1 px-2 text-[11px] font-semibold uppercase tracking-wider text-slate-400">Databases</p>
+                <p :class="scoped ? 'mt-1' : 'mt-4'" class="mb-1 px-2 text-[11px] font-semibold uppercase tracking-wider text-slate-400">{{ t('databases.mongoAdmin.sidebar.databases') }}</p>
                 <div v-for="db in visible" :key="db.name">
                     <div :class="[item, 'pr-1', location.db === db.name && !location.collection ? active : idle]">
-                        <button type="button" class="flex h-5 w-5 shrink-0 items-center justify-center rounded hover:bg-slate-200 dark:hover:bg-slate-800" :aria-label="`Toggle ${db.name}`" @click="toggle(db.name)">
+                        <button type="button" class="flex h-5 w-5 shrink-0 items-center justify-center rounded hover:bg-slate-200 dark:hover:bg-slate-800" :aria-label="t('databases.mongoAdmin.sidebar.toggle', { name: db.name })" @click="toggle(db.name)">
                             <i class="bi text-[10px]" :class="open.has(db.name) || filter ? 'bi-chevron-down' : 'bi-chevron-right'"></i>
                         </button>
                         <button type="button" class="flex min-w-0 flex-1 items-center gap-2" @click="go(db.name)">
@@ -124,19 +127,19 @@ const active = 'bg-emerald-500/10 font-medium text-emerald-700 dark:text-emerald
                             <span class="truncate">{{ collection.name }}</span>
                             <span class="ml-auto shrink-0 text-[10px] tabular-nums text-slate-400">{{ formatCount(collection.count) }}</span>
                         </button>
-                        <p v-if="!db.shown.length" class="px-2 py-1 text-xs text-slate-400">No collections</p>
+                        <p v-if="!db.shown.length" class="px-2 py-1 text-xs text-slate-400">{{ t('databases.mongoAdmin.sidebar.noCollections') }}</p>
                     </div>
                 </div>
-                <p v-if="!visible.length" class="px-2 py-2 text-xs text-slate-400">{{ filter ? 'Nothing matches.' : 'No databases.' }}</p>
+                <p v-if="!visible.length" class="px-2 py-2 text-xs text-slate-400">{{ filter ? t('databases.mongoAdmin.sidebar.noMatch') : t('databases.mongoAdmin.sidebar.noDatabases') }}</p>
             </nav>
         </template>
 
         <div :class="['shrink-0 space-y-1 border-t border-slate-200 p-3 dark:border-slate-800', compact && 'px-2']">
-            <Link v-if="serviceHref" :href="serviceHref" :class="[item, idle, compact && 'justify-center']" title="Service & connection">
-                <i class="bi bi-power"></i><span v-if="!compact">Service &amp; connection</span>
+            <Link v-if="serviceHref" :href="serviceHref" :class="[item, idle, compact && 'justify-center']" :title="t('databases.mongoAdmin.sidebar.service')">
+                <i class="bi bi-power"></i><span v-if="!compact">{{ t('databases.mongoAdmin.sidebar.service') }}</span>
             </Link>
-            <Link :href="panelHref" :class="[item, idle, compact && 'justify-center']" title="Back to dPanel">
-                <i class="bi bi-box-arrow-left"></i><span v-if="!compact">Back to dPanel</span>
+            <Link :href="panelHref" :class="[item, idle, compact && 'justify-center']" :title="t('databases.mongoAdmin.sidebar.back')">
+                <i class="bi bi-box-arrow-left"></i><span v-if="!compact">{{ t('databases.mongoAdmin.sidebar.back') }}</span>
             </Link>
         </div>
     </aside>

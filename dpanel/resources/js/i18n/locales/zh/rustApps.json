@@ -1,0 +1,54 @@
+{
+    "card": {
+        "badge": {
+            "running": "运行中",
+            "error": "失败",
+            "stopped": "已停止",
+            "starting": "正在构建…"
+        },
+        "port": "端口",
+        "user": "用户",
+        "publicOn": "公开地址",
+        "notPublic": "未公开。{link}。",
+        "publishLink": "在 规则 → 端口共享 中发布",
+        "listening": "端口正在监听",
+        "notListening": "端口未监听",
+        "start": "启动",
+        "stop": "停止",
+        "restart": "重启",
+        "status": "状态",
+        "edit": "编辑",
+        "delete": "删除",
+        "runtime": "运行时",
+        "cargoRelease": "Cargo release",
+        "command": "命令",
+        "cargoBinary": "Cargo 二进制",
+        "building": "正在后台用 cargo 构建，完成后启动。首次构建可能需要几分钟。"
+    },
+    "index": {
+        "title": "Rust 应用",
+        "subtitle": "构建 Cargo 项目并以你的站点用户身份运行。在 规则 → 端口共享 中发布。",
+        "new": "新建 Rust 应用",
+        "empty": "还没有 Rust 应用",
+        "noHome": "没有可用的主目录",
+        "emptyHelp": "先创建一个，然后在 规则 → 端口共享 中发布。",
+        "noHomeHelp": "应用在网站用户的主目录中运行。请先创建一个网站。"
+    },
+    "form": {
+        "editTitle": "编辑 {name}",
+        "newTitle": "新建 Rust 应用",
+        "subtitle": "构建 Cargo 项目并以该主目录的 Linux 用户身份运行。在 规则 → 端口共享 中发布。",
+        "name": "应用名称",
+        "home": "主目录",
+        "workdir": "工作目录",
+        "workdirHelp": "包含 Cargo.toml 的文件夹。留空则使用主目录。",
+        "optional": "（可选）",
+        "port": "端口",
+        "auto": "自动",
+        "startAfter": "创建后启动",
+        "portNote": "端口 {port}。正在运行的应用会以新设置重启。",
+        "create": "创建应用",
+        "args": "参数",
+        "argsHelp": "每次启动都会运行 {build}，并以这些普通参数启动 Cargo 二进制，不经过 shell。要运行其他文件，请以其路径开头，例如 {example}。应用从 {env} 环境变量读取端口，并且必须监听 127.0.0.1。"
+    }
+}

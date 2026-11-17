@@ -1,0 +1,410 @@
+{
+    "modal": {
+        "creating": "正在创建...",
+        "createFile": "创建文件",
+        "createFolder": "创建文件夹",
+        "selectedItems": "已选项目：{count}",
+        "destinationPlaceholder": "目标文件夹路径（留空 = 根目录）",
+        "newNamePlaceholder": "新名称"
+    },
+    "rename": {
+        "renaming": "正在重命名...",
+        "submit": "重命名"
+    },
+    "move": {
+        "dragHint": "你也可以拖动所选行并放到侧边栏文件夹上。",
+        "moving": "正在移动...",
+        "submit": "移动"
+    },
+    "unzip": {
+        "archive": "归档：{path}",
+        "extractTo": "解压到文件夹",
+        "note": "如果文件夹不存在会自动创建。同名的现有文件将被替换。",
+        "formats": "支持的格式：.zip、.tar、.tar.gz、.tgz 和单文件 .gz。",
+        "extracting": "正在解压...",
+        "submit": "解压归档"
+    },
+    "copy": {
+        "name": "为副本命名",
+        "note": "原项目保持不变；会在目标位置创建一个副本。",
+        "copying": "正在复制...",
+        "submit": "复制"
+    },
+    "zip": {
+        "format": "归档格式",
+        "name": "归档名称",
+        "creating": "正在创建归档...",
+        "submit": "创建归档"
+    },
+    "selection": {
+        "selected": "已选择 {count} 项",
+        "clear": "清除",
+        "move": "移动",
+        "copy": "复制",
+        "delete": "删除"
+    },
+    "toast": {
+        "dismiss": "关闭"
+    },
+    "upload": {
+        "drop": "将文件拖放到这里",
+        "choose": "或从电脑中选择",
+        "selected": "已选择 {count} 个文件",
+        "uploading": "正在上传...",
+        "submit": "上传文件",
+        "complete": "完成",
+        "uploadingFile": "正在上传 {file}..."
+    },
+    "context": {
+        "openFolder": "打开文件夹",
+        "openSqlite": "在 SQLite 查看器中打开",
+        "preview": "预览",
+        "editFile": "编辑文件",
+        "openFile": "打开文件",
+        "download": "下载",
+        "rename": "重命名",
+        "permissions": "权限",
+        "move": "移动",
+        "copy": "复制",
+        "zip": "创建 Zip",
+        "unzip": "解压归档",
+        "delete": "删除"
+    },
+    "trash": {
+        "intro": "已删除的项目在永久删除前会被压缩并保存在这里。",
+        "empty": "回收站为空。",
+        "selected": "已选择 {count} 项",
+        "selectAll": "全选",
+        "deleting": "正在删除…",
+        "deleteForeverCount": "永久删除（{count}）",
+        "from": "来自：/{path}",
+        "root": "（根目录）",
+        "restore": "恢复",
+        "deleteForever": "永久删除"
+    },
+    "perm": {
+        "presets": {
+            "owner644": "所有者读写，其他人只读",
+            "owner755": "所有者全部，其他人读和执行",
+            "group775": "组可写",
+            "world777": "所有人可写",
+            "owner600": "仅所有者",
+            "group640": "所有者读写，组只读",
+            "owner700": "仅所有者（可执行）",
+            "zero0755": "前导零"
+        },
+        "presetsTitle": "预设",
+        "highRisk": "高风险",
+        "safe": "安全",
+        "custom": "自定义权限",
+        "customHint": "使用 3 或 4 位数字，如 `644`、`755` 或 `0777`。",
+        "preview": "实时预览",
+        "symbolic": "符号表示",
+        "warning": "警告：此模式对所有人可写或存在其他高风险。请谨慎使用。",
+        "recursive": "递归应用到子目录和文件",
+        "saving": "正在保存...",
+        "saveRecursive": "递归保存",
+        "save": "保存权限"
+    },
+    "sidebar": {
+        "close": "关闭侧边栏",
+        "folders": "文件夹",
+        "goToPath": "转到路径...",
+        "dropUp": "将项目放到这里以上移一级",
+        "up": "上级目录",
+        "root": "转到根目录"
+    },
+    "editor": {
+        "readonly": "只读",
+        "saving": "正在保存...",
+        "explorer": "资源管理器",
+        "file": "文件",
+        "folder": "文件夹",
+        "lines": "行数",
+        "tips": "提示",
+        "tipSave": "Ctrl/Cmd+S 保存",
+        "tipFullscreen": "使用全屏代码编辑",
+        "tipSplit": "按职责拆分文件",
+        "unsaved": "未保存的更改",
+        "saved": "已保存",
+        "lineCount": "{count} 行",
+        "openFull": "打开完整文件",
+        "modified": "已修改",
+        "noChanges": "无更改"
+    },
+    "topBar": {
+        "exit": "退出文件管理器",
+        "toggleSidebar": "切换侧边栏",
+        "root": "转到根目录",
+        "browse": "浏览 {url}",
+        "search": "搜索文件..."
+    },
+    "table": {
+        "open": "打开",
+        "view": "查看",
+        "edit": "编辑",
+        "download": "下载",
+        "name": "名称",
+        "action": "操作",
+        "type": "类型",
+        "size": "大小",
+        "perm": "权限",
+        "modified": "修改时间",
+        "calculate": "计算",
+        "calculating": "正在计算…",
+        "noMatch": "没有文件匹配你的搜索",
+        "empty": "此目录中没有文件"
+    },
+    "switcher": {
+        "title": "切换或浏览网站",
+        "search": "搜索网站...",
+        "openHere": "在此标签页中打开 {domain} 的文件",
+        "current": "当前",
+        "openNew": "在新标签页中打开 {domain} 的文件",
+        "noMatch": "没有网站匹配“{query}”。"
+    },
+    "preview": {
+        "openNewTab": "在新标签页中打开",
+        "download": "下载",
+        "close": "关闭（Esc）",
+        "failed": "无法预览此文件。",
+        "downloadInstead": "改为下载",
+        "previous": "上一个（←）",
+        "next": "下一个（→）"
+    },
+    "index": {
+        "headTitle": "文件管理器 - {site}",
+        "dropTo": "拖放文件以上传到",
+        "items": "{count} 个项目",
+        "openTerminal": "打开终端",
+        "terminal": "终端",
+        "closeTerminal": "关闭终端",
+        "titles": {
+            "createFolder": "创建文件夹",
+            "createFile": "创建文件",
+            "rename": "重命名项目",
+            "permissions": "更改权限",
+            "move": "移动项目",
+            "copy": "复制项目",
+            "zip": "创建归档",
+            "unzip": "解压归档",
+            "trash": "回收站",
+            "upload": "上传文件"
+        }
+    },
+    "sqlite": {
+        "closeEsc": "关闭（Esc）",
+        "ai": {
+            "placeholder": "询问 AI：例如 本月最近注册的 10 位用户 / 列出 Gmail 用户",
+            "writing": "正在编写…",
+            "generate": "生成 SQL",
+            "hint": "SQL 会放入下方编辑器。检查后再按“运行”——不会自动执行任何内容。"
+        },
+        "query": {
+            "run": "运行",
+            "editingHint": "Ctrl+Enter · 已开启编辑：INSERT、UPDATE、DELETE、CREATE…会真正执行",
+            "readOnlyHint": "Ctrl+Enter · 只读：SELECT、WITH、EXPLAIN 和只读 PRAGMA",
+            "changed": "已更改 {count} 行",
+            "rows": "{count} 行，耗时 {ms} ms",
+            "truncated": "仅显示前 {count} 行"
+        },
+        "structure": {
+            "dropConfirm": "从“{table}”中删除列“{column}”？其数据将丢失。此操作无法撤销。",
+            "dropped": "已删除列 {column}。",
+            "addColumn": "添加列",
+            "column": "列",
+            "type": "类型",
+            "default": "默认值",
+            "key": "键",
+            "actions": "操作",
+            "generated": "生成列",
+            "edit": "编辑",
+            "deleteColumn": "删除列",
+            "indexes": "索引",
+            "createStatement": "CREATE 语句"
+        },
+        "column": {
+            "needDefault": "要向已有行添加 NOT NULL 列，SQLite 需要一个默认值。",
+            "added": "已添加列 {name}。",
+            "renamed": "列已重命名为 {name}。",
+            "editTitle": "编辑列 {name}",
+            "name": "名称",
+            "value": "值…",
+            "typeLabel": "类型：",
+            "nullable": "可为空",
+            "defaultLabel": "默认值",
+            "renameOnly": "SQLite 只能就地重命名列。要更改其类型或约束，请用 SQL 重建表。",
+            "sqlPreview": "将要执行的 SQL",
+            "rename": "重命名"
+        },
+        "grid": {
+            "noRows": "没有行。",
+            "editRow": "编辑行",
+            "deleteRow": "删除行",
+            "dblClick": "双击编辑",
+            "clickCopy": "点击复制"
+        },
+        "row": {
+            "addTitle": "向 {table} 添加行",
+            "editTitle": "编辑行 {rowid}",
+            "emptyDefault": "空字段使用列的默认值",
+            "undo": "撤销此字段的更改",
+            "locked": "未完整加载；请用 SQL 修改。",
+            "auto": "自动",
+            "defaultPlaceholder": "默认：{value}",
+            "convert": "转换 / 更改格式",
+            "working": "处理中…",
+            "format": "格式…",
+            "changed": "已更改 {count} 个字段",
+            "insert": "插入行",
+            "save": "保存更改"
+        },
+        "data": {
+            "savedCell": "已保存 {column}。",
+            "deleteRowsConfirm": "从“{table}”删除 {count} 行？此操作无法撤销。",
+            "deletedRows": "已删除 {count} 行。",
+            "deleteRowConfirm": "从“{table}”删除行 {rowid}？此操作无法撤销。",
+            "deletedRow": "已删除行 {rowid}。",
+            "rowAdded": "已添加行（rowid {rowid}）。",
+            "savedFields": "已保存 {count} 个字段。",
+            "search": "搜索所有列",
+            "addRow": "添加行",
+            "deleteCount": "删除 {count}",
+            "matchCount": "{count} 行匹配",
+            "rowCount": "{count} 行",
+            "perPage": "{n} / 页",
+            "viewReadonly": "视图无法在表格中编辑——请使用 SQL 标签页。",
+            "noRowid": "此表没有 rowid，因此无法在表格中编辑——请使用 SQL 标签页。"
+        },
+        "viewer": {
+            "tabData": "数据",
+            "tabStructure": "结构",
+            "requestFailed": "请求失败。",
+            "aiFailed": "AI 请求失败。",
+            "convertFailed": "转换失败。",
+            "editing": "编辑中",
+            "readOnly": "只读",
+            "writeOn": "已开启写入：更改会直接写入数据库文件",
+            "writeOff": "只读：开启后才能修改数据",
+            "write": "写入",
+            "opening": "正在打开数据库…",
+            "filter": "筛选表",
+            "noTables": "没有表。",
+            "showInternal": "显示 sqlite_ 表"
+        }
+    },
+    "icons": {
+        "folder": "文件夹",
+        "file": "文件"
+    },
+    "cells": {
+        "blob": "BLOB {bytes} 字节",
+        "emptyBlob": "空 blob",
+        "textCut": "文本在 {shown} / {total} 个字符处截断"
+    },
+    "formats": {
+        "errors": {
+            "notNumber": "不是数字。",
+            "notBase64": "不是有效的 Base64。",
+            "notJson": "不是有效的 JSON。",
+            "notUnix": "不是 Unix 时间戳。",
+            "notDate": "不是日期。",
+            "valueNotNumber": "“{value}”不是数字。"
+        },
+        "groups": {
+            "type": "类型",
+            "hash": "哈希",
+            "text": "文本",
+            "encode": "编码",
+            "dateId": "日期与 ID"
+        },
+        "items": {
+            "text": "文本",
+            "int": "整数",
+            "real": "实数（小数）",
+            "bcrypt": "bcrypt（密码）",
+            "argon2id": "Argon2id（密码）",
+            "upper": "大写",
+            "lower": "小写",
+            "trim": "去除空格",
+            "slug": "Slug",
+            "empty": "空字符串",
+            "b64e": "Base64 编码",
+            "b64d": "Base64 解码",
+            "urle": "URL 编码",
+            "urld": "URL 解码",
+            "jsonp": "JSON 美化",
+            "jsonm": "JSON 压缩",
+            "now": "当前时间（YYYY-MM-DD HH:MM:SS）",
+            "nowunix": "当前时间（Unix 时间戳）",
+            "unix2date": "Unix 时间戳 → 日期",
+            "date2unix": "日期 → Unix 时间戳",
+            "uuid": "新 UUID v4"
+        }
+    },
+    "manager": {
+        "website": "网站",
+        "home": "主目录",
+        "pathInside": "路径必须位于 {base} 内。",
+        "cannotEdit": "无法编辑“{filename}”。不支持编辑此文件类型。",
+        "largeFileConfirm": "“{name}”大小为 {size}。加载整个文件可能会拖慢浏览器。打开完整文件吗？",
+        "sizeFailed": "计算文件夹大小失败。",
+        "trashConfirm": "将 {count} 个项目移到回收站？",
+        "renamed": "项目已重命名。",
+        "renameFailed": "重命名失败。",
+        "trashLoadFailed": "加载回收站失败。",
+        "restored": "项目已恢复。",
+        "restoreFailed": "恢复失败。",
+        "purgeOneConfirm": "永久删除此回收站项目？此操作无法撤销。",
+        "purged": "已永久删除。",
+        "deleteFailed": "删除失败。",
+        "purgeManyConfirm": "永久删除 {count} 个项目？此操作无法撤销。",
+        "deleteSelectedFailed": "删除所选项目失败。",
+        "extracted": "归档已成功解压。",
+        "extractFailed": "解压归档失败。",
+        "uploadedMany": "已成功上传 {count} 个文件。",
+        "uploadedOne": "文件上传成功。",
+        "uploadFailed": "上传失败。",
+        "cacheCleared": "项目缓存已成功清除。",
+        "cacheFailed": "清除项目缓存失败。",
+        "saved": "文件已保存。",
+        "saveFailed": "保存文件失败。",
+        "owner": "所有者",
+        "group": "组",
+        "world": "其他人"
+    },
+    "quick": {
+        "groups": {
+            "create": "创建",
+            "fileOps": "文件操作",
+            "navigation": "导航",
+            "danger": "危险"
+        },
+        "upload": "上传",
+        "uploadHint": "向此文件夹添加文件",
+        "newFile": "新建文件",
+        "newFileHint": "创建空白文件",
+        "newFolder": "新建文件夹",
+        "newFolderHint": "创建目录",
+        "permissions": "权限",
+        "permissionsHint": "更改访问模式",
+        "download": "下载",
+        "downloadHint": "保存到本地",
+        "zip": "压缩",
+        "zipHint": "压缩所选项",
+        "extract": "解压",
+        "extractHint": "解压归档",
+        "clearing": "正在清除...",
+        "clearCache": "清除缓存",
+        "clearCacheHint": "运行 Laravel optimize:clear",
+        "upLevel": "上一级",
+        "upLevelHint": "转到父文件夹",
+        "hideHidden": "隐藏隐藏文件",
+        "showHidden": "显示隐藏文件",
+        "hiddenHint": "切换点文件显示",
+        "trash": "回收站",
+        "trashHint": "恢复或永久删除",
+        "delete": "删除",
+        "deleteHint": "删除所选项目"
+    }
+}

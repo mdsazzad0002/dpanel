@@ -1,5 +1,8 @@
 import { computed } from 'vue';
 import { usePage } from '@inertiajs/vue3';
+import { i18n } from '@/i18n';
+
+const t = (...args) => i18n.global.t(...args);
 
 /**
  * Shared by the Manage page and its section components: builds routes that
@@ -41,11 +44,11 @@ export function usePanelApi() {
         // An expired session redirects to the login page, which fetch()
         // follows and answers 200 with HTML — that is not a success.
         if (response.redirected) {
-            throw new Error('Your session has expired — reload the page and sign in again.');
+            throw new Error(t('websites.panelApi.sessionExpired'));
         }
         const data = await response.json().catch(() => ({}));
         if (!response.ok) {
-            throw data instanceof Error ? data : new Error(data.message || 'Request failed.');
+            throw data instanceof Error ? data : new Error(data.message || t('websites.panelApi.requestFailed'));
         }
 
         return data;

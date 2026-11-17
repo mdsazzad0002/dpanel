@@ -1,4 +1,7 @@
 <script setup>
+import { useI18n } from 'vue-i18n';
+
+const { t } = useI18n();
 defineProps({
     result: { type: Object, default: null },
 });
@@ -13,7 +16,7 @@ defineProps({
                 : 'border-red-200 bg-red-50 text-red-700 dark:border-red-800 dark:bg-red-500/10 dark:text-red-400'"
         >
             <i class="bi" :class="result.ok ? 'bi-check-circle-fill' : 'bi-x-circle-fill'"></i>
-            {{ result.ok ? 'All checks passed' : 'Check failed' }}
+            {{ result.ok ? t('ftp.testSteps.passed') : t('ftp.testSteps.failed') }}
         </div>
         <ol class="space-y-1.5">
             <li v-for="(step, index) in result.steps" :key="index" class="flex gap-2 text-sm">

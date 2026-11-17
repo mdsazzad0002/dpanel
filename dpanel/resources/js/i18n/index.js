@@ -1,12 +1,16 @@
-// Panel translations (backlog U2). New pages take their text from keys in
-// locales/<code>.json; English is the fallback, so a missing key in any language
-// shows English rather than the key.
+// Panel translations (backlog U2). Pages take their text from keys in
+// locales/<code>/<namespace>.json; English is the fallback, so a missing key in any
+// language shows English rather than the key.
 import { createI18n } from 'vue-i18n';
-import en from './locales/en.json';
-import bn from './locales/bn.json';
-import hi from './locales/hi.json';
-import zh from './locales/zh.json';
-import ar from './locales/ar.json';
+
+// Each language is a folder: locales/<code>/<namespace>.json holds the keys under
+// <namespace>, so every part of the panel keeps its own file.
+const files = import.meta.glob('./locales/*/*.json', { eager: true });
+const messages = {};
+Object.entries(files).forEach(([path, module]) => {
+    const [, code, namespace] = path.match(/\.\/locales\/([^/]+)\/([^/]+)\.json$/);
+    (messages[code] ??= {})[namespace] = module.default ?? module;
+});
 
 export const LOCALE_KEY = 'dpanel-locale';
 
@@ -45,7 +49,7 @@ export const i18n = createI18n({
     globalInjection: true,
     locale: typeof window === 'undefined' ? 'en' : savedLocale(),
     fallbackLocale: 'en',
-    messages: { en, bn, hi, zh, ar },
+    messages,
 });
 
 applyDocumentLocale(i18n.global.locale.value);

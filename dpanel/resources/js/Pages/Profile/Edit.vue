@@ -5,6 +5,9 @@ import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
 import UpdatePasswordForm from './Partials/UpdatePasswordForm.vue';
 import UpdateProfileInformationForm from './Partials/UpdateProfileInformationForm.vue';
 import TwoFactorForm from './Partials/TwoFactorForm.vue';
+import { useI18n } from 'vue-i18n';
+
+const { t } = useI18n();
 
 const props = defineProps({
     mustVerifyEmail: {
@@ -83,20 +86,20 @@ onBeforeUnmount(() => {
 const tabs = [
     {
         key: 'profile',
-        label: 'Profile',
-        hint: 'Name and email',
+        get label() { return t('profile.edit.tabs.profile.label'); },
+        get hint() { return t('profile.edit.tabs.profile.hint'); },
         icon: 'bi-person-vcard',
     },
     {
         key: 'password',
-        label: 'Password',
-        hint: 'Change password',
+        get label() { return t('profile.edit.tabs.password.label'); },
+        get hint() { return t('profile.edit.tabs.password.hint'); },
         icon: 'bi-shield-lock',
     },
     {
         key: 'two-factor',
-        label: 'Security',
-        hint: '2FA settings',
+        get label() { return t('profile.edit.tabs.security.label'); },
+        get hint() { return t('profile.edit.tabs.security.hint'); },
         icon: 'bi-phone-lock',
     },
 ];
@@ -116,13 +119,13 @@ const getCompletionColor = () => {
 </script>
 
 <template>
-    <Head title="Profile" />
+    <Head :title="t('profile.edit.title')" />
 
     <AuthenticatedLayout>
         <template #header>
             <div>
-                <h1 class="text-lg font-semibold">Profile</h1>
-                <p class="truncate text-sm text-slate-500 dark:text-slate-400">Manage your account settings</p>
+                <h1 class="text-lg font-semibold">{{ t('profile.edit.title') }}</h1>
+                <p class="truncate text-sm text-slate-500 dark:text-slate-400">{{ t('profile.edit.subtitle') }}</p>
             </div>
         </template>
 
@@ -139,40 +142,40 @@ const getCompletionColor = () => {
                             <div class="flex h-24 w-24 items-center justify-center rounded-2xl bg-white/20 text-2xl font-bold text-white shadow-xl ring-4 ring-white/30 backdrop-blur-sm">
                                 {{ userInitials }}
                             </div>
-                            <button class="absolute -bottom-1 -right-1 flex h-8 w-8 items-center justify-center rounded-full bg-white text-slate-700 shadow-lg transition-transform hover:scale-110">
+                            <button type="button" :aria-label="t('profile.edit.avatar')" class="absolute -bottom-1 -right-1 flex h-8 w-8 items-center justify-center rounded-full bg-white text-slate-700 shadow-lg transition-transform hover:scale-110">
                                 <i class="bi bi-camera text-sm"></i>
                             </button>
                         </div>
 
                         <!-- User Info -->
                         <div class="flex-1 text-white">
-                            <h2 class="text-2xl font-bold">{{ user.name || 'User' }}</h2>
+                            <h2 class="text-2xl font-bold">{{ user.name || t('profile.edit.user') }}</h2>
                             <p class="mt-1 text-white/80">{{ user.email }}</p>
                             <div class="mt-3 flex flex-wrap gap-2">
                                 <span class="inline-flex items-center gap-1 rounded-full bg-white/20 px-3 py-1 text-xs font-medium backdrop-blur-sm">
                                     <i class="bi bi-person-badge"></i>
-                                    {{ roles.join(', ') || 'User' }}
+                                    {{ roles.join(', ') || t('profile.edit.user') }}
                                 </span>
                                 <span
                                     class="inline-flex items-center gap-1 rounded-full px-3 py-1 text-xs font-medium backdrop-blur-sm"
                                     :class="emailVerified ? 'bg-emerald-500/30 text-emerald-100' : 'bg-amber-500/30 text-amber-100'"
                                 >
                                     <i :class="emailVerified ? 'bi bi-check-circle-fill' : 'bi bi-exclamation-circle-fill'"></i>
-                                    {{ emailVerified ? 'Verified' : 'Unverified' }}
+                                    {{ emailVerified ? t('profile.edit.verified') : t('profile.edit.unverified') }}
                                 </span>
                                 <span
                                     class="inline-flex items-center gap-1 rounded-full px-3 py-1 text-xs font-medium backdrop-blur-sm"
                                     :class="twoFactorEnabled ? 'bg-cyan-500/30 text-cyan-100' : 'bg-white/20 text-white/80'"
                                 >
                                     <i class="bi bi-shield-check"></i>
-                                    {{ twoFactorEnabled ? '2FA On' : '2FA Off' }}
+                                    {{ twoFactorEnabled ? t('profile.edit.twoFaOn') : t('profile.edit.twoFaOff') }}
                                 </span>
                             </div>
                         </div>
 
                         <!-- Profile Completion -->
                         <div class="rounded-xl bg-white/10 p-4 backdrop-blur-sm sm:text-right">
-                            <p class="text-xs font-medium uppercase tracking-wider text-white/70">Profile Completion</p>
+                            <p class="text-xs font-medium uppercase tracking-wider text-white/70">{{ t('profile.edit.completion') }}</p>
                             <div class="mt-2 flex items-center gap-3">
                                 <div class="relative h-16 w-16">
                                     <svg class="h-16 w-16 -rotate-90" viewBox="0 0 100 100">
@@ -191,7 +194,7 @@ const getCompletionColor = () => {
                                 </div>
                                 <div class="hidden text-left sm:block">
                                     <p class="text-lg font-bold text-white">{{ profileCompletion }}%</p>
-                                    <p class="text-xs text-white/70">Complete</p>
+                                    <p class="text-xs text-white/70">{{ t('profile.edit.complete') }}</p>
                                 </div>
                             </div>
                         </div>
@@ -202,18 +205,18 @@ const getCompletionColor = () => {
                 <div class="grid grid-cols-3 border-t border-slate-200 dark:border-slate-700">
                     <div class="border-r border-slate-200 px-4 py-4 text-center dark:border-slate-700">
                         <i class="bi bi-envelope-check text-lg text-slate-400"></i>
-                        <p class="mt-1 text-sm font-semibold text-slate-900 dark:text-slate-100">{{ emailVerified ? 'Verified' : 'Pending' }}</p>
-                        <p class="text-xs text-slate-500 dark:text-slate-400">Email Status</p>
+                        <p class="mt-1 text-sm font-semibold text-slate-900 dark:text-slate-100">{{ emailVerified ? t('profile.edit.verified') : t('profile.edit.pending') }}</p>
+                        <p class="text-xs text-slate-500 dark:text-slate-400">{{ t('profile.edit.emailStatus') }}</p>
                     </div>
                     <div class="border-r border-slate-200 px-4 py-4 text-center dark:border-slate-700">
                         <i class="bi bi-shield-exclamation text-lg text-slate-400"></i>
-                        <p class="mt-1 text-sm font-semibold text-slate-900 dark:text-slate-100">{{ twoFactorEnabled ? 'Enabled' : 'Disabled' }}</p>
-                        <p class="text-xs text-slate-500 dark:text-slate-400">2FA Status</p>
+                        <p class="mt-1 text-sm font-semibold text-slate-900 dark:text-slate-100">{{ twoFactorEnabled ? t('profile.edit.enabled') : t('profile.edit.disabled') }}</p>
+                        <p class="text-xs text-slate-500 dark:text-slate-400">{{ t('profile.edit.twoFaStatus') }}</p>
                     </div>
                     <div class="px-4 py-4 text-center">
                         <i class="bi bi-person-badge text-lg text-slate-400"></i>
-                        <p class="mt-1 text-sm font-semibold text-slate-900 dark:text-slate-100">{{ roles[0] || 'User' }}</p>
-                        <p class="text-xs text-slate-500 dark:text-slate-400">Role</p>
+                        <p class="mt-1 text-sm font-semibold text-slate-900 dark:text-slate-100">{{ roles[0] || t('profile.edit.user') }}</p>
+                        <p class="text-xs text-slate-500 dark:text-slate-400">{{ t('profile.edit.role') }}</p>
                     </div>
                 </div>
             </div>
@@ -246,8 +249,8 @@ const getCompletionColor = () => {
                             <i class="bi bi-person-vcard text-lg"></i>
                         </div>
                         <div>
-                            <h3 class="text-lg font-semibold text-slate-900 dark:text-slate-100">Profile Information</h3>
-                            <p class="text-sm text-slate-500 dark:text-slate-400">Update your account details</p>
+                            <h3 class="text-lg font-semibold text-slate-900 dark:text-slate-100">{{ t('profile.edit.infoTitle') }}</h3>
+                            <p class="text-sm text-slate-500 dark:text-slate-400">{{ t('profile.edit.infoText') }}</p>
                         </div>
                     </div>
                     <UpdateProfileInformationForm
@@ -264,8 +267,8 @@ const getCompletionColor = () => {
                             <i class="bi bi-shield-lock text-lg"></i>
                         </div>
                         <div>
-                            <h3 class="text-lg font-semibold text-slate-900 dark:text-slate-100">Update Password</h3>
-                            <p class="text-sm text-slate-500 dark:text-slate-400">Ensure your account stays secure</p>
+                            <h3 class="text-lg font-semibold text-slate-900 dark:text-slate-100">{{ t('profile.edit.passwordTitle') }}</h3>
+                            <p class="text-sm text-slate-500 dark:text-slate-400">{{ t('profile.edit.passwordText') }}</p>
                         </div>
                     </div>
                     <UpdatePasswordForm class="max-w-none" />
@@ -278,8 +281,8 @@ const getCompletionColor = () => {
                             <i class="bi bi-phone-lock text-lg"></i>
                         </div>
                         <div>
-                            <h3 class="text-lg font-semibold text-slate-900 dark:text-slate-100">Two-Factor Authentication</h3>
-                            <p class="text-sm text-slate-500 dark:text-slate-400">Add extra security to your account</p>
+                            <h3 class="text-lg font-semibold text-slate-900 dark:text-slate-100">{{ t('profile.edit.twoFaTitle') }}</h3>
+                            <p class="text-sm text-slate-500 dark:text-slate-400">{{ t('profile.edit.twoFaText') }}</p>
                         </div>
                     </div>
                     <TwoFactorForm class="max-w-none" />

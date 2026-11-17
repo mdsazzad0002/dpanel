@@ -1,6 +1,9 @@
 import { computed, ref } from 'vue';
 import { usePage } from '@inertiajs/vue3';
 import axios from 'axios';
+import { i18n } from '@/i18n';
+
+const t = (...args) => i18n.global.t(...args);
 
 /**
  * Shared state for the Mongo Admin page: where you are (server, database,
@@ -27,7 +30,7 @@ export function useMongoAdmin(scope = null) {
     const errorText = (e) => e.response?.data?.message
         || (e.response?.data?.errors ? Object.values(e.response.data.errors).flat().join(' ') : '')
         || e.message
-        || 'Request failed.';
+        || t('databases.mongoAdmin.requestFailed');
 
     /**
      * Runs one operation. Resolves to its data, or throws with a readable

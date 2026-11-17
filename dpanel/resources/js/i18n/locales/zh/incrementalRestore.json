@@ -1,0 +1,23 @@
+{
+    "title": "还原",
+    "subtitle": "{when} 的还原点（{id}）",
+    "back": "所有还原点",
+    "files": "文件和文件夹",
+    "filesHelp": "所选内容会还原到网站主目录下新的 restored-… 文件夹中。现有内容不会被改动；请自行移动需要的文件。",
+    "restore": "还原",
+    "restoreFolder": "还原此文件夹",
+    "restoreEverything": "还原所有文件",
+    "up": "上一级",
+    "empty": "此文件夹在还原点中为空。",
+    "browseFailed": "无法读取还原点。",
+    "failed": "无法开始还原。",
+    "databases": "数据库",
+    "databasesHelp": "数据库将恢复到当时的状态。当前内容会先以 .sql 文件保存到 restored-… 文件夹。",
+    "noDatabases": "此网站没有数据库。",
+    "mailboxes": "邮箱",
+    "mailboxesHelp": "邮件会还原到新的邮件文件夹 Restored-… 中，与邮箱现有内容并列。如未显示，请在邮件程序中订阅该文件夹。",
+    "noMailboxes": "此网站没有邮箱。",
+    "confirmFiles": "将 {path} 还原到新的 restored-… 文件夹？",
+    "confirmDatabase": "将 {name} 恢复到当时的状态？其当前内容会先被保存。",
+    "confirmMailbox": "将 {email} 的邮件还原到新的 Restored-… 文件夹？"
+}

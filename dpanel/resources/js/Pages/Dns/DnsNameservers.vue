@@ -4,6 +4,9 @@ import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
 import SearchableSelect from '@/Components/SearchableSelect.vue';
 import { Head, useForm, usePage } from '@inertiajs/vue3';
 import { computed } from 'vue';
+import { useI18n } from 'vue-i18n';
+
+const { t } = useI18n();
 
 const props = defineProps({
     nameservers: { type: Array, default: () => [] },
@@ -16,10 +19,10 @@ const panelRoute = (name, params = {}) => (
     panelToken.value ? route(name, { token: panelToken.value, ...params }) : route(name, params)
 );
 const websiteDomainOptions = computed(() => props.websiteDomains.map((domain) => ({ value: domain, label: domain })));
-const statusOptions = [
-    { value: 'active', label: 'active' },
-    { value: 'disabled', label: 'disabled' },
-];
+const statusOptions = computed(() => [
+    { value: 'active', label: t('dns.nameservers.statuses.active') },
+    { value: 'disabled', label: t('dns.nameservers.statuses.disabled') },
+]);
 
 const editingId = ref(null);
 const deleteForm = useForm({});
@@ -60,19 +63,19 @@ const resetForm = () => {
 };
 
 const deleteItem = (id) => {
-    if (!confirm('Delete this nameserver?')) return;
+    if (!confirm(t('dns.nameservers.deleteConfirm'))) return;
     deleteForm.delete(panelRoute('dns.nameservers.destroy', { id }));
 };
 </script>
 
 <template>
-    <Head title="DNS Nameservers" />
+    <Head :title="t('dns.nameservers.title')" />
 
     <AuthenticatedLayout>
         <template #header>
             <div>
-                <h1 class="text-lg font-semibold">DNS Nameservers</h1>
-                <p class="text-sm text-slate-500 dark:text-slate-400">PowerDNS nameserver manager. Active entries sync NS, A and AAAA records to the selected zone.</p>
+                <h1 class="text-lg font-semibold">{{ t('dns.nameservers.title') }}</h1>
+                <p class="text-sm text-slate-500 dark:text-slate-400">{{ t('dns.nameservers.subtitle') }}</p>
             </div>
         </template>
 
@@ -84,21 +87,21 @@ const deleteItem = (id) => {
                 {{ page.props.flash.error }}
             </div>
             <div class="rounded-md border border-blue-200 bg-blue-50 px-4 py-3 text-xs text-blue-800 dark:border-blue-900 dark:bg-blue-950 dark:text-blue-200">
-                Zone must exist first in DNS Zones. Disabled nameservers are kept for reference and not published to PowerDNS.
+                {{ t('dns.nameservers.notice') }}
             </div>
 
             <form class="grid gap-4 rounded-xl border border-slate-200 bg-white p-6 md:grid-cols-3 dark:border-slate-800 dark:bg-slate-900" @submit.prevent="submit">
                 <div>
-                    <label class="mb-1 block text-sm">Domain</label>
+                    <label class="mb-1 block text-sm">{{ t('dns.nameservers.domain') }}</label>
                     <SearchableSelect
                         v-model="form.domain"
                         :options="websiteDomainOptions"
-                        placeholder="Select domain"
-                        search-placeholder="Search domains…"
+                        :placeholder="t('dns.nameservers.selectDomain')"
+                        :search-placeholder="t('dns.nameservers.searchDomains')"
                     />
                 </div>
                 <div>
-                    <label class="mb-1 block text-sm">Hostname</label>
+                    <label class="mb-1 block text-sm">{{ t('dns.nameservers.hostname') }}</label>
                     <input v-model="form.hostname" type="text" placeholder="ns1.example.com" class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-800" />
                 </div>
                 <div>
@@ -114,15 +117,15 @@ const deleteItem = (id) => {
                     <input v-model.number="form.ttl" type="number" min="60" max="86400" class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-800" />
                 </div>
                 <div>
-                    <label class="mb-1 block text-sm">Status</label>
+                    <label class="mb-1 block text-sm">{{ t('dns.nameservers.status') }}</label>
                     <SearchableSelect v-model="form.status" :options="statusOptions" />
                 </div>
                 <div class="md:col-span-3 flex items-center gap-2">
                     <button type="submit" :disabled="form.processing" class="rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-60">
-                        {{ editingId ? 'Update Nameserver' : 'Create Nameserver' }}
+                        {{ editingId ? t('dns.nameservers.update') : t('dns.nameservers.create') }}
                     </button>
                     <button v-if="editingId" type="button" class="rounded-md border border-slate-300 px-4 py-2 text-sm hover:bg-slate-100 dark:border-slate-700 dark:hover:bg-slate-800" @click="resetForm">
-                        Cancel
+                        {{ t('common.cancel') }}
                     </button>
                 </div>
             </form>
@@ -131,13 +134,13 @@ const deleteItem = (id) => {
                 <table class="min-w-full text-left text-sm">
                     <thead class="bg-slate-50 dark:bg-slate-800">
                         <tr>
-                            <th class="px-4 py-3">Domain</th>
-                            <th class="px-4 py-3">Hostname</th>
+                            <th class="px-4 py-3">{{ t('dns.nameservers.domain') }}</th>
+                            <th class="px-4 py-3">{{ t('dns.nameservers.hostname') }}</th>
                             <th class="px-4 py-3">IPv4</th>
                             <th class="px-4 py-3">IPv6</th>
                             <th class="px-4 py-3">TTL</th>
-                            <th class="px-4 py-3">Status</th>
-                            <th class="px-4 py-3">Actions</th>
+                            <th class="px-4 py-3">{{ t('dns.nameservers.status') }}</th>
+                            <th class="px-4 py-3">{{ t('dns.nameservers.actions') }}</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -147,16 +150,16 @@ const deleteItem = (id) => {
                             <td class="px-4 py-3">{{ item.ipv4 || '-' }}</td>
                             <td class="px-4 py-3">{{ item.ipv6 || '-' }}</td>
                             <td class="px-4 py-3">{{ item.ttl }}</td>
-                            <td class="px-4 py-3">{{ item.status }}</td>
+                            <td class="px-4 py-3">{{ t(`dns.nameservers.statuses.${item.status}`) }}</td>
                             <td class="px-4 py-3">
                                 <div class="flex items-center gap-2">
-                                    <button type="button" class="rounded-md border border-slate-300 px-2 py-1 text-xs hover:bg-slate-100 dark:border-slate-700 dark:hover:bg-slate-800" @click="editItem(item)">Edit</button>
-                                    <button type="button" class="rounded-md border border-red-300 px-2 py-1 text-xs text-red-700 hover:bg-red-50 dark:border-red-700 dark:text-red-400" @click="deleteItem(item.id)">Delete</button>
+                                    <button type="button" class="rounded-md border border-slate-300 px-2 py-1 text-xs hover:bg-slate-100 dark:border-slate-700 dark:hover:bg-slate-800" @click="editItem(item)">{{ t('dns.nameservers.edit') }}</button>
+                                    <button type="button" class="rounded-md border border-red-300 px-2 py-1 text-xs text-red-700 hover:bg-red-50 dark:border-red-700 dark:text-red-400" @click="deleteItem(item.id)">{{ t('dns.nameservers.delete') }}</button>
                                 </div>
                             </td>
                         </tr>
                         <tr v-if="nameservers.length === 0">
-                            <td colspan="10" class="px-4 py-6 text-center text-slate-500">No nameserver records found.</td>
+                            <td colspan="10" class="px-4 py-6 text-center text-slate-500">{{ t('dns.nameservers.empty') }}</td>
                         </tr>
                     </tbody>
                 </table>

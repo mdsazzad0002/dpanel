@@ -4,11 +4,14 @@ import { usePage } from '@inertiajs/vue3';
 import { Terminal } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
 import '@xterm/xterm/css/xterm.css';
+import { useI18n } from 'vue-i18n';
+
+const { t } = useI18n();
 
 const props = defineProps({ website: { type: Object, required: true }, compact: { type: Boolean, default: false }, fill: { type: Boolean, default: false } });
 const page = usePage();
 const host = ref(null);
-const status = ref('Connecting…');
+const status = ref(t('ui.terminal.connecting'));
 const connected = ref(false);
 const connecting = ref(false);
 const panelToken = computed(() => String(page.props.panel?.token || ''));
@@ -26,7 +29,7 @@ const fit = () => {
 };
 
 const connect = async () => {
-    status.value = 'Connecting…';
+    status.value = t('ui.terminal.connecting');
     connecting.value = true;
     const response = await fetch(panelRoute('websites.terminal.session', { id: props.website.id }), {
         method: 'POST',
@@ -34,19 +37,19 @@ const connect = async () => {
         body: '{}',
     });
     const data = await response.json();
-    if (!response.ok) throw new Error(data.message || 'Unable to open terminal.');
+    if (!response.ok) throw new Error(data.message || t('ui.terminal.openFailed'));
     const scheme = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
     const current = new WebSocket(`${scheme}//${window.location.host}${data.path}?ticket=${encodeURIComponent(data.ticket)}`);
     socket = current;
     current.binaryType = 'arraybuffer';
-    current.onopen = () => { connecting.value = false; connected.value = true; status.value = 'Connected'; fit(); terminal.focus(); };
+    current.onopen = () => { connecting.value = false; connected.value = true; status.value = t('ui.terminal.connected'); fit(); terminal.focus(); };
     current.onmessage = async (event) => terminal.write(typeof event.data === 'string' ? event.data : new Uint8Array(event.data));
-    current.onerror = () => { if (socket === current) status.value = 'Connection error'; };
+    current.onerror = () => { if (socket === current) status.value = t('ui.terminal.error'); };
     current.onclose = (event) => {
         if (socket !== current) return;
         connecting.value = false;
         connected.value = false;
-        status.value = `Session closed (code ${event.code})`;
+        status.value = t('ui.terminal.closed', { code: event.code });
         terminal?.write(`\r\n[session closed, code ${event.code}${event.reason ? `: ${event.reason}` : ''}]\r\n`);
     };
 };
@@ -83,7 +86,7 @@ onBeforeUnmount(() => { resizeObserver?.disconnect(); socket?.close(); terminal?
 <template>
     <div class="overflow-hidden border-slate-800 bg-slate-950" :class="fill ? 'flex h-full flex-col' : 'rounded-2xl border shadow-sm'">
         <div class="flex items-center justify-between border-b border-slate-800 px-4 py-2">
-            <div><p class="text-sm font-semibold text-slate-100">Terminal</p><p class="text-[11px] text-emerald-400">{{ website.site_owner }} · {{ status }}</p></div>
+            <div><p class="text-sm font-semibold text-slate-100">{{ t('ui.terminal.title') }}</p><p class="text-[11px] text-emerald-400">{{ website.site_owner }} · {{ status }}</p></div>
             <div class="flex items-center gap-3">
                 <button
                     v-if="!connected"
@@ -92,9 +95,9 @@ onBeforeUnmount(() => { resizeObserver?.disconnect(); socket?.close(); terminal?
                     :disabled="connecting"
                     @click="reconnect"
                 >
-                    <i class="bi bi-arrow-clockwise" :class="{ 'animate-spin': connecting }"></i>Reconnect
+                    <i class="bi bi-arrow-clockwise" :class="{ 'animate-spin': connecting }"></i>{{ t('ui.terminal.reconnect') }}
                 </button>
-                <button type="button" class="text-xs text-slate-400 hover:text-white" @click="terminal?.clear(); terminal?.focus()">Clear</button>
+                <button type="button" class="text-xs text-slate-400 hover:text-white" @click="terminal?.clear(); terminal?.focus()">{{ t('ui.terminal.clear') }}</button>
                 <slot name="actions" />
             </div>
         </div>

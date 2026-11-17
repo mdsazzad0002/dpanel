@@ -1,6 +1,10 @@
 <script setup>
 // Task S2: the web application firewall (OWASP CRS) for one website.
 import { Link, useForm, usePage } from '@inertiajs/vue3';
+import { computed } from 'vue';
+import { useI18n } from 'vue-i18n';
+
+const { t } = useI18n();
 
 const props = defineProps({
     website: { type: Object, required: true },
@@ -14,11 +18,11 @@ const panelRoute = (name, params = {}) => (
 );
 
 const form = useForm({ waf_mode: props.website.waf_mode ?? 'detect' });
-const modes = [
-    { value: 'off', label: 'Off', help: 'Requests are not checked.' },
-    { value: 'detect', label: 'Detect only', help: 'Attacks are logged but still reach the site. Start here and read the log for false alarms.' },
-    { value: 'block', label: 'Block', help: 'A request the rules call an attack gets a 403 page and never reaches the site.' },
-];
+const modes = computed(() => [
+    { value: 'off', label: t('rules.siteProtection.firewall.off'), help: t('rules.siteProtection.firewall.offHelp') },
+    { value: 'detect', label: t('rules.siteProtection.firewall.detect'), help: t('rules.siteProtection.firewall.detectHelp') },
+    { value: 'block', label: t('rules.siteProtection.firewall.block'), help: t('rules.siteProtection.firewall.blockHelp') },
+]);
 
 const save = () => form.put(panelRoute('rules.site-protection.waf.update', { website: props.website.id }), { preserveScroll: true });
 </script>
@@ -27,14 +31,14 @@ const save = () => form.put(panelRoute('rules.site-protection.waf.update', { web
     <section class="rounded-lg border border-slate-200 p-5 dark:border-slate-700">
         <div class="flex flex-wrap items-start justify-between gap-2">
             <div>
-                <h2 class="text-lg font-semibold">Web application firewall</h2>
-                <p class="mt-1 text-sm text-slate-500">Checks requests to PHP and apps against the OWASP Core Rule Set: SQL injection, cross-site scripting, file inclusion and more. Static files are not checked.</p>
+                <h2 class="text-lg font-semibold">{{ t('rules.siteProtection.firewall.title') }}</h2>
+                <p class="mt-1 text-sm text-slate-500">{{ t('rules.siteProtection.firewall.help') }}</p>
             </div>
-            <Link :href="panelRoute('websites.logs.index', { id: website.id })" class="text-sm text-blue-600 hover:underline dark:text-blue-400">Firewall log</Link>
+            <Link :href="panelRoute('websites.logs.index', { id: website.id })" class="text-sm text-blue-600 hover:underline dark:text-blue-400">{{ t('rules.siteProtection.firewall.log') }}</Link>
         </div>
 
         <p v-if="!available" class="mt-3 rounded-md bg-amber-50 px-3 py-2 text-sm text-amber-800 dark:bg-amber-950/40 dark:text-amber-200">
-            The firewall is not installed on this server (it needs libmodsecurity and the rules: <code>dpanel module waf install</code>). The setting is kept and applies once it is.
+            <i18n-t keypath="rules.siteProtection.firewall.notInstalled" scope="global"><template #cmd><code>dpanel module waf install</code></template></i18n-t>
         </p>
 
         <form class="mt-4 space-y-3" @submit.prevent="save">
@@ -47,7 +51,7 @@ const save = () => form.put(panelRoute('rules.site-protection.waf.update', { web
                 </span>
             </label>
             <p v-if="form.errors.waf_mode" class="text-xs text-red-600">{{ form.errors.waf_mode }}</p>
-            <button type="submit" :disabled="form.processing || form.waf_mode === website.waf_mode" class="rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50">Save</button>
+            <button type="submit" :disabled="form.processing || form.waf_mode === website.waf_mode" class="rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50">{{ t('common.save') }}</button>
         </form>
     </section>
 </template>

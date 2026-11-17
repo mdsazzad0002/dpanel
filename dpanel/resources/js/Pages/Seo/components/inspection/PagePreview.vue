@@ -1,5 +1,8 @@
 <script setup>
 import { computed, ref } from 'vue';
+import { useI18n } from 'vue-i18n';
+
+const { t } = useI18n();
 
 // The page loaded through the panel's preview proxy (PreviewProxy.php), which
 // rewrites every URL in it, so styles, scripts and images come from this
@@ -12,8 +15,8 @@ const props = defineProps({
 const device = ref('desktop');
 const scripts = ref(false);
 const devices = [
-    { key: 'desktop', label: 'Desktop', icon: 'bi-display', width: '100%' },
-    { key: 'mobile', label: 'Mobile', icon: 'bi-phone', width: '390px' },
+    { key: 'desktop', get label() { return t('seo.preview.desktop'); }, icon: 'bi-display', width: '100%' },
+    { key: 'mobile', get label() { return t('seo.preview.mobile'); }, icon: 'bi-phone', width: '390px' },
 ];
 const width = computed(() => devices.find((d) => d.key === device.value).width);
 
@@ -36,18 +39,18 @@ const toggle = (active) => (active ? 'bg-white text-slate-800 shadow-sm dark:bg-
             </div>
             <label v-if="isPage" class="flex items-center gap-2 text-sm text-slate-600 dark:text-slate-300">
                 <input v-model="scripts" type="checkbox" class="rounded border-slate-300 dark:border-slate-600 dark:bg-slate-900" />
-                Run JavaScript
+                {{ t('seo.preview.runJs') }}
             </label>
             <a :href="report.final_url" target="_blank" rel="noopener noreferrer" class="ml-auto text-sm text-blue-600 hover:underline dark:text-blue-400">
-                Open live page<i class="bi bi-box-arrow-up-right ml-1"></i>
+                {{ t('seo.preview.openLive') }}<i class="bi bi-box-arrow-up-right ml-1"></i>
             </a>
         </div>
 
         <p v-if="isPage && status !== 200" class="rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-800 dark:bg-amber-900/20 dark:text-amber-300">
-            <i class="bi bi-exclamation-triangle mr-1"></i>The server answered {{ status }}, so this is its error page, not the page itself.
+            <i class="bi bi-exclamation-triangle mr-1"></i>{{ t('seo.preview.errorPage', { status }) }}
         </p>
         <p v-if="isPage" class="text-xs text-slate-500 dark:text-slate-400">
-            Fetched with the {{ report.agent }} user agent. Everything the page loads comes through this server, never straight from the site; with JavaScript off this is close to what a crawler reads before rendering.
+            {{ t('seo.preview.fetchedWith', { agent: report.agent }) }}
         </p>
 
         <div v-if="isPage" class="flex justify-center overflow-hidden rounded-xl border border-slate-200 bg-slate-100 dark:border-slate-700 dark:bg-slate-900">
@@ -56,20 +59,20 @@ const toggle = (active) => (active ? 'bg-white text-slate-800 shadow-sm dark:bg-
                 :src="report.preview_url"
                 :sandbox="sandbox"
                 :style="{ width }"
-                title="Page preview"
+                :title="t('seo.preview.frameTitle')"
                 referrerpolicy="no-referrer"
                 class="h-[75vh] max-w-full border-0 bg-white"
             ></iframe>
         </div>
         <div v-else-if="isImage" class="flex justify-center rounded-xl border border-slate-200 bg-slate-100 p-4 dark:border-slate-700 dark:bg-slate-900">
-            <img :src="report.preview_url" alt="Inspected image" referrerpolicy="no-referrer" class="max-h-[75vh] max-w-full object-contain" />
+            <img :src="report.preview_url" :alt="t('seo.preview.imageAlt')" referrerpolicy="no-referrer" class="max-h-[75vh] max-w-full object-contain" />
         </div>
         <div v-else class="rounded-xl border border-dashed border-slate-300 px-4 py-12 text-center dark:border-slate-700">
             <i class="bi bi-window-x text-3xl text-slate-300 dark:text-slate-600"></i>
-            <p class="mt-2 text-sm font-medium text-slate-700 dark:text-slate-200">Nothing to preview</p>
+            <p class="mt-2 text-sm font-medium text-slate-700 dark:text-slate-200">{{ t('seo.preview.nothing') }}</p>
             <p class="mt-1 text-xs text-slate-500 dark:text-slate-400">
-                <template v-if="!status">The page could not be reached.</template>
-                <template v-else>The server answered {{ status }} with {{ report.http?.type || 'no content type' }}, not an HTML page.</template>
+                <template v-if="!status">{{ t('seo.preview.unreachable') }}</template>
+                <template v-else>{{ t('seo.preview.notHtml', { status, type: report.http?.type || t('seo.preview.noType') }) }}</template>
             </p>
         </div>
     </div>

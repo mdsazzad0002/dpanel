@@ -1,6 +1,9 @@
 <script setup>
 import CheckList from '@/Pages/Seo/components/inspection/CheckList.vue';
 import { computed } from 'vue';
+import { useI18n } from 'vue-i18n';
+
+const { t } = useI18n();
 
 // Link cards as each app draws them from the Open Graph and X tags.
 const props = defineProps({
@@ -46,7 +49,7 @@ const header = 'border-b border-slate-200 bg-slate-50 px-4 py-2 text-xs font-sem
                                 <img :src="xImage" alt="" class="h-full w-full object-cover" />
                                 <span class="absolute bottom-3 left-3 max-w-[85%] truncate rounded bg-black/75 px-1.5 py-0.5 text-[13px] text-white">{{ s.twitter_title }}</span>
                             </div>
-                            <p class="mt-1 text-[13px] text-[#536471]">From {{ domain }}</p>
+                            <p class="mt-1 text-[13px] text-[#536471]">{{ t('seo.social.from', { domain }) }}</p>
                         </template>
                         <div v-else class="flex overflow-hidden rounded-2xl border border-[#cfd9de]">
                             <div class="flex w-[130px] shrink-0 items-center justify-center border-r border-[#cfd9de] bg-[#f7f9f9]" style="aspect-ratio: 1">
@@ -127,13 +130,13 @@ const header = 'border-b border-slate-200 bg-slate-50 px-4 py-2 text-xs font-sem
             </section>
         </div>
 
-        <p v-if="!s.image && s.image_url" class="text-sm text-slate-500 dark:text-slate-400">The share image is too large to show here: <a :href="s.image_url" target="_blank" rel="noopener noreferrer" class="text-blue-600 hover:underline dark:text-blue-400">open it</a>.</p>
-        <p class="text-xs text-slate-500 dark:text-slate-400">Apps cache link previews. After changing tags, refresh them with Facebook's Sharing Debugger or LinkedIn's Post Inspector.</p>
+        <p v-if="!s.image && s.image_url" class="text-sm text-slate-500 dark:text-slate-400"><i18n-t keypath="seo.social.tooLarge" scope="global"><template #link><a :href="s.image_url" target="_blank" rel="noopener noreferrer" class="text-blue-600 hover:underline dark:text-blue-400">{{ t('seo.social.openIt') }}</a></template></i18n-t></p>
+        <p class="text-xs text-slate-500 dark:text-slate-400">{{ t('seo.social.cacheNote') }}</p>
 
-        <CheckList title="Open Graph & X card" :checks="checks" />
+        <CheckList :title="t('seo.social.checks')" :checks="checks" />
 
         <section v-if="tags.length" class="rounded-xl border border-slate-200 bg-white dark:border-slate-700 dark:bg-slate-800">
-            <h2 class="border-b border-slate-100 px-4 py-3 text-sm font-semibold dark:border-slate-700">Tags found</h2>
+            <h2 class="border-b border-slate-100 px-4 py-3 text-sm font-semibold dark:border-slate-700">{{ t('seo.social.tagsFound') }}</h2>
             <dl class="divide-y divide-slate-100 text-sm dark:divide-slate-700">
                 <div v-for="[name, value] in tags" :key="name" class="grid gap-1 px-4 py-2 sm:grid-cols-[14rem_1fr]">
                     <dt class="font-mono text-xs text-slate-500 dark:text-slate-400">{{ name }}</dt>

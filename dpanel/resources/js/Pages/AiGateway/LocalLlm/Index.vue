@@ -8,6 +8,9 @@ import ConnectCard from './components/ConnectCard.vue';
 import InstalledModels from './components/InstalledModels.vue';
 import Downloads from './components/Downloads.vue';
 import ModelCatalog from './components/ModelCatalog.vue';
+import { useI18n } from 'vue-i18n';
+
+const { t } = useI18n();
 
 const page = usePage();
 const panelToken = page.props.panel?.token;
@@ -33,7 +36,7 @@ const switching = ref(false);
 
 const installedIds = computed(() => state.value.models.map((m) => m.id));
 const downloading = computed(() => Object.values(state.value.pulls || {}).some((p) => p.state === 'downloading'));
-const tuning = computed(() => Object.values(state.value.tunes || {}).some((t) => ['queued', 'running'].includes(t.state)));
+const tuning = computed(() => Object.values(state.value.tunes || {}).some((tune) => ['queued', 'running'].includes(tune.state)));
 const working = computed(() => downloading.value || tuning.value);
 
 const failure = (e, fallback) => e.response?.data?.message || fallback;
@@ -66,7 +69,7 @@ onBeforeUnmount(() => clearTimeout(timer));
 
 const toggleService = async () => {
     const turningOn = !state.value.service?.active;
-    if (!turningOn && !confirm('Turn off drust-llm? Loaded models are freed, chats stop using local models, and it stays off after a reboot.')) return;
+    if (!turningOn && !confirm(t('aiGateway.localLlm.offConfirm'))) return;
 
     switching.value = true;
     error.value = '';
@@ -74,10 +77,10 @@ const toggleService = async () => {
     try {
         const { data } = await axios.post(panelRoute('ai-gateway.local.service'), { running: turningOn });
         state.value = data;
-        notice.value = `drust-llm turned ${turningOn ? 'on' : 'off'}.`;
+        notice.value = turningOn ? t('aiGateway.localLlm.turnedOn') : t('aiGateway.localLlm.turnedOff');
     } catch (e) {
         if (e.response?.data?.models) state.value = e.response.data;
-        error.value = failure(e, `Could not turn drust-llm ${turningOn ? 'on' : 'off'}.`);
+        error.value = failure(e, turningOn ? t('aiGateway.localLlm.turnOnFailed') : t('aiGateway.localLlm.turnOffFailed'));
     } finally {
         switching.value = false;
     }
@@ -93,7 +96,7 @@ const pull = async (payload, done) => {
         clearTimeout(timer);
         schedule();
     } catch (e) {
-        error.value = failure(e, 'Could not start the download.');
+        error.value = failure(e, t('aiGateway.localLlm.pullFailed'));
     } finally {
         pulling.value = false;
     }
@@ -102,13 +105,13 @@ const pull = async (payload, done) => {
 // Also clears finished or failed entries from the downloads list.
 const cancelPull = async (id) => {
     const running = state.value.pulls?.[id]?.state === 'downloading';
-    if (running && !confirm(`Cancel downloading ${id}? The partial file is deleted.`)) return;
+    if (running && !confirm(t('aiGateway.localLlm.cancelConfirm', { id }))) return;
     error.value = '';
     try {
         await axios.delete(panelRoute('ai-gateway.local.cancel', { model: id }));
         await refresh();
     } catch (e) {
-        error.value = failure(e, `Could not cancel ${id}.`);
+        error.value = failure(e, t('aiGateway.localLlm.cancelFailed', { id }));
     }
 };
 
@@ -120,7 +123,7 @@ const modelAction = async (m, action, label) => {
         await axios[method](panelRoute(`ai-gateway.local.${action}`, { model: m.id }));
         await refresh();
     } catch (e) {
-        error.value = failure(e, `Could not ${action} ${m.id}.`);
+        error.value = failure(e, t(`aiGateway.localLlm.actionFailed.${action}`, { id: m.id }));
     } finally {
         delete modelBusy[m.id];
     }
@@ -134,13 +137,13 @@ const tune = async (m) => {
         clearTimeout(timer);
         schedule();
     } catch (e) {
-        error.value = failure(e, `Could not start the speed test for ${m.id}.`);
+        error.value = failure(e, t('aiGateway.localLlm.tuneFailed', { id: m.id }));
     }
 };
 
 const remove = (m) => {
-    if (!confirm(`Delete ${m.id}? The file is removed from the server and the AI Gateway stops using it.`)) return;
-    modelAction(m, 'destroy', 'Deleting');
+    if (!confirm(t('aiGateway.localLlm.deleteConfirm', { id: m.id }))) return;
+    modelAction(m, 'destroy', t('aiGateway.localLlm.deleting'));
 };
 
 const connect = async (quiet = false) => {
@@ -149,9 +152,9 @@ const connect = async (quiet = false) => {
     try {
         const { data } = await axios.post(panelRoute('ai-gateway.local.connect'));
         state.value = { ...state.value, provider: data.provider };
-        if (!quiet) notice.value = 'The AI Gateway now uses the installed models.';
+        if (!quiet) notice.value = t('aiGateway.localLlm.connected');
     } catch (e) {
-        error.value = failure(e, 'Could not connect to the AI Gateway.');
+        error.value = failure(e, t('aiGateway.localLlm.connectFailed'));
     } finally {
         connecting.value = false;
     }
@@ -159,13 +162,13 @@ const connect = async (quiet = false) => {
 </script>
 
 <template>
-    <Head title="Local Models" />
+    <Head :title="t('aiGateway.localLlm.title')" />
 
     <AuthenticatedLayout>
         <template #header>
             <div>
-                <h1 class="text-lg font-semibold">Local Models</h1>
-                <p class="text-sm text-slate-500 dark:text-slate-400">Run open models on this server with drust-llm, without a cloud API key.</p>
+                <h1 class="text-lg font-semibold">{{ t('aiGateway.localLlm.title') }}</h1>
+                <p class="text-sm text-slate-500 dark:text-slate-400">{{ t('aiGateway.localLlm.subtitle') }}</p>
             </div>
         </template>
 
@@ -186,8 +189,8 @@ const connect = async (quiet = false) => {
                 <ConnectCard :provider="state.provider" :has-models="state.models.length > 0" :busy="connecting" @connect="connect()" />
 
                 <InstalledModels :models="state.models" :busy="modelBusy" :tunes="state.tunes || {}" @tune="tune"
-                    @load="(m) => modelAction(m, 'load', 'Loading')"
-                    @unload="(m) => modelAction(m, 'unload', 'Unloading')"
+                    @load="(m) => modelAction(m, 'load', t('aiGateway.localLlm.loading'))"
+                    @unload="(m) => modelAction(m, 'unload', t('aiGateway.localLlm.unloading'))"
                     @remove="remove" />
 
                 <ModelCatalog :catalog="catalog" :categories="categories" :installed="installedIds" :pulls="state.pulls"

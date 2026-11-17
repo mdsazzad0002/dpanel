@@ -1,0 +1,677 @@
+{
+    "images": {
+        "title": "Docker Images",
+        "description": "Pull images, run containers from them and clean up the ones you no longer use."
+    },
+    "nav": {
+        "label": "Docker sections",
+        "shortcut": "Shortcut: g then {key}",
+        "sections": {
+            "o": "Overview",
+            "c": "Containers",
+            "s": "Stacks",
+            "t": "App templates",
+            "i": "Images",
+            "n": "Networks",
+            "v": "Volumes"
+        }
+    },
+    "shortcuts": {
+        "show": "Show this list",
+        "refresh": "Refresh",
+        "search": "Search on this page",
+        "overview": "Go to Overview",
+        "containers": "Go to Containers",
+        "stacks": "Go to Stacks",
+        "templates": "Go to App templates",
+        "images": "Go to Images",
+        "networks": "Go to Networks",
+        "volumes": "Go to Volumes",
+        "close": "Close a dialog",
+        "title": "Keyboard shortcuts",
+        "help": "They work anywhere on the Docker pages, except while typing in a field."
+    },
+    "pull": {
+        "title": "Pull an image",
+        "help": "From Docker Hub ({hub}) or another registry ({other}). Large images can take a few minutes.",
+        "pullImage": "Pull image",
+        "popular": "Popular:",
+        "pruneUntagged": "Remove untagged layers",
+        "pruneAll": "Remove all unused images"
+    },
+    "shared": {
+        "pulling": "Pulling…",
+        "cleaning": "Cleaning…",
+        "remove": "Remove",
+        "checking": "Checking…",
+        "hide": "Hide",
+        "show": "Show",
+        "refreshing": "Refreshing…",
+        "dismiss": "Dismiss",
+        "copied": "Copied",
+        "copy": "Copy",
+        "shortcutN": "Shortcut: n",
+        "name": "Name",
+        "creating": "Creating…",
+        "start": "Start",
+        "stop": "Stop",
+        "restart": "Restart",
+        "logs": "Logs",
+        "console": "Console",
+        "details": "Details",
+        "deploying": "Deploying…",
+        "updating": "Updating…",
+        "delete": "Delete"
+    },
+    "networkCard": {
+        "internal": "internal: no internet",
+        "builtIn": "built-in",
+        "stack": "stack {name}",
+        "removeFirst": "Remove its containers from it first",
+        "remove": "Remove network",
+        "leave": "Leave",
+        "empty": "No containers on it.",
+        "byName": "Containers here reach each other by name, e.g. {url}.",
+        "bridge": "The default network. Containers here can only reach each other by IP, not by name; create your own network for that.",
+        "toAdd": "Container to add",
+        "addPlaceholder": "Add a container…",
+        "extraName": "extra name",
+        "extraNames": "Extra names",
+        "add": "Add"
+    },
+    "imageList": {
+        "filters": {
+            "all": "All",
+            "used": "In use",
+            "unused": "Unused",
+            "dangling": "Untagged"
+        },
+        "search": "Find an image  ( / )",
+        "notUsed": "not used",
+        "runTitle": "Run a container from this image",
+        "run": "Run",
+        "pullTitle": "Pull again for a newer build of this tag",
+        "pullAgain": "Pull again",
+        "stillUsed": "Still used by a container",
+        "noMatch": "No image matches.",
+        "empty": "No images yet. Pull one above."
+    },
+    "stackEditor": {
+        "title": "New stack",
+        "help": "Paste or upload a docker-compose.yml. Its services start together and reach each other by service name.",
+        "name": "Stack name",
+        "nameHelp": "Lowercase letters, digits, - and _. Containers are named after it.",
+        "variables": "Variables (.env)",
+        "tipVar": "Use {var} in the file for values from here.",
+        "tipPorts": "Write ports as {port} to keep them private and put a domain in front.",
+        "tipVolumes": "Keep data in named volumes so redeploys keep it.",
+        "tipKeys": "Tab indents, Ctrl+S saves without deploying.",
+        "saveOnly": "Save only",
+        "deploying": "Deploying… (pulling images can take minutes)",
+        "saveDeploy": "Save & deploy"
+    },
+    "codeArea": {
+        "lines": "{count} lines",
+        "upload": "Upload file"
+    },
+    "usageGuide": {
+        "steps": {
+            "create": {
+                "title": "Create a website",
+                "body": "Add the domain under Websites, as for any other site. Its folder, SSL and File Manager come with it."
+            },
+            "runtime": {
+                "title": "Switch its runtime to Docker",
+                "body": "On the website's Manage page open Runtime settings and pick Docker. Enter the image (for example nginx:alpine), the port the app listens on, and the path inside the container where the site folder should appear."
+            },
+            "upload": {
+                "title": "Upload your files",
+                "body": "Use that website's File Manager: upload files or a zip and extract it in the site folder. The container sees the same folder, so you never upload into the container itself."
+            },
+            "open": {
+                "title": "Open it",
+                "body": "The domain works right away; the container's port stays on 127.0.0.1. Tick \"Open port to the internet\" on the Docker Service card only if you also want http://server-ip:port."
+            }
+        },
+        "title": "How to run an app with Docker",
+        "subtitle": "What to do in which order, and where your files go.",
+        "siteTitle": "Serve a website from a container (recommended)",
+        "goWebsites": "Go to Websites →",
+        "noDomainTitle": "Run a container without a domain",
+        "noDomainBody": "For databases, workers or tools that need no website, use \"Run container\" at the top of this page. Keep data the container writes in a named volume (a plain name such as {volume}), which Docker creates and keeps across recreates. Containers here, their sites and stack services all appear in the list above; a site's container is named {site}, manage it from its website instead.",
+        "permNote": "If an app cannot write to its site folder, it runs as a different user than the site. Keep that data in a named volume, or let it only read the folder."
+    },
+    "shell": {
+        "shortcuts": "Keyboard shortcuts (?)",
+        "refresh": "Refresh (r)"
+    },
+    "setup": {
+        "costs": {
+            "ram": "RAM while idle",
+            "cpu": "CPU while idle",
+            "cpuNote": "until a container runs",
+            "disk": "Disk",
+            "diskNote": "plus every image you pull",
+            "logs": "Logs",
+            "logsNote": "per container (3 × 10 MB)",
+            "logsValue": "30 MB max"
+        },
+        "checks": {
+            "ram": "At least 1 GB RAM (2 GB recommended) and 3 GB free disk",
+            "os": "Supported OS: Ubuntu, Debian, Rocky or AlmaLinux",
+            "hub": "Docker Hub is reachable, and the drust service is running"
+        },
+        "stoppedTitle": "Docker is installed but not running",
+        "stoppedBody": "Containers cannot start or be managed until the Docker service is back. On the server, run:",
+        "checkAgain": "Check again",
+        "badge": "Optional add-on · Off",
+        "missingTitle": "Docker is not installed on this server",
+        "missingBody": "Docker lets admins run apps as containers (Redis, n8n, Uptime Kuma, your own images) next to your websites. dPanel does not install it by default, so servers that never use containers do not pay for it.",
+        "readGuide": "Read the Docker guide ↗",
+        "installTitle": "Install it",
+        "step1": "1. Connect to the server over SSH and run:",
+        "step2": "2. It checks the server, shows the cost and asks before installing anything.",
+        "step3": "3. Come back here and press {button}. Docker then shows in the menu.",
+        "checksTitle": "The installer checks",
+        "safeTitle": "Safe defaults",
+        "safe1": "Only admins can manage Docker, and every action is logged.",
+        "safe2": "Container ports listen on 127.0.0.1 unless you mark them public.",
+        "safe3": "Remove it any time: {cmd} (your data is kept)."
+    },
+    "logs": {
+        "loadFailed": "Could not load logs.",
+        "lines": "Lines",
+        "last": "Last {count} lines",
+        "filter": "Filter lines",
+        "match": "{count} match",
+        "matches": "{count} matches",
+        "live": "Live",
+        "noWrap": "No wrap",
+        "wrap": "Wrap",
+        "reload": "Reload",
+        "noMatch": "No line matches.",
+        "empty": "No log output."
+    },
+    "console": {
+        "quick": {
+            "files": "Files",
+            "variables": "Variables",
+            "processes": "Processes",
+            "disk": "Disk",
+            "os": "OS",
+            "network": "Network"
+        },
+        "notRunning": "The container is {state}. Start it to run commands inside it.",
+        "quickLabel": "Quick:",
+        "clear": "Clear",
+        "help": "Type a command below and press Enter. Programs that wait for input (top, vim, a shell) do not work here; commands stop after one minute.",
+        "timedOut": "Stopped after one minute.",
+        "exitCode": "exit code {code}",
+        "running": "running…",
+        "runningBtn": "Running…",
+        "run": "Run",
+        "advanced": "Run as another user or in another folder",
+        "user": "user (e.g. www-data)"
+    },
+    "templates": {
+        "title": "App templates",
+        "description": "Ready-made apps: pick one, check the settings, deploy. Passwords are generated for you.",
+        "running": "{name} is running",
+        "openIt": "Open it →",
+        "saveDetails": "Save these details now; passwords are not shown again here (they stay in the container's settings).",
+        "categories": {
+            "all": "All",
+            "database": "Databases",
+            "search": "Search",
+            "cms": "Websites & CMS",
+            "tools": "Tools",
+            "storage": "Storage & queues"
+        },
+        "kind": "Kind",
+        "kindAll": "Containers and stacks",
+        "kindContainer": "Single containers",
+        "kindStack": "Stacks (several containers)",
+        "search": "Find an app  ( / )",
+        "stack": "stack",
+        "webApp": "web app",
+        "setupStack": "Set up stack",
+        "setup": "Set up",
+        "noMatch": "No template matches. Anything on Docker Hub still works: {run} or {compose}.",
+        "runAny": "run any image",
+        "pasteCompose": "paste a compose file"
+    },
+    "networks": {
+        "disconnectConfirm": "Take {container} off {name}? It can no longer reach the containers there by name.",
+        "removeConfirm": "Remove network {name}?",
+        "pruneConfirm": "Remove every network no container uses? Built-in networks stay.",
+        "title": "Docker Networks",
+        "description": "Put containers on the same network so they can reach each other by name.",
+        "create": "Create network",
+        "howTitle": "How networks work",
+        "how1": "Create a network, e.g. {name}.",
+        "how2": "Add containers to it here, or pick it under \"More options\" when you run one.",
+        "how3": "They now reach each other by container name: Kibana uses {url}, an app uses {host} as its database host.",
+        "howNote": "Nothing on a network is open to the internet unless a container publishes a public port. Compose stacks get their own network automatically.",
+        "createTitle": "Create a network",
+        "subnet": "Subnet (optional)",
+        "subnetPlaceholder": "automatic, or e.g. 10.20.0.0/24",
+        "internalTitle": "Containers on an internal network reach only each other, never the internet",
+        "internal": "Internal only",
+        "empty": "No networks of your own yet. {link}.",
+        "createOne": "Create one",
+        "hideBuiltIn": "Hide empty built-in networks",
+        "showBuiltIn": "Show {count} empty built-in network(s)",
+        "prune": "Remove unused networks"
+    },
+    "volumes": {
+        "filters": {
+            "all": "All",
+            "used": "In use",
+            "unused": "Unused",
+            "anonymous": "Anonymous"
+        },
+        "removePrompt": "This deletes volume {name} and every file in it. This cannot be undone.\n\nType the volume name to confirm:",
+        "pruneAllPrompt": "Delete EVERY volume no container uses, named ones included? Their data is gone for good.\n\nType DELETE to confirm:",
+        "pruneConfirm": "Remove unused anonymous volumes (the unnamed ones containers leave behind)? Named volumes are kept.",
+        "title": "Docker Volumes",
+        "description": "Where containers keep data that must survive a restart, update or recreate.",
+        "createTitle": "Create a volume",
+        "createHelp": "Containers also create one automatically when you type a new name in their Volumes field.",
+        "name": "Volume name",
+        "create": "Create",
+        "search": "Find a volume  ( / )",
+        "anonymous": "anonymous",
+        "copyPath": "Copy path on the server",
+        "inUse": "In use: remove its containers first",
+        "delete": "Delete volume and its data",
+        "noMatch": "No volume matches.",
+        "empty": "No volumes yet.",
+        "prune": "Remove unused anonymous volumes",
+        "pruneAll": "Delete all unused volumes",
+        "note": "Volume files live under Docker's folder on the server, which the File Manager does not open. To edit an app's files yourself, mount a folder inside a website's home instead (e.g. {path})."
+    },
+    "overview": {
+        "quick": {
+            "run": "Run a container",
+            "runHint": "Any image or docker run command",
+            "stack": "Deploy a stack",
+            "stackHint": "Paste a docker-compose.yml",
+            "apps": "One-click apps",
+            "appsHint": "Databases, search, CMS, tools",
+            "pull": "Pull an image",
+            "pullHint": "From Docker Hub or any registry",
+            "network": "Connect containers",
+            "networkHint": "Create a network",
+            "domain": "Serve on a domain",
+            "domainHint": "Website with Docker runtime"
+        },
+        "description": "Everything running in containers on this server, at a glance.",
+        "running": "Running",
+        "stopped": "{count} stopped",
+        "composeApps": "compose apps",
+        "onDisk": "{size} on disk",
+        "server": "Server",
+        "attention": "Needs a look",
+        "openLogs": "Open logs",
+        "quickTitle": "Quick actions",
+        "diskUse": "Disk use",
+        "what": "What",
+        "count": "Count",
+        "size": "Size",
+        "canFree": "Can free",
+        "dataDir": "Docker keeps its data in {dir}. Container logs are capped at 30 MB each.",
+        "cleanTitle": "Clean up",
+        "reclaimable": "Space you can get back without touching anything that runs.",
+        "nothingToClean": "Nothing much to clean right now.",
+        "volumesKept": "Volumes (your data) are never removed here.",
+        "quickConfirm": "Remove stopped containers, unused networks, untagged images and build cache? Running containers and volumes are not touched.",
+        "quickClean": "Quick clean-up",
+        "quickCleanHint": "stopped containers, unused networks, untagged images, build cache",
+        "deepConfirm": "Also remove EVERY image no container uses? They are pulled again when needed, which takes time and bandwidth.",
+        "deepClean": "Deep clean-up",
+        "deepCleanHint": "all of the above, plus every unused image",
+        "cacheConfirm": "Clear the build cache? The next image build starts from scratch.",
+        "clearCache": "Clear build cache",
+        "engine": "Engine",
+        "installed": "installed",
+        "notInstalled": "not installed",
+        "kernel": "Kernel",
+        "architecture": "Architecture",
+        "storage": "Storage"
+    },
+    "containers": {
+        "renamePrompt": "New name for {name}",
+        "title": "Docker Containers",
+        "description": "Run, inspect and control the containers on this server.",
+        "runNew": "Run a new container",
+        "runContainer": "Run container",
+        "runHint": "Any image, or paste a docker run command",
+        "pruneStopped": "Remove stopped containers",
+        "stoppedCount": "{count} stopped; volumes are kept",
+        "noneStopped": "None stopped",
+        "emptyHint": "{run} or pick a ready-made app from {templates}.",
+        "runOne": "Run one"
+    },
+    "stacks": {
+        "saveFailed": "The stack could not be saved.",
+        "targetService": "service {service} of {stack}",
+        "targetStack": "stack {stack}",
+        "stopConfirm": "Stop {target}?",
+        "downConfirm": "Take {name} down? Its containers and network are removed; volumes (data) are kept, and Deploy brings it back.",
+        "deleteConfirm": "Delete stack {name}? Its containers and its compose file are removed.",
+        "downShellConfirm": "Take {name} down? Its containers and network are removed.",
+        "volumesPrompt": "Also delete its volumes, with ALL their data? Type {name} to delete them too, or leave empty to keep them.",
+        "runningCount": "{running}/{total} running",
+        "notDeployed": "not deployed",
+        "title": "Docker Stacks",
+        "description": "Apps made of several containers, run together from one docker-compose file.",
+        "noCompose": "Docker Compose is not installed",
+        "noComposeHelp": "Stacks need the compose plugin. On the server run {apt} (Ubuntu/Debian) or {dnf}, then refresh.",
+        "pasteCompose": "Paste a compose file",
+        "orUpload": "or upload docker-compose.yml",
+        "readyMade": "ready-made stack",
+        "allTemplates": "All app templates →",
+        "search": "Find a stack  ( / )",
+        "fromShell": "from shell",
+        "noMatch": "No stack matches.",
+        "empty": "No stacks yet. Paste a compose file or start from a template above."
+    },
+    "containerList": {
+        "filters": {
+            "all": "All",
+            "running": "Running",
+            "stopped": "Stopped",
+            "stacks": "In stacks",
+            "sites": "Websites"
+        },
+        "liveTitle": "CPU and memory, refreshed every 5 seconds",
+        "live": "Live usage",
+        "search": "Find a container  ( / )",
+        "selected": "{count} selected",
+        "selectAll": "Select all",
+        "image": "Image",
+        "usage": "Usage",
+        "ports": "Ports",
+        "select": "Select {name}",
+        "website": "website",
+        "noPorts": "no ports",
+        "resume": "Resume",
+        "noMatch": "No container matches.",
+        "empty": "No containers yet."
+    },
+    "stackDetail": {
+        "tabs": {
+            "services": "Services",
+            "logs": "Logs",
+            "domain": "Put on a domain",
+            "compose": "Compose file",
+            "composeReadOnly": "Compose file (read-only)"
+        },
+        "outside": "started outside the panel",
+        "deployTitle": "Create or update its containers from the compose file",
+        "deploy": "Deploy",
+        "updateTitle": "Pull the newest images and recreate what changed",
+        "updateImages": "Update images",
+        "downTitle": "Stop and remove its containers and network; volumes are kept",
+        "down": "Down",
+        "takeDown": "Take down",
+        "sections": "Stack sections",
+        "notRunning": "Not running yet.",
+        "deployIt": "Deploy it",
+        "toStart": "to start {services}.",
+        "reachHint": "Services reach each other by service name on the stack's own network, e.g. {host} as the database host.",
+        "service": "Service:",
+        "checkedHint": "Saved files are checked with {cmd} first; a broken file never replaces a working one.",
+        "shellNote": "This stack was started from the shell, so the panel only shows its file. Start, stop, restart and take down work.",
+        "unreadable": "The compose file could not be read.",
+        "domainIntro": "Open this stack on your own domain, with SSL, by putting a website in front of one of its ports.",
+        "portsTitle": "Ports you can use",
+        "portTarget": "→ {service} (container port {port})",
+        "alsoPublic": "also public on the server IP",
+        "noPorts": "This stack publishes no port. Add one to the web service, e.g. {example}, and deploy.",
+        "step1": "Create a website for the domain under {websites} (or open an existing one).",
+        "step2": "On its {manage} page open {runtime}, choose {docker}, then {use}.",
+        "step3": "Pick stack {stack} and the port{port}. Save: the domain now opens the app, and SSL works as for any site.",
+        "goWebsites": "Go to Websites",
+        "unsaved": "Unsaved changes",
+        "discard": "Discard"
+    },
+    "form": {
+        "recreateTitle": "Edit and recreate {name}",
+        "duplicateTitle": "Duplicate container",
+        "recreate": "Recreate container",
+        "runCopy": "Run copy",
+        "noImage": "No image found. Paste a full command such as: docker run -d -p 8080:80 nginx:alpine",
+        "filledIgnored": "Filled in. Not supported here and left out: {items}",
+        "filled": "Filled in from the command. Check the values, then run.",
+        "publicConfirm": "A public port is open to the internet. Docker writes its own firewall rules, so the server firewall does not block it. Continue?",
+        "recreateConfirm": "Recreate {name}? It is stopped and replaced; data in volumes is kept, anything else inside the container is lost. If the new one fails to start, the old one comes back.",
+        "help": "The image is pulled first if it is not on the server. Ports listen on 127.0.0.1 only, unless you make them public.",
+        "pasteToggle": "Have a {cmd} command? Paste it to fill this form",
+        "fill": "Fill in the form",
+        "nameOptional": "Name (optional)",
+        "restart": "Restart",
+        "restartOptions": {
+            "unlessStopped": "Unless stopped (recommended)",
+            "always": "Always",
+            "onFailure": "On failure",
+            "never": "Never"
+        },
+        "portsHint": "server port → container port",
+        "addPort": "Add port",
+        "serverPort": "Server port",
+        "containerPort": "Container port",
+        "protocol": "Protocol",
+        "public": "Public",
+        "removePort": "Remove port",
+        "env": "Environment variables",
+        "pasteEnv": "Paste .env",
+        "addVar": "Add variable",
+        "addVars": "Add these variables",
+        "varName": "Variable name",
+        "value": "value",
+        "varValue": "Variable value",
+        "removeVar": "Remove variable",
+        "volumesHint": "keep data across recreates",
+        "addVolume": "Add volume",
+        "volumesHelp": "A plain name ({name}) makes a named volume Docker manages. A folder in a website's home ({folder}) can be edited with that website's File Manager.",
+        "volumeSource": "my-data or {dir}/user/folder",
+        "volumeOrFolder": "Volume or host folder",
+        "pathInContainer": "Path in container",
+        "readOnly": "Read-only",
+        "removeVolume": "Remove volume",
+        "more": "More options",
+        "moreHint": "network, limits, command",
+        "network": "Network",
+        "defaultNetwork": "Default (bridge)",
+        "networkHelp": "Containers on the same network reach each other by name. Create one under Networks.",
+        "aliases": "Extra names on that network",
+        "memory": "Memory limit",
+        "memoryPlaceholder": "e.g. 512m or 2g (blank: no limit)",
+        "cpu": "CPU limit",
+        "cpuPlaceholder": "e.g. 0.5 or 2 (blank: no limit)",
+        "command": "Command (replaces the image's)",
+        "commandPlaceholder": "e.g. redis-server --appendonly yes",
+        "entrypointPlaceholder": "blank: the image's own",
+        "hostnamePlaceholder": "blank: the container ID",
+        "pull": "Always pull the newest image first",
+        "working": "Working… (pulling can take minutes)"
+    },
+    "details": {
+        "health": "health: {value}",
+        "siteNote": "This container belongs to a website. Change its settings from that website's Runtime settings, or they are replaced on its next restart.",
+        "stackNote": "Part of stack {stack}. Edit its settings in the stack's compose file, so a redeploy keeps them.",
+        "pause": "Pause",
+        "editRecreate": "Edit & recreate",
+        "duplicate": "Duplicate",
+        "updateTitle": "Pull the newest image and recreate with the same settings",
+        "updateImage": "Update image",
+        "rename": "Rename",
+        "kill": "Kill",
+        "sections": "Container sections",
+        "status": "Status",
+        "started": "Started",
+        "stoppedAt": "{date} (exit {code})",
+        "oom": "It was stopped for using too much memory. Raise its memory limit or give the server more RAM.",
+        "restarts": "Restarts",
+        "restartPolicy": "{count} · policy {policy}",
+        "created": "Created",
+        "limits": "Limits",
+        "noRam": "no RAM limit",
+        "noCpu": "no CPU limit",
+        "public": "public",
+        "open": "Open ↗",
+        "localOnly": "only from the server; reach it through a domain",
+        "noPorts": "No published ports. Other containers on its networks can still reach it.",
+        "command": "Command",
+        "workdir": "in {dir}",
+        "user": "as {user}",
+        "envNote": "Includes the image's own variables. Change them with Edit & recreate.",
+        "hideValues": "Hide values",
+        "showValues": "Show values",
+        "copyValue": "Copy value",
+        "noMounts": "Nothing is mounted: everything the container writes is lost when it is recreated or removed. Add a volume with Edit & recreate.",
+        "readOnly": "read-only",
+        "volume": "volume {name}",
+        "bindNote": "Edit these files with the File Manager of the website that owns this folder.",
+        "reachAs": "Other containers on it reach this one as:",
+        "join": "Join network",
+        "choose": "Choose…",
+        "extraNames": "Extra names (optional)",
+        "joinBtn": "Join"
+    },
+    "request": {
+        "failed": "Request failed."
+    },
+    "actions": {
+        "loadFailed": "Could not load Docker status.",
+        "confirmRemove": "Remove container {name}? It is stopped first, and anything not kept in a volume is lost.",
+        "confirmStop": "Stop container {name}?",
+        "confirmKill": "Kill container {name}? It gets no chance to shut down cleanly.",
+        "confirmUpdate": "Pull the newest {image} and recreate {name} with the same settings? Data in volumes is kept; it is down for a few seconds.",
+        "bulkRemove": "Remove {count} container(s)? {names}",
+        "bulkStop": "Stop {count} container(s)? {names}",
+        "pruneContainers": "Remove every stopped container? Their volumes are kept.",
+        "forceRemoveImage": "Force-remove image {image}? Containers using it keep running but cannot be recreated from it.",
+        "removeImage": "Remove image {image}?",
+        "pruneAllImages": "Remove every image that no container uses, including tagged ones? They are pulled again when needed.",
+        "pruneImages": "Remove every untagged image layer that no container uses?"
+    },
+    "catalog": {
+        "connect": "Connect:",
+        "hostPortUserPassword": "host {host}, port {port}, user {user}, password {password}.",
+        "urlApiKey": "{url}, API key {key}.",
+        "redis": {
+            "description": "In-memory cache and queue for Laravel, Node and WordPress object cache.",
+            "note": "host {host}, port {port}, password {password}. The server's own Redis keeps port 6379."
+        },
+        "postgres": {
+            "description": "A separate PostgreSQL in any version, next to the server's own databases.",
+            "note": "host {host}, port {port}, user and database {app}, password {password}."
+        },
+        "mysql": {
+            "description": "Another MySQL version without touching the server's MySQL."
+        },
+        "mariadb": {
+            "description": "MariaDB in its own container and version."
+        },
+        "mongo": {
+            "description": "Document database for Node and Python apps."
+        },
+        "elasticsearch": {
+            "description": "Full-text search for shops and apps, one node, ready in a minute.",
+            "connect": "{url} (security is off, so keep the port private).",
+            "note": "Needs about 1 GB RAM. If it stops with \"vm.max_map_count is too low\", run {command} on the server. Want Kibana too? Use the Elasticsearch + Kibana stack."
+        },
+        "meilisearch": {
+            "description": "Fast, typo-tolerant search with a tiny footprint. Works with Laravel Scout.",
+            "note": "{url}, master key {key}."
+        },
+        "typesense": {
+            "description": "Open-source search engine, an Algolia alternative."
+        },
+        "qdrant": {
+            "description": "Vector database for AI search and RAG."
+        },
+        "minio": {
+            "description": "S3-compatible file storage for uploads and backups.",
+            "connect": "S3 API {url}, user {user}, password {password}.",
+            "note": "The web console is on port {port}; put it behind a website to open it in a browser."
+        },
+        "rabbitmq": {
+            "description": "Message broker with its management UI.",
+            "note": "{url}; management UI on port {port}."
+        },
+        "memcached": {
+            "description": "Simple memory cache."
+        },
+        "uptimeKuma": {
+            "description": "Uptime monitor with alerts and status pages.",
+            "note": "To open it on a domain with SSL, create a website and set its runtime to Docker with image {image} and port {port} instead."
+        },
+        "n8n": {
+            "description": "Workflow automation, a self-hosted Zapier.",
+            "note": "Best on its own domain: create a website with the Docker runtime, image {image}, port {port}. For a database-backed setup use the n8n + PostgreSQL stack."
+        },
+        "adminer": {
+            "description": "Browse any database container in the browser.",
+            "note": "Put it on the same network as the database ({more} → {network}) and log in with the database container's name as the server."
+        },
+        "mailpit": {
+            "description": "Catches outgoing email from apps under test.",
+            "note": "SMTP {address}; the inbox UI is on port {port}."
+        },
+        "gitea": {
+            "description": "Lightweight self-hosted Git service.",
+            "note": "Open it on a domain by creating a website with the Docker runtime (image {image}, port {port}), or use the Gitea + PostgreSQL stack."
+        },
+        "metabase": {
+            "description": "Dashboards and questions on top of your databases.",
+            "note": "Needs about 1 GB RAM. Open it on a domain with a Docker-runtime website on port 3000."
+        },
+        "nginx": {
+            "description": "Serves a folder of HTML files.",
+            "note": "Change the volume to your folder. For a static site on a domain, a normal PHP website is simpler; use this when you need Nginx itself."
+        },
+        "elasticKibana": {
+            "description": "Search engine with its dashboard, already connected to each other.",
+            "note": "Kibana reaches Elasticsearch as {internal} on the stack's own network. Elasticsearch: {url}. To open Kibana in a browser, put a website in front of port {port} (Runtime settings → Docker → \"Use a running stack\"). Needs about 2 GB RAM."
+        },
+        "wordpress": {
+            "description": "WordPress with its own MySQL, isolated from the server.",
+            "note": "After deploying, put a website in front of port {port} to open it on your domain with SSL. The database is reachable only by WordPress."
+        },
+        "ghost": {
+            "description": "Modern publishing and newsletters.",
+            "note": "Set {variable} to the domain you will use, then put that website in front of port {port}."
+        },
+        "nextcloud": {
+            "description": "Files, calendar and contacts: your own cloud. With MariaDB and Redis.",
+            "note": "Set {variable}, deploy, then put that website in front of port {port} and finish the setup in the browser."
+        },
+        "giteaPg": {
+            "description": "Git hosting backed by PostgreSQL.",
+            "note": "The web UI goes behind a website on port {port}. Git over SSH uses public port {sshPort} (allow it in the firewall)."
+        },
+        "n8nPg": {
+            "description": "Workflow automation with a proper database.",
+            "note": "Set {variable}, deploy, then put that website in front of port {port}."
+        },
+        "umami": {
+            "description": "Privacy-friendly website analytics, a Google Analytics alternative.",
+            "note": "Put a website in front of port {port}. First login: {user} / {password}; change it right away."
+        },
+        "metabasePg": {
+            "description": "Business dashboards with their settings kept in PostgreSQL.",
+            "note": "Needs about 1.5 GB RAM. Put a website in front of port {port}."
+        },
+        "mongoExpress": {
+            "description": "MongoDB with a web admin, on their own network.",
+            "note": "Apps connect to {url}. The admin UI (user {user}, password in the variables) goes behind a website on port {port}."
+        },
+        "redisInsight": {
+            "description": "Redis with a browser UI to look inside it.",
+            "note": "In RedisInsight add the database with host {host}, port {port} and the password from the variables."
+        }
+    }
+}

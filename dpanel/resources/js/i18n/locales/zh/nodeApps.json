@@ -1,0 +1,49 @@
+{
+    "card": {
+        "running": "运行中",
+        "stopped": "已停止",
+        "port": "端口",
+        "user": "用户",
+        "default": "默认",
+        "runs": "运行",
+        "publicOn": "公开地址",
+        "notPublic": "未公开。{link}。",
+        "publishLink": "在 规则 → 端口共享 中发布",
+        "listening": "端口正在监听",
+        "notListening": "端口未监听",
+        "start": "启动",
+        "stop": "停止",
+        "restart": "重启",
+        "status": "状态",
+        "edit": "编辑",
+        "delete": "删除"
+    },
+    "index": {
+        "title": "Node.js 应用",
+        "subtitle": "Next.js、Express、Nest……可从主目录的任意文件夹运行。",
+        "new": "新建 Node.js 应用",
+        "empty": "还没有 Node.js 应用",
+        "noHome": "没有可用的主目录",
+        "emptyHelp": "先创建一个，然后在 规则 → 端口共享 中发布。",
+        "noHomeHelp": "应用在网站用户的主目录中运行。请先创建一个网站。"
+    },
+    "form": {
+        "editTitle": "编辑 {name}",
+        "newTitle": "新建 Node.js 应用",
+        "subtitle": "以该主目录的 Linux 用户身份，从你选择的任意文件夹运行。在 规则 → 端口共享 中发布。",
+        "name": "应用名称",
+        "home": "主目录",
+        "workdir": "工作目录",
+        "workdirHelp": "主目录中的任意文件夹（package.json 所在处）。留空则从主目录本身运行。",
+        "optional": "（可选）",
+        "port": "端口",
+        "auto": "自动",
+        "startAfter": "创建后启动",
+        "portNote": "端口 {port}。正在运行的应用会以新设置重启。",
+        "create": "创建应用",
+        "overrides": "覆盖 {cmd}。应用必须监听 127.0.0.1 和 {port}。",
+        "startCommand": "启动命令",
+        "entry": "入口文件",
+        "version": "Node.js 版本"
+    }
+}

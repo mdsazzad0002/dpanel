@@ -1,0 +1,53 @@
+{
+    "index": {
+        "title": "Billing system",
+        "subtitle": "Customer account স্বয়ংক্রিয় করতে একটি বাইরের billing platform connect করুন।",
+        "configured": "Configure করা আছে",
+        "setupRequired": "Setup প্রয়োজন",
+        "whmcsHelp": "WHMCS থেকে নিরাপদে plan provision, package পরিবর্তন, account suspend এবং একবার-ব্যবহারযোগ্য panel login link তৈরি করুন।",
+        "openGuide": "Setup guide খুলুন"
+    },
+    "whmcs": {
+        "title": "WHMCS দিয়ে billing",
+        "subtitle": "শুধু backend-এ provisioning, lifecycle automation এবং একবার-ব্যবহারযোগ্য SSO।",
+        "back": "Billing service",
+        "ready": "Integration প্রস্তুত",
+        "incomplete": "Configuration অসম্পূর্ণ",
+        "step1": "১. dPanel configure করুন",
+        "step1Help": "এই মানগুলো dPanel-এর {file}-এ যোগ করুন। WHMCS server-এর public outbound IP ব্যবহার করুন; একাধিক IP বা CIDR কমা দিয়ে আলাদা করুন।",
+        "set": "সেট করা আছে",
+        "missing": "নেই",
+        "allowedIps": "অনুমোদিত IP",
+        "allowedDomains": "অনুমোদিত domain",
+        "copied": "Copy হয়েছে",
+        "copy": "Copy",
+        "thenRun": "তারপর চালান:",
+        "oneCommand": "এক command-এ setup ও .env sync",
+        "oneCommandHelp": "উদাহরণের IP ও domain বদলে নিন, তারপর copy/paste করুন। বিদ্যমান key হালনাগাদ হবে, অনুপস্থিত key যোগ হবে, এবং বিদ্যমান secret অপরিবর্তিত থাকবে।",
+        "generate": "Secret তৈরি করুন",
+        "copyCommand": "Command copy করুন",
+        "reset": "Reset",
+        "editHelp": "আগে IP/domain সম্পাদনা করুন, একটি secret তৈরি করুন, তারপর command copy করুন। আবার তৈরি করলে এই textarea-তে শুধু secret বদলাবে।",
+        "operations": "উপলভ্য কাজ",
+        "ops": {
+            "test": "Connection test",
+            "sync": "Plan sync",
+            "create": "Account তৈরি",
+            "change": "Plan পরিবর্তন",
+            "suspend": "Suspend",
+            "unsuspend": "Unsuspend",
+            "terminate": "বাতিল (Terminate)",
+            "login": "স্বয়ংক্রিয় login"
+        },
+        "security": "নিরাপত্তা",
+        "sec1": "Source IP এবং signed WHMCS domain দুটোই নিজ নিজ allowlist-এর সঙ্গে না মিললে dPanel process করার আগেই request প্রত্যাখ্যান করে।",
+        "sec2": "প্রতিটি request method, path, WHMCS domain, timestamp, nonce এবং raw-body hash দিয়ে HMAC-SHA256 signed থাকে।",
+        "sec3": "{seconds} সেকেন্ডের চেয়ে পুরোনো timestamp এবং পুনরায় ব্যবহৃত nonce প্রত্যাখ্যান করা হয়।",
+        "sec4": "SSO URL {seconds} সেকেন্ড পর মেয়াদোত্তীর্ণ হয় এবং মাত্র একবার ব্যবহার করা যায়। Browser-কে শুধু ফেরত আসা URL-এ redirect করুন।",
+        "trouble": "সমস্যা সমাধান",
+        "e403": "WHMCS-এর outbound IP এবং proxy forwarding পরীক্ষা করুন।",
+        "e401": "Client ID, shared secret, signature বা server-এর ঘড়ি মিলছে না।",
+        "e409": "Nonce পুনরায় ব্যবহার করা হয়েছে, অথবা email-টি অন্য account-এর।",
+        "e422": "Plan slug বা প্রয়োজনীয় service/customer data সঠিক নয়।"
+    }
+}

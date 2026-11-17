@@ -1,0 +1,16 @@
+{
+    "title": "SMTP 中继",
+    "subtitle": "通过另一台服务器发送所有外发邮件",
+    "now": "当前外发邮件",
+    "direct": "直接从本服务器发送",
+    "through": "通过 {host}:{port}",
+    "host": "中继服务器",
+    "port": "端口",
+    "username": "用户名",
+    "password": "密码",
+    "help": "始终要求 TLS。密码交给 Postfix，面板不保存，因此每次保存时都需重新输入。",
+    "save": "保存并应用",
+    "disable": "直接发送",
+    "disableConfirm": "恢复为直接从本服务器发送外发邮件？",
+    "failed": "Postfix 未被修改。"
+}

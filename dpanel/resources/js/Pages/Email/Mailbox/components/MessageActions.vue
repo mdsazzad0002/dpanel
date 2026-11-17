@@ -1,5 +1,8 @@
 <script setup>
 import { computed, onBeforeUnmount, ref, watch } from 'vue';
+import { useI18n } from 'vue-i18n';
+
+const { t } = useI18n();
 
 // Gmail's per-message actions: a reply button and a "more" menu. Every
 // message of a conversation gets the same set, so none is missing actions.
@@ -18,11 +21,11 @@ const ui = computed(() => (props.isDark
     ? { icon: 'text-slate-400 hover:bg-slate-800 hover:text-slate-100', menu: 'border-slate-700 bg-slate-900 text-slate-200 shadow-black/50', item: 'hover:bg-slate-800', sep: 'border-slate-800' }
     : { icon: 'text-slate-500 hover:bg-slate-100 hover:text-slate-900', menu: 'border-slate-200 bg-white text-slate-700 shadow-slate-900/15', item: 'hover:bg-slate-100', sep: 'border-slate-100' }));
 
-const replyItems = [
-    { id: 'reply', label: 'Reply', icon: 'bi-reply' },
-    { id: 'reply-all', label: 'Reply all', icon: 'bi-reply-all' },
-    { id: 'forward', label: 'Forward', icon: 'bi-forward' },
-];
+const replyItems = computed(() => [
+    { id: 'reply', label: t('email.mailbox.actions.reply'), icon: 'bi-reply' },
+    { id: 'reply-all', label: t('email.mailbox.actions.replyAll'), icon: 'bi-reply-all' },
+    { id: 'forward', label: t('email.mailbox.actions.forward'), icon: 'bi-forward' },
+]);
 
 const pick = (id) => {
     open.value = false;
@@ -48,10 +51,10 @@ onBeforeUnmount(() => {
 
 <template>
     <div ref="root" class="relative flex shrink-0 items-center" @click.stop @keydown.enter.stop>
-        <button type="button" :class="[ui.icon, 'flex h-8 w-8 items-center justify-center rounded-full transition']" title="Reply" aria-label="Reply" @click="pick('reply')">
+        <button type="button" :class="[ui.icon, 'flex h-8 w-8 items-center justify-center rounded-full transition']" :title="t('email.mailbox.actions.reply')" :aria-label="t('email.mailbox.actions.reply')" @click="pick('reply')">
             <i class="bi bi-reply text-base"></i>
         </button>
-        <button type="button" :class="[ui.icon, 'flex h-8 w-8 items-center justify-center rounded-full transition']" title="More" aria-label="More actions" aria-haspopup="menu" :aria-expanded="open" @click="open = !open">
+        <button type="button" :class="[ui.icon, 'flex h-8 w-8 items-center justify-center rounded-full transition']" :title="t('email.mailbox.actions.more')" :aria-label="t('email.mailbox.actions.moreActions')" aria-haspopup="menu" :aria-expanded="open" @click="open = !open">
             <i class="bi bi-three-dots-vertical text-base"></i>
         </button>
 

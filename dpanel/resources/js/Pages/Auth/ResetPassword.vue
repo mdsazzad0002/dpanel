@@ -5,6 +5,9 @@ import InputLabel from '@/Components/InputLabel.vue';
 import PrimaryButton from '@/Components/PrimaryButton.vue';
 import TextInput from '@/Components/TextInput.vue';
 import { Head, useForm } from '@inertiajs/vue3';
+import { useI18n } from 'vue-i18n';
+
+const { t } = useI18n();
 
 const props = defineProps({
     email: {
@@ -33,24 +36,24 @@ const submit = () => {
 
 <template>
     <GuestLayout>
-        <Head title="Reset Password" />
+        <Head :title="t('auth.reset.submit')" />
 
         <div class="space-y-6">
             <div class="space-y-2">
                 <p class="font-mono text-xs uppercase tracking-[0.32em] text-emerald-300/80">
-                    Reset password
+                    {{ t('auth.reset.eyebrow') }}
                 </p>
                 <h2 class="text-2xl font-semibold tracking-tight text-slate-50">
-                    Choose a new password
+                    {{ t('auth.reset.title') }}
                 </h2>
                 <p class="text-sm leading-6 text-slate-300">
-                    Use the email address tied to your account and set a new secure password.
+                    {{ t('auth.reset.subtitle') }}
                 </p>
             </div>
 
             <form class="space-y-5" @submit.prevent="submit">
             <div>
-                <InputLabel for="email" value="Email" class="text-slate-200" />
+                <InputLabel for="email" :value="t('auth.reset.email')" class="text-slate-200" />
 
                 <TextInput
                     id="email"
@@ -66,7 +69,7 @@ const submit = () => {
             </div>
 
             <div>
-                <InputLabel for="password" value="Password" class="text-slate-200" />
+                <InputLabel for="password" :value="t('auth.reset.password')" class="text-slate-200" />
 
                 <TextInput
                     id="password"
@@ -83,7 +86,7 @@ const submit = () => {
             <div>
                 <InputLabel
                     for="password_confirmation"
-                    value="Confirm Password"
+                    :value="t('auth.reset.confirm')"
                     class="text-slate-200"
                 />
 
@@ -108,7 +111,7 @@ const submit = () => {
                     :class="{ 'opacity-25': form.processing }"
                     :disabled="form.processing"
                 >
-                    Reset Password
+                    {{ t('auth.reset.submit') }}
                 </PrimaryButton>
             </div>
             </form>

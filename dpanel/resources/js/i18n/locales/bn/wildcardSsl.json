@@ -1,0 +1,9 @@
+{
+    "turnOn": "Wildcard SSL",
+    "turnOff": "Wildcard SSL: চালু",
+    "working": "চলছে...",
+    "help": "{domain} আর তার সব *.{domain} subdomain-এর জন্য একটা certificate। Domain-এর DNS এই server-এ বা Cloudflare-এ থাকতে হবে।",
+    "confirmOn": "{domain} ও *.{domain}-এর জন্য wildcard certificate নেবেন? CA যাচাই করার সময় domain-এর DNS-এ একটা TXT record যোগ হবে। কয়েক মিনিট লাগতে পারে।",
+    "confirmOff": "*.{domain} আর ঢাকা হবে না? {domain} সাধারণ certificate পাবে, আর নিজের certificate নেই এমন subdomain HTTPS হারাবে।",
+    "failed": "Wildcard SSL ব্যর্থ হয়েছে।"
+}

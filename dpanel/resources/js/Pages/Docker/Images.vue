@@ -5,6 +5,9 @@ import DockerShell from './components/DockerShell.vue';
 import PullImageCard from './components/images/PullImageCard.vue';
 import ImageList from './components/images/ImageList.vue';
 import { useDocker } from './composables/useDocker';
+import { useI18n } from 'vue-i18n';
+
+const { t } = useI18n();
 
 const { status, loading, loadError, busy, message, load, pullImage, removeImage, pruneImages, panelRoute } = useDocker();
 
@@ -16,8 +19,8 @@ onMounted(load);
 
 <template>
     <DockerShell
-        title="Docker Images"
-        description="Pull images, run containers from them and clean up the ones you no longer use."
+        :title="t('docker.images.title')"
+        :description="t('docker.images.description')"
         :status="status"
         :loading="loading"
         :load-error="loadError"

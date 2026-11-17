@@ -1,0 +1,100 @@
+{
+    "title": "WordPress",
+    "subtitle": "আপনার সব WordPress site এক জায়গায়: update, staging copy ও security check।",
+    "loadFailed": "WordPress-এর তথ্য লোড করা গেল না।",
+    "none": "আপনার website-গুলোর মধ্যে কোনো WordPress পাওয়া যায়নি।",
+    "finding": "WordPress site খোঁজা হচ্ছে…",
+    "selectAll": "সব বাছুন",
+    "selected": "{count}টা site বাছা হয়েছে",
+    "bulkConfirm": "এখন {count}টা site update করবেন? একটার পর একটা update হবে।",
+    "updateEverything": "Core, plugin ও theme update",
+    "updatePlugins": "শুধু plugin update",
+    "updateFailed": "Update ব্যর্থ হয়েছে।",
+    "updated": "Update হয়েছে।",
+    "core": "Core",
+    "coreUpdate": "{version} সংস্করণ এসেছে।",
+    "upToDate": "সর্বশেষ সংস্করণ।",
+    "updateCore": "WordPress update",
+    "plugins": "Plugin",
+    "themes": "Theme",
+    "updateAll": "সব update ({count})",
+    "updateTo": "{version}-এ update",
+    "updateHelp": "Update চলার সময় plugin ও theme বন্ধ রেখে command চলে, তাই ভাঙা plugin নিজের update আটকাতে পারে না। বড় update-এর আগে staging copy নিন।",
+    "tabs": {
+        "updates": "Update",
+        "staging": "Staging",
+        "security": "নিরাপত্তা"
+    },
+    "securityHelp": "Core file wordpress.org-এর সঙ্গে মেলানো, plugin file, admin-এর নাম, খোলা registration, debug mode ও file editing দেখে।",
+    "runCheck": "Check চালান",
+    "checkAgain": "আবার check",
+    "checkFailed": "Check চালানো গেল না।",
+    "fixFailed": "ঠিক করা গেল না।",
+    "score": "{total}টার মধ্যে {passed}টা ঠিক আছে",
+    "reinstallConfirm": "এখনকার file-এর ওপর WordPress core আবার নামাবেন? Content, plugin ও theme বদলাবে না।",
+    "checks": {
+        "core_files": {
+            "pass": "Core file wordpress.org-এর সঙ্গে মেলে",
+            "issue": "কিছু core file বদলানো, বা থাকার কথা নয়"
+        },
+        "plugin_files": {
+            "pass": "Plugin file wordpress.org-এর সঙ্গে মেলে",
+            "issue": "কিছু plugin-এর file বদলানো"
+        },
+        "admin_names": {
+            "pass": "কোনো administrator-এর নাম সহজে আন্দাজ করা যায় না",
+            "issue": "কোনো administrator-এর নাম সহজে আন্দাজ করা যায়"
+        },
+        "registration": {
+            "pass": "যে কেউ register করতে পারে না",
+            "issue": "যে কেউ account খুলতে পারে"
+        },
+        "debug": {
+            "pass": "Debug mode বন্ধ",
+            "issue": "Debug mode চালু, visitor error দেখতে পারে"
+        },
+        "file_edit": {
+            "pass": "Theme ও plugin file editor বন্ধ",
+            "issue": "wp-admin থেকে PHP file বদলানো যায়"
+        },
+        "core_update": {
+            "pass": "WordPress সর্বশেষ সংস্করণে",
+            "issue": "WordPress-এর update বাকি"
+        },
+        "plugin_updates": {
+            "pass": "সব plugin সর্বশেষ সংস্করণে",
+            "issue": "কিছু plugin-এর update বাকি"
+        }
+    },
+    "fixes": {
+        "disallow_file_edit": "Editor বন্ধ করুন",
+        "disable_debug": "Debug বন্ধ করুন",
+        "close_registration": "Registration বন্ধ করুন",
+        "reinstall_core": "Core file ফেরান"
+    },
+    "stagingHelp": "এই site-কে আপনার আরেকটা site-এর সঙ্গে staging হিসেবে জুড়ুন। Copy করলে অন্য site-এর file ও database বদলে যায় (আগে trash-এ যায়), আর site-এর address নতুন করে লেখা হয়।",
+    "stagingSite": "Staging site",
+    "pickSite": "একটা site বাছুন…",
+    "noFreeSite": "আগে staging-এর জন্য আরেকটা website বানান",
+    "useAsStaging": "Staging হিসেবে নিন",
+    "unlink": "জোড়া খুলুন",
+    "unlinkConfirm": "জোড়া খুলবেন? কোনো site বদলাবে না।",
+    "stagingFailed": "Staging-এর কাজ ব্যর্থ হয়েছে।",
+    "lastCopy": "শেষ staging copy",
+    "lastDeploy": "শেষ deploy",
+    "never": "কখনো না",
+    "copyToStaging": "Staging-এ copy",
+    "deploy": "Staging live-এ পাঠান",
+    "copyConfirm": "{from} কে {to}-এর ওপর copy করবেন? {to}-এর এখনকার file ও database আগে trash-এ যাবে।",
+    "deployConfirm": "{from} কে live site {to}-এর ওপর পাঠাবেন? Live-এর file ও database আগে trash-এ যাবে।",
+    "stage": {
+        "queued": "শুরুর অপেক্ষায়…",
+        "copying": "File ও database copy হচ্ছে…",
+        "rewriting": "Site-এর address বদলানো হচ্ছে…",
+        "testing": "Staging copy-তে update ও পরীক্ষা চলছে…",
+        "updating": "Staging পাস করেছে; এই site update হচ্ছে…"
+    },
+    "safeUpdate": "নিরাপদ update",
+    "safeHelp": "এই site staging site-এ copy করে, copy-তে update চালায়, আর copy error ছাড়া খুললে তবেই এই site update করে। Staging site link করা থাকতে হবে।",
+    "safeStarted": "নিরাপদ update শুরু হয়েছে। Staging tab-এ দেখুন।"
+}

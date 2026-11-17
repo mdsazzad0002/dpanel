@@ -1,5 +1,8 @@
 <script setup>
 import { computed } from 'vue';
+import { useI18n } from 'vue-i18n';
+
+const { t } = useI18n();
 
 // Page numbers under the documents, mongo-express style.
 const props = defineProps({
@@ -23,7 +26,7 @@ const btn = 'min-w-[2rem] rounded-md border border-slate-300 px-2 py-1 text-xs h
 <template>
     <div class="flex flex-wrap items-center justify-between gap-3 text-xs text-slate-500">
         <span>
-            {{ total ? (skip + 1).toLocaleString() : 0 }}–{{ Math.min(skip + limit, total).toLocaleString() }} of {{ total.toLocaleString() }}
+            {{ t('databases.mongoAdmin.pagination.range', { from: total ? (skip + 1).toLocaleString() : 0, to: Math.min(skip + limit, total).toLocaleString(), total: total.toLocaleString() }) }}
         </span>
         <div class="flex items-center gap-1">
             <button type="button" :class="btn" :disabled="current === 1" @click="goTo(1)"><i class="bi bi-chevron-double-left"></i></button>
@@ -32,7 +35,7 @@ const btn = 'min-w-[2rem] rounded-md border border-slate-300 px-2 py-1 text-xs h
             <button type="button" :class="btn" :disabled="current === pages" @click="goTo(current + 1)"><i class="bi bi-chevron-right"></i></button>
             <button type="button" :class="btn" :disabled="current === pages" @click="goTo(pages)"><i class="bi bi-chevron-double-right"></i></button>
         </div>
-        <label class="flex items-center gap-2">Per page
+        <label class="flex items-center gap-2">{{ t('databases.mongoAdmin.pagination.perPage') }}
             <select :value="limit" class="rounded-md border-slate-300 py-1 pl-2 pr-7 text-xs dark:border-slate-700 dark:bg-slate-900" @change="emit('limit', Number($event.target.value))">
                 <option v-for="n in [10, 20, 50, 100, 200]" :key="n" :value="n">{{ n }}</option>
             </select>

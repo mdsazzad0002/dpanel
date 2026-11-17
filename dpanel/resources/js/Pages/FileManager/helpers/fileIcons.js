@@ -1,3 +1,7 @@
+import { i18n } from '@/i18n';
+
+const t = (...args) => i18n.global.t(...args);
+
 export function iconClassForItem(item) {
     if (item?.type === 'dir') return 'bi-folder-fill text-amber-500';
 
@@ -85,7 +89,7 @@ export function nameClassForItem(item) {
 }
 
 export function typeLabelForItem(item) {
-    if (item?.type === 'dir') return 'folder';
+    if (item?.type === 'dir') return t('fileManager.icons.folder');
     const ext = String(item?.name || '').split('.').pop()?.toLowerCase() || '';
-    return ext || 'file';
+    return ext || t('fileManager.icons.file');
 }

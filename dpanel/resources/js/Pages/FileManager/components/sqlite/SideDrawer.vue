@@ -1,5 +1,8 @@
 <script setup>
 import { onBeforeUnmount, onMounted } from 'vue';
+import { useI18n } from 'vue-i18n';
+
+const { t } = useI18n();
 
 // A second offcanvas stacked over the SQLite viewer (z-50 > its z-40).
 const props = defineProps({
@@ -38,7 +41,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown, true));
                         <p class="truncate text-sm font-semibold text-slate-800 dark:text-slate-100">{{ title }}</p>
                         <p v-if="subtitle" class="truncate font-mono text-[11px] text-slate-500">{{ subtitle }}</p>
                     </div>
-                    <button type="button" title="Close (Esc)" class="rounded-md p-2 text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800" @click="emit('close')">
+                    <button type="button" :title="t('fileManager.sqlite.closeEsc')" class="rounded-md p-2 text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800" @click="emit('close')">
                         <i class="bi bi-x-lg"></i>
                     </button>
                 </header>

@@ -5,6 +5,9 @@ import PrimaryButton from '@/Components/PrimaryButton.vue';
 import TextInput from '@/Components/TextInput.vue';
 import { useForm } from '@inertiajs/vue3';
 import { computed, ref } from 'vue';
+import { useI18n } from 'vue-i18n';
+
+const { t } = useI18n();
 
 const passwordInput = ref(null);
 const currentPasswordInput = ref(null);
@@ -29,10 +32,10 @@ const passwordStrength = computed(() => {
     if (/\d/.test(password)) score++;
     if (/[^a-zA-Z0-9]/.test(password)) score++;
 
-    if (score <= 2) return { score: 20, label: 'Weak', color: 'bg-red-500', textColor: 'text-red-600 dark:text-red-400' };
-    if (score <= 3) return { score: 50, label: 'Fair', color: 'bg-amber-500', textColor: 'text-amber-600 dark:text-amber-400' };
-    if (score <= 4) return { score: 75, label: 'Good', color: 'bg-blue-500', textColor: 'text-blue-600 dark:text-blue-400' };
-    return { score: 100, label: 'Strong', color: 'bg-emerald-500', textColor: 'text-emerald-600 dark:text-emerald-400' };
+    if (score <= 2) return { score: 20, label: t('profile.password.weak'), color: 'bg-red-500', textColor: 'text-red-600 dark:text-red-400' };
+    if (score <= 3) return { score: 50, label: t('profile.password.fair'), color: 'bg-amber-500', textColor: 'text-amber-600 dark:text-amber-400' };
+    if (score <= 4) return { score: 75, label: t('profile.password.good'), color: 'bg-blue-500', textColor: 'text-blue-600 dark:text-blue-400' };
+    return { score: 100, label: t('profile.password.strong'), color: 'bg-emerald-500', textColor: 'text-emerald-600 dark:text-emerald-400' };
 });
 
 const passwordsMatch = computed(() => {
@@ -63,7 +66,7 @@ const updatePassword = () => {
         <form @submit.prevent="updatePassword" class="space-y-6">
             <!-- Current Password -->
             <div>
-                <InputLabel for="current_password" value="Current Password" />
+                <InputLabel for="current_password" :value="t('profile.password.current')" />
                 <div class="relative mt-2">
                     <div class="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3">
                         <i class="bi bi-key text-slate-400"></i>
@@ -89,7 +92,7 @@ const updatePassword = () => {
 
             <!-- New Password -->
             <div>
-                <InputLabel for="password" value="New Password" />
+                <InputLabel for="password" :value="t('profile.password.new')" />
                 <div class="relative mt-2">
                     <div class="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3">
                         <i class="bi bi-shield-lock text-slate-400"></i>
@@ -115,7 +118,7 @@ const updatePassword = () => {
                 <!-- Password Strength Indicator -->
                 <div v-if="form.password" class="mt-3">
                     <div class="flex items-center justify-between mb-2">
-                        <span class="text-xs text-slate-500 dark:text-slate-400">Password strength</span>
+                        <span class="text-xs text-slate-500 dark:text-slate-400">{{ t('profile.password.strength') }}</span>
                         <span :class="['text-xs font-medium', passwordStrength.textColor]">{{ passwordStrength.label }}</span>
                     </div>
                     <div class="h-2 overflow-hidden rounded-full bg-slate-100 dark:bg-slate-800">
@@ -135,7 +138,7 @@ const updatePassword = () => {
 
             <!-- Confirm Password -->
             <div>
-                <InputLabel for="password_confirmation" value="Confirm Password" />
+                <InputLabel for="password_confirmation" :value="t('profile.password.confirm')" />
                 <div class="relative mt-2">
                     <div class="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3">
                         <i class="bi bi-check-circle text-slate-400"></i>
@@ -166,7 +169,7 @@ const updatePassword = () => {
                         ]"
                     ></i>
                     <span :class="['text-xs', passwordsMatch ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-400']">
-                        {{ passwordsMatch ? 'Passwords match' : 'Passwords do not match' }}
+                        {{ passwordsMatch ? t('profile.password.match') : t('profile.password.noMatch') }}
                     </span>
                 </div>
             </div>
@@ -179,7 +182,7 @@ const updatePassword = () => {
                 >
                     <i v-if="form.processing" class="bi bi-arrow-repeat animate-spin"></i>
                     <i v-else class="bi bi-shield-check"></i>
-                    {{ form.processing ? 'Updating...' : 'Update Password' }}
+                    {{ form.processing ? t('profile.password.updating') : t('profile.password.submit') }}
                 </PrimaryButton>
 
                 <Transition
@@ -192,7 +195,7 @@ const updatePassword = () => {
                 >
                     <div v-if="form.recentlySuccessful" class="flex items-center gap-2 text-sm text-emerald-600 dark:text-emerald-400">
                         <i class="bi bi-check-circle-fill"></i>
-                        Password updated successfully
+                        {{ t('profile.password.saved') }}
                     </div>
                 </Transition>
             </div>

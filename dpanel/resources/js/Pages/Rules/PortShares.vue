@@ -3,6 +3,9 @@ import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
 import PortShareFormPanel from './PortShare/PortShareFormPanel.vue';
 import { Head, router, usePage } from '@inertiajs/vue3';
 import { computed, ref } from 'vue';
+import { useI18n } from 'vue-i18n';
+
+const { t } = useI18n();
 
 const page = usePage();
 const panelToken = page.props.panel?.token;
@@ -30,7 +33,7 @@ const visibleWebsites = computed(() => {
 const projectOf = (share) => props.projects.find((p) => p.id === share.app_project_id);
 const targetLabel = (share) => {
     const project = projectOf(share);
-    return project ? `${project.runtime === 'node' ? 'Node.js' : 'Python'} app ${project.name}` : 'Local port';
+    return project ? t('rules.portShares.appTarget', { runtime: project.runtime === 'node' ? 'Node.js' : 'Python', name: project.name }) : t('rules.portShares.localPort');
 };
 const targetIcon = (share) => ({ node: 'bi-hexagon', python: 'bi-filetype-py' }[projectOf(share)?.runtime] || 'bi-ethernet');
 const publicUrl = (website, share) => `${website.enable_ssl ? 'https' : 'http'}://${website.domain}${share.path_prefix === '/' ? '/' : share.path_prefix}`;
@@ -48,23 +51,23 @@ const openEdit = (share) => { editing.value = share; panelOpen.value = true; };
 
 const toggle = (share) => router.patch(panelRoute('rules.port-shares.toggle', { share: share.id }), {}, { preserveScroll: true });
 const remove = (website, share) => {
-    if (!confirm(`Stop sharing ${publicUrl(website, share)}?`)) return;
+    if (!confirm(t('rules.portShares.stopConfirm', { url: publicUrl(website, share) }))) return;
     router.delete(panelRoute('rules.port-shares.destroy', { share: share.id }), { preserveScroll: true });
 };
 </script>
 
 <template>
-    <Head title="Port Share" />
+    <Head :title="t('rules.portShares.title')" />
 
     <AuthenticatedLayout>
         <template #header>
             <div class="flex flex-wrap items-center justify-between gap-3">
                 <div>
-                    <h1 class="text-lg font-semibold">Port Share</h1>
-                    <p class="text-sm text-slate-500 dark:text-slate-400">Serve a website, or a path of it, from a Node.js app, a Python app or any local port.</p>
+                    <h1 class="text-lg font-semibold">{{ t('rules.portShares.title') }}</h1>
+                    <p class="text-sm text-slate-500 dark:text-slate-400">{{ t('rules.portShares.subtitle') }}</p>
                 </div>
                 <button @click="openCreate()" :disabled="!websites.length" class="rounded-md bg-blue-600 px-3 py-2 text-sm text-white hover:bg-blue-700 disabled:opacity-50">
-                    <i class="bi bi-plus-lg mr-1"></i>Create port share
+                    <i class="bi bi-plus-lg mr-1"></i>{{ t('rules.portShares.create') }}
                 </button>
             </div>
         </template>
@@ -74,21 +77,21 @@ const remove = (website, share) => {
             <div v-if="page.props.flash?.error" class="rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{{ page.props.flash.error }}</div>
 
             <div v-if="websites.length" class="flex flex-wrap items-center gap-3 rounded-xl border border-slate-200 bg-white p-4 dark:border-slate-700 dark:bg-slate-800">
-                <input v-model="search" type="search" placeholder="Search website…" class="min-w-0 flex-1 rounded-lg border-slate-300 text-sm dark:border-slate-600 dark:bg-slate-900" />
+                <input v-model="search" type="search" :placeholder="t('rules.portShares.search')" class="min-w-0 flex-1 rounded-lg border-slate-300 text-sm dark:border-slate-600 dark:bg-slate-900" />
                 <label class="flex items-center gap-2 text-sm text-slate-600 dark:text-slate-300">
                     <input v-model="showAll" type="checkbox" class="rounded border-slate-300" />
-                    Show websites without shares
+                    {{ t('rules.portShares.showAll') }}
                 </label>
-                <span class="text-xs text-slate-500 dark:text-slate-400">{{ shareCount }} {{ shareCount === 1 ? 'share' : 'shares' }}</span>
+                <span class="text-xs text-slate-500 dark:text-slate-400">{{ shareCount === 1 ? t('rules.portShares.oneShare', { count: shareCount }) : t('rules.portShares.shares', { count: shareCount }) }}</span>
             </div>
 
             <div v-if="!visibleWebsites.length" class="rounded-xl border border-dashed border-slate-300 bg-white p-10 text-center dark:border-slate-600 dark:bg-slate-800">
                 <i class="bi bi-ethernet text-3xl text-slate-400"></i>
-                <p class="mt-2 text-sm font-medium">{{ websites.length ? 'Nothing shared yet' : 'No websites yet' }}</p>
+                <p class="mt-2 text-sm font-medium">{{ websites.length ? t('rules.portShares.nothing') : t('rules.portShares.noWebsites') }}</p>
                 <p class="mt-1 text-sm text-slate-500 dark:text-slate-400">
-                    {{ websites.length ? 'Pick a website and a path, then a Node.js app, a Python app or any local port.' : 'Create a website first; its domain is where the app is published.' }}
+                    {{ websites.length ? t('rules.portShares.nothingHelp') : t('rules.portShares.noWebsitesHelp') }}
                 </p>
-                <button v-if="websites.length" @click="openCreate()" class="mt-4 rounded-md bg-blue-600 px-3 py-2 text-sm text-white hover:bg-blue-700">Create port share</button>
+                <button v-if="websites.length" @click="openCreate()" class="mt-4 rounded-md bg-blue-600 px-3 py-2 text-sm text-white hover:bg-blue-700">{{ t('rules.portShares.create') }}</button>
             </div>
 
             <div class="grid gap-4 lg:grid-cols-2">
@@ -98,11 +101,11 @@ const remove = (website, share) => {
                             <p class="truncate font-semibold">{{ website.domain }}</p>
                             <p class="text-xs text-slate-500 dark:text-slate-400">
                                 <i class="bi" :class="website.enable_ssl ? 'bi-lock-fill text-emerald-500' : 'bi-unlock text-amber-500'"></i>
-                                {{ website.enable_ssl ? 'SSL active' : 'No SSL' }} · root served by {{ rootLabel(website) }}
+                                {{ website.enable_ssl ? t('rules.portShares.sslActive') : t('rules.portShares.noSsl') }} · {{ t('rules.portShares.rootBy', { label: rootLabel(website) }) }}
                             </p>
                         </div>
                         <button @click="openCreate(website.id)" class="shrink-0 rounded-md border border-slate-300 px-2.5 py-1.5 text-xs font-medium hover:bg-slate-50 dark:border-slate-600 dark:hover:bg-slate-700">
-                            <i class="bi bi-plus-lg"></i> Add share
+                            <i class="bi bi-plus-lg"></i> {{ t('rules.portShares.add') }}
                         </button>
                     </div>
 
@@ -116,24 +119,24 @@ const remove = (website, share) => {
                                     <span class="text-slate-500 dark:text-slate-400">127.0.0.1:{{ share.target_port }}</span>
                                 </p>
                                 <p class="mt-0.5 text-xs text-slate-500 dark:text-slate-400">
-                                    {{ targetLabel(share) }}<template v-if="projectOf(share)?.status === 'stopped'"> · <span class="text-amber-600">app stopped</span></template><template v-if="share.strip_prefix"> · path stripped</template>
+                                    {{ targetLabel(share) }}<template v-if="projectOf(share)?.status === 'stopped'"> · <span class="text-amber-600">{{ t('rules.portShares.appStopped') }}</span></template><template v-if="share.strip_prefix"> · {{ t('rules.portShares.stripped') }}</template>
                                 </p>
                             </div>
                             <button
                                 @click="toggle(share)"
                                 role="switch"
                                 :aria-checked="share.enabled"
-                                :title="share.enabled ? 'Disable' : 'Enable'"
+                                :title="share.enabled ? t('rules.portShares.disable') : t('rules.portShares.enable')"
                                 class="relative mt-0.5 inline-flex h-5 w-9 shrink-0 rounded-full transition"
                                 :class="share.enabled ? 'bg-emerald-500' : 'bg-slate-300 dark:bg-slate-600'"
                             >
                                 <span class="absolute top-0.5 h-4 w-4 rounded-full bg-white shadow transition" :class="share.enabled ? 'left-[18px]' : 'left-0.5'"></span>
                             </button>
-                            <button @click="openEdit(share)" title="Edit" class="rounded p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-700 dark:hover:bg-slate-700 dark:hover:text-slate-200"><i class="bi bi-pencil"></i></button>
-                            <button @click="remove(website, share)" title="Delete" class="rounded p-1 text-slate-400 hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-900/30"><i class="bi bi-trash"></i></button>
+                            <button @click="openEdit(share)" :title="t('rules.portShares.edit')" class="rounded p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-700 dark:hover:bg-slate-700 dark:hover:text-slate-200"><i class="bi bi-pencil"></i></button>
+                            <button @click="remove(website, share)" :title="t('rules.portShares.delete')" class="rounded p-1 text-slate-400 hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-900/30"><i class="bi bi-trash"></i></button>
                         </li>
                     </ul>
-                    <p v-else class="px-4 py-6 text-center text-sm text-slate-500 dark:text-slate-400">Nothing shared. The whole site is served by {{ rootLabel(website) }}.</p>
+                    <p v-else class="px-4 py-6 text-center text-sm text-slate-500 dark:text-slate-400">{{ t('rules.portShares.noneShared', { label: rootLabel(website) }) }}</p>
                 </div>
             </div>
         </div>

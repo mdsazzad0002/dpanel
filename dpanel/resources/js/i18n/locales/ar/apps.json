@@ -1,0 +1,42 @@
+{
+    "fields": {
+        "heading": "الموقع والمسؤول",
+        "site_name": "اسم الموقع",
+        "admin_name": "الاسم الكامل للمسؤول",
+        "admin_username": "اسم مستخدم المسؤول",
+        "admin_email": "بريد المسؤول",
+        "admin_password": "كلمة مرور المسؤول",
+        "passwordHint": "(12 حرفًا على الأقل — احفظها الآن، فاللوحة لا تخزنها)",
+        "show": "إظهار",
+        "hide": "إخفاء",
+        "generate": "توليد"
+    },
+    "nextcloud": {
+        "installer": "مثبّت Nextcloud",
+        "card": "مزامنة الملفات ومشاركتها مع حساب مسؤول وcron",
+        "downloading": "جارٍ تنزيل Nextcloud والتحقق من SHA-256 الخاص به…",
+        "configuring": "جارٍ تشغيل occ maintenance:install…",
+        "note": "تُحفظ الملفات في مجلد بجوار جذر المشروع (…-nextcloud-data)، خارج جذر الويب. تُضاف مهمة cron كل 5 دقائق لـ cron.php."
+    },
+    "prestashop": {
+        "installer": "مثبّت PrestaShop",
+        "card": "متجر إلكتروني مع حساب للوحة الخلفية",
+        "downloading": "جارٍ تنزيل PrestaShop وفك ضغطه…",
+        "configuring": "جارٍ تشغيل مثبّت PrestaShop…",
+        "note": "يُحذف المجلد install/ ويُعاد تسمية admin/ إلى اسم عشوائي؛ تعرض الرسالة بعد التثبيت عنوان اللوحة الخلفية. سجّل الدخول ببريد المسؤول."
+    },
+    "opencart": {
+        "installer": "مثبّت OpenCart",
+        "card": "متجر OpenCart 4 مع حساب مسؤول",
+        "downloading": "جارٍ تنزيل OpenCart وفك ضغطه…",
+        "configuring": "جارٍ تشغيل مثبّت OpenCart…",
+        "note": "يُحذف المجلد install/ ويُنقل system/storage إلى جوار جذر المشروع (…-opencart-storage). منطقة الإدارة: /admin."
+    },
+    "mediawiki": {
+        "installer": "مثبّت MediaWiki",
+        "card": "محرك ويكي مع حساب مسؤول",
+        "downloading": "جارٍ تنزيل MediaWiki والتحقق من توقيع GPG الخاص به…",
+        "configuring": "جارٍ تشغيل maintenance/install.php…",
+        "note": "يُتحقق من التنزيل بمفاتيح إصدارات MediaWiki (يتطلب gpg على الخادم). تُكتب الإعدادات في LocalSettings.php."
+    }
+}

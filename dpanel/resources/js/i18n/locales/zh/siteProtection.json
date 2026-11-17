@@ -1,0 +1,7 @@
+{
+    "blockedFolders": "已屏蔽的文件夹",
+    "blockedFoldersHelp": "这些文件夹下的每个请求都会以 403 拒绝，类似应用的 \"deny from all\" .htaccess。安装应用时会自动填写。每行一个文件夹。",
+    "blockedTypes": "已屏蔽的文件类型",
+    "blockedTypesHelp": "带有这些扩展名的文件会以 403 拒绝，类似应用的 <FilesMatch> deny。写 \"log\" 表示整个网站，写 \"/modules/*.tpl\" 表示某个文件夹。安装应用时会自动填写。每行一个。",
+    "hiddenFilesNote": "隐藏文件和文件夹（.env、.git、.htaccess）始终被拒绝；/.well-known/ 保持公开。"
+}

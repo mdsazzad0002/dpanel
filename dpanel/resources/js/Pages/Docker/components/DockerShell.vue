@@ -7,6 +7,9 @@ import DockerNav from './DockerNav.vue';
 import { sections } from '../composables/sections';
 import ShortcutHelp from './ShortcutHelp.vue';
 import { useShortcuts } from '../composables/useShortcuts';
+import { useI18n } from 'vue-i18n';
+
+const { t } = useI18n();
 
 const props = defineProps({
     title: { type: String, required: true },
@@ -54,12 +57,12 @@ useShortcuts({
                     </div>
                     <div class="flex items-center gap-2">
                         <slot name="actions" />
-                        <button type="button" class="hidden rounded-md border border-slate-300 px-2.5 py-2 text-xs hover:bg-slate-100 sm:inline-block dark:border-slate-700 dark:hover:bg-slate-800" title="Keyboard shortcuts (?)" @click="helpOpen = true">
+                        <button type="button" class="hidden rounded-md border border-slate-300 px-2.5 py-2 text-xs hover:bg-slate-100 sm:inline-block dark:border-slate-700 dark:hover:bg-slate-800" :title="t('docker.shell.shortcuts')" @click="helpOpen = true">
                             <i class="bi bi-keyboard"></i>
                         </button>
-                        <button type="button" :disabled="refreshing" class="rounded-md border border-slate-300 px-3 py-2 text-xs hover:bg-slate-100 disabled:opacity-60 dark:border-slate-700 dark:hover:bg-slate-800" title="Refresh (r)" @click="$emit('refresh')">
+                        <button type="button" :disabled="refreshing" class="rounded-md border border-slate-300 px-3 py-2 text-xs hover:bg-slate-100 disabled:opacity-60 dark:border-slate-700 dark:hover:bg-slate-800" :title="t('docker.shell.refresh')" @click="$emit('refresh')">
                             <i class="bi bi-arrow-clockwise" :class="refreshing ? 'inline-block animate-spin' : ''"></i>
-                            <span class="ml-1">{{ refreshing ? 'Refreshing…' : 'Refresh' }}</span>
+                            <span class="ml-1">{{ refreshing ? t('docker.shared.refreshing') : t('common.refresh') }}</span>
                         </button>
                     </div>
                 </div>
@@ -76,7 +79,7 @@ useShortcuts({
 
             <div v-if="message" role="status" :class="message.type === 'success' ? 'border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-900 dark:bg-emerald-950 dark:text-emerald-200' : 'border-red-200 bg-red-50 text-red-700 dark:border-red-900 dark:bg-red-950 dark:text-red-200'" class="flex items-start gap-3 whitespace-pre-line rounded-md border px-4 py-3 text-sm">
                 <span class="min-w-0 flex-1 break-words">{{ message.text }}</span>
-                <button type="button" class="shrink-0 opacity-60 hover:opacity-100" aria-label="Dismiss" @click="$emit('dismiss')"><i class="bi bi-x-lg"></i></button>
+                <button type="button" class="shrink-0 opacity-60 hover:opacity-100" :aria-label="t('docker.shared.dismiss')" @click="$emit('dismiss')"><i class="bi bi-x-lg"></i></button>
             </div>
 
             <slot v-if="loading || (status.installed && status.running)" />

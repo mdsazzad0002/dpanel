@@ -1,0 +1,200 @@
+{
+    "index": {
+        "services": {
+            "cyberpanelSsh": {
+                "name": "通过 SSH 迁移 CyberPanel / HestiaCP / aaPanel / Plesk",
+                "description": "通过 SSH 连接并发现网站及其数据库。面板类型会自动识别。"
+            },
+            "cpanelFull": {
+                "name": "cPanel 完整备份",
+                "description": "恢复完整的 cpmove 账户或所选资源。"
+            },
+            "dpanelFull": {
+                "name": "DPanel 到 DPanel",
+                "description": "将完整的 DPanel 备份包迁移到此服务器。"
+            },
+            "cpanelPartial": {
+                "name": "cPanel 部分备份",
+                "description": "导入从 cPanel 分别下载的主目录和 MySQL 备份。"
+            },
+            "directadmin": {
+                "name": "DirectAdmin 备份",
+                "description": "迁移 DirectAdmin 用户及其全部或所选域名和数据库。"
+            },
+            "plesk": {
+                "name": "Plesk 备份归档",
+                "description": "从上传的 .tar Plesk 备份文件导入。对于在线的 Plesk 服务器，请改用上方的“通过 SSH 迁移 CyberPanel / HestiaCP / aaPanel / Plesk”。"
+            },
+            "wordpress": {
+                "name": "WordPress 迁移",
+                "description": "将 WordPress 站点（文件 + 数据库）迁移到此处的网站中；其地址会更新为新域名。"
+            }
+        },
+        "archives": {
+            "cpanel": {
+                "title": "cPanel 完整备份",
+                "description": "支持 cpmove-USER.tar.gz 和 Backup Wizard 的 backup-MM.DD.YYYY_HH-MM-SS_USER.tar.gz。检查后，可恢复整个账户，或分别选择域名、文件和数据库。"
+            },
+            "cpanelPartial": {
+                "title": "cPanel 部分备份",
+                "description": "上传 cPanel → Backup 中的主目录备份和任意 MySQL 数据库备份。部分备份不记录账户，因此请输入要恢复到的系统用户（及主域名）。"
+            },
+            "directadmin": {
+                "title": "DirectAdmin 备份",
+                "description": "上传在 DirectAdmin 中创建的用户备份（user.RESELLER.USER.tar.gz 或 .tar.zst）。域名会像在 DirectAdmin 中一样恢复到 /home/USER/domains/DOMAIN/public_html。"
+            },
+            "plesk": {
+                "title": "Plesk 备份归档",
+                "description": "上传从 Plesk 备份管理器下载、未设置密码保护的备份。每个域名恢复到 /home/USER/domains/DOMAIN，站点位于 httpdocs 中。"
+            }
+        },
+        "title": {
+            "dpanel": "DPanel 到 DPanel 迁移",
+            "cyberpanelSsh": "CyberPanel / HestiaCP / aaPanel / Plesk SSH 迁移",
+            "wordpress": "WordPress 迁移",
+            "default": "迁移导入"
+        },
+        "chunkProgress": "正在上传 DPanel 包… 已发送 {done} / {total} 个分块。",
+        "uploadComplete": "上传完成。正在验证 DPanel 包。",
+        "packageUploadFailed": "DPanel 包上传失败。",
+        "uploadFailed": "上传失败。",
+        "restoreNotStarted": "无法开始 DPanel 恢复。",
+        "restoreFailed": "恢复失败。",
+        "removeConfirm": "删除 {name}？",
+        "chooseService": "选择迁移服务",
+        "chooseServiceHelp": "选择备份的来源以及你拥有的包类型。",
+        "comingSoon": "即将推出",
+        "allServices": "所有迁移服务",
+        "wp": {
+            "intro": "先创建网站，然后导入到其中。你需要 WordPress 文件（包含 {config} 的文件夹的 .zip 或 .tar.gz）和数据库导出文件（.sql，例如来自 phpMyAdmin 或 {cmd}）。",
+            "step1": "文件会替换网站的文件；当前文件会先保存在其回收站中。",
+            "step2": "导入数据库，并将 {config} 指向它。",
+            "step3": "站点地址（{a}、{b}）和文章中的链接会迁移到新域名。",
+            "target": "选择目标网站",
+            "importHere": "在此导入 WordPress",
+            "noWebsite": "还没有网站。请先为该域名{link}。",
+            "createWebsite": "创建网站"
+        },
+        "dpanel": {
+            "title": "DPanel 完整迁移",
+            "description": "上传由 DPanel 创建的完整备份包。恢复前会先验证该包。",
+            "warningTitle": "整个面板恢复警告：",
+            "warning": "恢复会用源备份替换目标服务器的 {env}、{storage} 数据和已配置的面板数据库。这不是仅限网站的迁移。请先另行备份目标服务器，并且只在预定的目标服务器上继续。"
+        },
+        "partial": {
+            "user": "系统用户",
+            "domain": "主域名",
+            "domainHelp": "（从 public_html 提供服务）"
+        },
+        "inspecting": "正在检查…",
+        "uploadInspect": "上传并检查",
+        "uploading": "正在上传…",
+        "uploaded": "已上传的迁移",
+        "uploadedHelp": "从任意保留的归档继续完整或部分恢复。",
+        "fullBackup": "完整 DPanel 备份",
+        "account": "账户：{account}",
+        "status": {
+            "uploading": "上传中",
+            "inspecting": "检查中",
+            "ready": "就绪",
+            "restoring": "恢复中",
+            "completed": "已完成",
+            "failed": "失败",
+            "restore_failed": "恢复失败",
+            "prepared": "已准备",
+            "expired": "已过期",
+            "downloading": "下载中",
+            "downloaded": "已下载",
+            "download_failed": "下载失败"
+        },
+        "remove": "删除",
+        "connected": "{site}（{framework}）已使用新登录连接到数据库 {database}。",
+        "validationDone": "包验证完成。",
+        "typeRestore": "输入 {word} 以确认替换此 DPanel 服务器",
+        "startingRestore": "正在开始完整恢复…",
+        "restoreFull": "恢复完整 DPanel 备份",
+        "fullAccount": "恢复整个账户",
+        "fullAccountHelp": "所有域名、主目录文件和数据库",
+        "type": {
+            "domains": "域名",
+            "files": "文件",
+            "databases": "数据库"
+        },
+        "clearAll": "全部清除",
+        "selectAll": "全选",
+        "noneFound": "未找到",
+        "restoring": "正在恢复…",
+        "restoreSelected": "恢复所选项目",
+        "empty": "尚未上传任何迁移归档。"
+    },
+    "ssh": {
+        "loaded": "已加载 {name}。",
+        "loadFailed": "无法加载已保存的 SSH 连接。",
+        "deleteConfirm": "删除此已保存的 SSH 连接？",
+        "deleted": "已删除保存的 SSH 连接。",
+        "deleteFailed": "无法删除已保存的 SSH 连接。",
+        "connected": "已连接到 {host}。找到 {count} 个网站。",
+        "inspectFailed": "无法检查 CyberPanel 服务器。",
+        "stepFailed": "迁移步骤失败。请修复报告的问题后重试。",
+        "creatingArchive": "正在创建远程文件归档…",
+        "creatingDump": "正在创建远程数据库转储…",
+        "downloadStarted": "{file} 已开始下载。",
+        "downloadFailed": "无法下载所选来源。",
+        "connectTitle": "通过 SSH 连接",
+        "connectHelp": "会自动识别 CyberPanel、HestiaCP、aaPanel 和 Plesk。凭据仅用于当前请求，只有启用“保存 SSH 访问”时才会存储。",
+        "selectSaved": "选择已保存的面板",
+        "useConnection": "使用连接",
+        "delete": "删除",
+        "host": "主机",
+        "port": "SSH 端口",
+        "username": "用户名",
+        "auth": "认证",
+        "password": "密码",
+        "privateKey": "私钥",
+        "passphrase": "密钥口令",
+        "optional": "（可选）",
+        "saveAccess": "保存 SSH 访问",
+        "saveAccessHelp": "除非必要，否则不建议。密码/私钥将加密存储在 DPanel 的数据库中。切勿在不可信的面板安装上启用此项。",
+        "connectionName": "连接名称",
+        "connectionNamePlaceholder": "生产环境 CyberPanel",
+        "connecting": "正在连接…",
+        "connect": "连接并发现",
+        "sourceTitle": "选择一个迁移来源",
+        "directories": "{count} 个目录",
+        "databases": "{count} 个数据库",
+        "domain": "域名",
+        "optionalHelper": "（可选辅助）",
+        "customSelection": "自定义选择",
+        "sourceDatabase": "源数据库",
+        "noDatabase": "无数据库",
+        "sourcePath": "源文件位置",
+        "sourcePathHelp": "输入任意有效位置，或选择已发现的目录。",
+        "phpVersion": "PHP 版本",
+        "asSubdomain": "创建为子域名",
+        "parentDomain": "父域名",
+        "parentHelp": "选择已有的父域名或输入新的。缺失的父域名会被自动创建。",
+        "subdomainName": "子域名名称",
+        "willCreate": "将创建：{domain}",
+        "newDomain": "新的 DPanel 域名",
+        "onlyThis": "只会处理此文件位置和此数据库。其他网站和数据库不会包含在内。",
+        "preparingFiles": "正在准备文件…",
+        "downloadFiles": "下载所选文件",
+        "preparingDatabase": "正在准备数据库…",
+        "downloadDatabase": "下载所选数据库",
+        "step": {
+            "prepare": "准备临时存储",
+            "download": "下载所选来源",
+            "website": "创建网站账户",
+            "restore": "移动文件并导入数据库",
+            "verify": "验证网站已上线"
+        },
+        "stepStatus": {
+            "waiting": "等待中",
+            "running": "运行中",
+            "completed": "已完成",
+            "failed": "失败"
+        },
+        "runningStep": "正在运行当前步骤…",
+        "migrate": "创建并逐步迁移"
+    }
+}

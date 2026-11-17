@@ -8,6 +8,9 @@ import { badge } from '@/Pages/Seo/seoBadges';
 import { usePanelApi } from '@/Pages/Websites/composables/usePanelApi';
 import { Head, Link } from '@inertiajs/vue3';
 import { computed, provide, reactive, ref } from 'vue';
+import { useI18n } from 'vue-i18n';
+
+const { t } = useI18n();
 
 const props = defineProps({
     websites: { type: Array, default: () => [] },
@@ -49,20 +52,20 @@ const verify = async () => {
         report.value = await requestJson(panelRoute('seo.sitemap-verify.run'), { body: target });
         reportSiteId.value = target.source === 'internal' ? target.website_id : null;
     } catch (e) {
-        error.value = e.message || 'Verification failed.';
+        error.value = e.message || t('seo.verify.failed');
     } finally {
         running.value = false;
     }
 };
 
-const sourceLabel = { robots: 'robots.txt', fallback: 'common path', custom: 'your path' };
+const sourceLabel = { robots: 'robots.txt', get fallback() { return t('seo.verify.sources.fallback'); }, get custom() { return t('seo.verify.sources.custom'); } };
 
 const overall = computed(() => {
-    const t = report.value?.totals;
-    if (!t) return null;
-    if (t.fail) return { ...badge.fail, title: `${t.fail} ${t.fail === 1 ? 'problem' : 'problems'} to fix` };
-    if (t.warn) return { ...badge.warn, title: `Found, with ${t.warn} ${t.warn === 1 ? 'warning' : 'warnings'}` };
-    return { ...badge.pass, title: 'Sitemap found' };
+    const totals = report.value?.totals;
+    if (!totals) return null;
+    if (totals.fail) return { ...badge.fail, title: totals.fail === 1 ? t('seo.inspect.problem', { count: 1 }) : t('seo.inspect.problems', { count: totals.fail }) };
+    if (totals.warn) return { ...badge.warn, title: totals.warn === 1 ? t('seo.verify.foundWarning', { count: 1 }) : t('seo.verify.foundWarnings', { count: totals.warn }) };
+    return { ...badge.pass, title: t('seo.verify.found') };
 });
 
 // Stacked detail panels. Each sitemap is fetched the first time it is opened
@@ -72,13 +75,13 @@ const files = reactive({});
 const trail = ref([]);
 
 const flagInfo = {
-    invalid: { label: 'Invalid <loc>', level: 'fail' },
-    foreign: { label: 'Other host', level: 'warn' },
-    www: { label: 'www / non-www', level: 'warn' },
-    scheme: { label: 'http/https', level: 'warn' },
-    duplicate: { label: 'Duplicate', level: 'warn' },
-    bad_lastmod: { label: 'Bad lastmod', level: 'warn' },
-    future: { label: 'Future lastmod', level: 'warn' },
+    invalid: { get label() { return t('seo.verify.flags.invalid'); }, level: 'fail' },
+    foreign: { get label() { return t('seo.verify.flags.foreign'); }, level: 'warn' },
+    www: { get label() { return t('seo.verify.flags.www'); }, level: 'warn' },
+    scheme: { get label() { return t('seo.verify.flags.scheme'); }, level: 'warn' },
+    duplicate: { get label() { return t('seo.verify.flags.duplicate'); }, level: 'warn' },
+    bad_lastmod: { get label() { return t('seo.verify.flags.bad_lastmod'); }, level: 'warn' },
+    future: { get label() { return t('seo.verify.flags.future'); }, level: 'warn' },
 };
 const canOpen = (entry) => entry.loc && !entry.flags.includes('foreign') && !entry.flags.includes('invalid');
 
@@ -99,7 +102,7 @@ const load = async (url) => {
             }
         }
     } catch (e) {
-        files[url].error = e.message || 'Could not open this sitemap.';
+        files[url].error = e.message || t('seo.verify.openFailed');
     } finally {
         files[url].loading = false;
     }
@@ -160,7 +163,7 @@ const checkPages = async (url) => {
     try {
         file.pages = await requestJson(panelRoute('seo.sitemap-verify.pages'), { body: { ...target, urls: file.data.sample } });
     } catch (e) {
-        file.pages = { error: e.message || 'Could not check the pages.' };
+        file.pages = { error: e.message || t('seo.verify.pagesFailed') };
     } finally {
         file.pagesLoading = false;
     }
@@ -189,7 +192,7 @@ const saveRobots = async (content) => {
         await verify();
         notice.value = result.message;
     } catch (e) {
-        robotsError.value = e.message || 'robots.txt was not saved.';
+        robotsError.value = e.message || t('seo.verify.robotsFailed');
     } finally {
         robotsSaving.value = false;
     }
@@ -204,21 +207,21 @@ provide('sitemapVerify', {
 </script>
 
 <template>
-    <Head title="Sitemap Verify" />
+    <Head :title="t('seo.verify.title')" />
 
     <AuthenticatedLayout>
         <template #header>
             <div>
-                <h1 class="text-lg font-semibold">Sitemap Verify</h1>
-                <p class="text-sm text-slate-500 dark:text-slate-400">Finds your sitemaps through robots.txt, then lets you open each one and its sub-sitemaps.</p>
+                <h1 class="text-lg font-semibold">{{ t('seo.verify.title') }}</h1>
+                <p class="text-sm text-slate-500 dark:text-slate-400">{{ t('seo.verify.subtitle') }}</p>
             </div>
         </template>
 
         <div class="space-y-4">
             <form class="space-y-3 rounded-xl border border-slate-200 bg-white p-4 dark:border-slate-700 dark:bg-slate-800" @submit.prevent="verify">
-                <div class="inline-flex rounded-lg border border-slate-200 bg-slate-50 p-0.5 text-sm dark:border-slate-700 dark:bg-slate-900" role="radiogroup" aria-label="Sitemap source">
+                <div class="inline-flex rounded-lg border border-slate-200 bg-slate-50 p-0.5 text-sm dark:border-slate-700 dark:bg-slate-900" role="radiogroup" :aria-label="t('seo.verify.source')">
                     <button
-                        v-for="option in [{ value: 'internal', label: 'Internal website', icon: 'bi-hdd-stack' }, { value: 'external', label: 'External URL', icon: 'bi-globe2' }]"
+                        v-for="option in [{ value: 'internal', label: t('seo.inspect.internal'), icon: 'bi-hdd-stack' }, { value: 'external', label: t('seo.inspect.external'), icon: 'bi-globe2' }]"
                         :key="option.value"
                         type="button"
                         role="radio"
@@ -234,27 +237,27 @@ provide('sitemapVerify', {
                 <div class="grid gap-3" :class="source === 'internal' ? 'sm:grid-cols-[1fr_1fr_auto]' : 'sm:grid-cols-[1fr_auto]'">
                     <template v-if="source === 'internal'">
                         <div>
-                            <label class="mb-1 block text-sm font-medium">Website</label>
-                            <SearchableSelect v-model="websiteId" :options="websiteOptions" placeholder="Select a website…" search-placeholder="Search domains…" />
+                            <label class="mb-1 block text-sm font-medium">{{ t('seo.inspect.website') }}</label>
+                            <SearchableSelect v-model="websiteId" :options="websiteOptions" :placeholder="t('seo.inspect.selectSite')" :search-placeholder="t('seo.inspect.searchDomains')" />
                         </div>
                         <div>
-                            <label class="mb-1 block text-sm font-medium">Sitemap path <span class="font-normal text-slate-400">(optional)</span></label>
-                            <input v-model="sitemapPath" type="text" placeholder="Found automatically, e.g. /sitemap.xml" class="w-full rounded-lg border-slate-300 text-sm dark:border-slate-600 dark:bg-slate-900" />
+                            <label class="mb-1 block text-sm font-medium">{{ t('seo.verify.path') }} <span class="font-normal text-slate-400">{{ t('seo.inspect.optional') }}</span></label>
+                            <input v-model="sitemapPath" type="text" :placeholder="t('seo.verify.pathPlaceholder')" class="w-full rounded-lg border-slate-300 text-sm dark:border-slate-600 dark:bg-slate-900" />
                         </div>
                     </template>
                     <div v-else>
-                        <label class="mb-1 block text-sm font-medium">Site or sitemap URL</label>
-                        <input v-model="externalUrl" type="text" inputmode="url" placeholder="https://example.com or https://example.com/sitemap.xml" class="w-full rounded-lg border-slate-300 text-sm dark:border-slate-600 dark:bg-slate-900" />
-                        <p class="mt-1 text-xs text-slate-500 dark:text-slate-400">A site address finds its sitemap through robots.txt; a sitemap address is used directly.</p>
+                        <label class="mb-1 block text-sm font-medium">{{ t('seo.verify.url') }}</label>
+                        <input v-model="externalUrl" type="text" inputmode="url" :placeholder="t('seo.verify.urlPlaceholder')" class="w-full rounded-lg border-slate-300 text-sm dark:border-slate-600 dark:bg-slate-900" />
+                        <p class="mt-1 text-xs text-slate-500 dark:text-slate-400">{{ t('seo.verify.urlHelp') }}</p>
                     </div>
                     <button type="submit" :disabled="!canVerify || running" class="self-end rounded-md bg-blue-600 px-4 py-2 text-sm text-white hover:bg-blue-700 disabled:opacity-50">
-                        <i class="bi mr-1" :class="running ? 'bi-arrow-repeat animate-spin inline-block' : 'bi-search'"></i>{{ running ? 'Checking…' : 'Verify' }}
+                        <i class="bi mr-1" :class="running ? 'bi-arrow-repeat animate-spin inline-block' : 'bi-search'"></i>{{ running ? t('seo.verify.checking') : t('seo.panel.verify') }}
                     </button>
                 </div>
             </form>
 
             <div v-if="source === 'internal' && !websites.length" class="rounded-xl border border-dashed border-slate-300 bg-white p-10 text-center text-sm text-slate-500 dark:border-slate-600 dark:bg-slate-800">
-                You have no websites yet. Create one, or switch to External URL to check any public site.
+                {{ t('seo.verify.noSites') }}
             </div>
             <div v-if="error" class="rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{{ error }}</div>
             <div v-if="notice" class="rounded-md border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">{{ notice }}</div>
@@ -264,15 +267,15 @@ provide('sitemapVerify', {
                     <i class="bi text-3xl" :class="[overall.icon, overall.text]"></i>
                     <div class="min-w-0 flex-1">
                         <p class="font-semibold">{{ overall.title }}</p>
-                        <p class="truncate text-sm text-slate-500 dark:text-slate-400">{{ report.base_url }} · checked {{ new Date(report.checked_at).toLocaleString() }}</p>
+                        <p class="truncate text-sm text-slate-500 dark:text-slate-400">{{ report.base_url }} · {{ t('seo.verify.checkedAt', { date: new Date(report.checked_at).toLocaleString() }) }}</p>
                     </div>
                     <Link v-if="manageHref" :href="manageHref" class="flex items-center gap-1.5 rounded-lg border border-slate-300 px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-50 dark:border-slate-600 dark:text-slate-200 dark:hover:bg-slate-700">
-                        <i class="bi bi-gear"></i>Manage
+                        <i class="bi bi-gear"></i>{{ t('seo.inspect.manage') }}
                     </Link>
                 </div>
 
                 <section v-if="report.sitemaps.length" class="rounded-xl border border-slate-200 bg-white dark:border-slate-700 dark:bg-slate-800">
-                    <h2 class="border-b border-slate-100 px-4 py-3 text-sm font-semibold dark:border-slate-700">Sitemaps found <span class="font-normal text-slate-500">· click one to open it</span></h2>
+                    <h2 class="border-b border-slate-100 px-4 py-3 text-sm font-semibold dark:border-slate-700">{{ t('seo.verify.sitemapsFound') }} <span class="font-normal text-slate-500">· {{ t('seo.verify.clickOpen') }}</span></h2>
                     <div v-if="foundUrls.length > 1" class="border-b border-slate-100 px-4 py-3 dark:border-slate-700">
                         <SitemapBatchBar :stats="statsFor(foundUrls)" :running="batch.running && batch.key === 'found'" :busy="batch.running" @run="runChecks('found', foundUrls)" @stop="stopChecks" />
                     </div>
@@ -283,7 +286,7 @@ provide('sitemapVerify', {
                                 <span class="min-w-0 flex-1 truncate font-mono text-sm text-blue-600 dark:text-blue-400">{{ item.url }}</span>
                                 <span v-if="files[item.url]?.data" class="shrink-0 rounded px-1.5 py-0.5 text-xs font-medium" :class="badge[files[item.url].data.status].bg">{{ badge[files[item.url].data.status].label }}</span>
                                 <i v-else-if="files[item.url]?.loading" class="bi bi-arrow-repeat inline-block shrink-0 animate-spin text-slate-400"></i>
-                                <span v-else-if="files[item.url]?.error" class="shrink-0 rounded px-1.5 py-0.5 text-xs font-medium" :class="badge.fail.bg" :title="files[item.url].error">Failed</span>
+                                <span v-else-if="files[item.url]?.error" class="shrink-0 rounded px-1.5 py-0.5 text-xs font-medium" :class="badge.fail.bg" :title="files[item.url].error">{{ t('seo.panel.failed') }}</span>
                                 <span class="shrink-0 rounded bg-slate-100 px-1.5 py-0.5 text-xs text-slate-600 dark:bg-slate-700 dark:text-slate-300">{{ sourceLabel[item.source] || item.source }}</span>
                                 <i class="bi bi-chevron-right text-slate-400"></i>
                             </button>
@@ -293,9 +296,9 @@ provide('sitemapVerify', {
 
                 <section class="rounded-xl border border-slate-200 bg-white dark:border-slate-700 dark:bg-slate-800">
                     <div class="flex items-center justify-between gap-3 border-b border-slate-100 px-4 py-3 dark:border-slate-700">
-                        <h2 class="text-sm font-semibold">Checks</h2>
+                        <h2 class="text-sm font-semibold">{{ t('seo.verify.checks') }}</h2>
                         <button type="button" @click="openRobots" class="rounded-md border border-slate-300 px-2.5 py-1 text-xs font-medium hover:bg-slate-50 dark:border-slate-600 dark:hover:bg-slate-700">
-                            <i class="bi mr-1" :class="report.robots?.file?.editable ? 'bi-pencil-square' : 'bi-file-earmark-text'"></i>{{ report.robots?.file?.editable ? 'Edit robots.txt' : 'View robots.txt' }}
+                            <i class="bi mr-1" :class="report.robots?.file?.editable ? 'bi-pencil-square' : 'bi-file-earmark-text'"></i>{{ report.robots?.file?.editable ? t('seo.verify.editRobots') : t('seo.verify.viewRobots') }}
                         </button>
                     </div>
                     <ul class="divide-y divide-slate-100 dark:divide-slate-700">
@@ -312,7 +315,7 @@ provide('sitemapVerify', {
                                     <p class="text-sm font-medium">{{ check.label }}</p>
                                     <p class="text-sm text-slate-500 dark:text-slate-400">{{ check.detail }}</p>
                                 </div>
-                                <span v-if="isRobotsCheck(check) && check.status !== 'pass' && report.robots?.file?.editable" class="shrink-0 rounded-md bg-blue-600 px-2 py-0.5 text-xs font-medium text-white">Fix</span>
+                                <span v-if="isRobotsCheck(check) && check.status !== 'pass' && report.robots?.file?.editable" class="shrink-0 rounded-md bg-blue-600 px-2 py-0.5 text-xs font-medium text-white">{{ t('seo.verify.fix') }}</span>
                                 <i v-else-if="isRobotsCheck(check)" class="bi bi-chevron-right mt-0.5 text-slate-400"></i>
                             </component>
                         </li>

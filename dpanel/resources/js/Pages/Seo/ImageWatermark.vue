@@ -4,6 +4,9 @@ import { detectMarks, growMask, inpaint } from '@/Pages/Seo/watermarkInpaint';
 import { usePanelApi } from '@/Pages/Websites/composables/usePanelApi';
 import { Head } from '@inertiajs/vue3';
 import { computed, nextTick, onBeforeUnmount, reactive, ref } from 'vue';
+import { useI18n } from 'vue-i18n';
+
+const { t } = useI18n();
 
 const props = defineProps({
     maxBytes: { type: Number, default: 20 * 1024 * 1024 },
@@ -32,7 +35,7 @@ const runCheck = async (picked) => {
             body: form,
         });
         const data = await response.json().catch(() => ({}));
-        if (!response.ok) throw new Error(data.message || 'The image could not be checked.');
+        if (!response.ok) throw new Error(data.message || t('seo.watermark.checkFailed'));
         if (file.value === picked) check.report = data;
     } catch (e) {
         if (file.value === picked) check.error = e.message;
@@ -42,10 +45,10 @@ const runCheck = async (picked) => {
 };
 
 const VERDICTS = {
-    ai: { label: 'AI label found', icon: 'bi-stars', tone: 'border-violet-200 bg-violet-50 text-violet-800 dark:border-violet-900 dark:bg-violet-900/30 dark:text-violet-200' },
-    provenance: { label: 'Content Credentials', icon: 'bi-patch-check', tone: 'border-blue-200 bg-blue-50 text-blue-800 dark:border-blue-900 dark:bg-blue-900/30 dark:text-blue-200' },
-    rights: { label: 'Ownership marked', icon: 'bi-c-circle', tone: 'border-amber-200 bg-amber-50 text-amber-800 dark:border-amber-900 dark:bg-amber-900/30 dark:text-amber-200' },
-    none: { label: 'Nothing found', icon: 'bi-check-circle', tone: 'border-emerald-200 bg-emerald-50 text-emerald-800 dark:border-emerald-900 dark:bg-emerald-900/30 dark:text-emerald-200' },
+    ai: { get label() { return t('seo.watermark.verdicts.ai'); }, icon: 'bi-stars', tone: 'border-violet-200 bg-violet-50 text-violet-800 dark:border-violet-900 dark:bg-violet-900/30 dark:text-violet-200' },
+    provenance: { get label() { return t('seo.watermark.verdicts.provenance'); }, icon: 'bi-patch-check', tone: 'border-blue-200 bg-blue-50 text-blue-800 dark:border-blue-900 dark:bg-blue-900/30 dark:text-blue-200' },
+    rights: { get label() { return t('seo.watermark.verdicts.rights'); }, icon: 'bi-c-circle', tone: 'border-amber-200 bg-amber-50 text-amber-800 dark:border-amber-900 dark:bg-amber-900/30 dark:text-amber-200' },
+    none: { get label() { return t('seo.watermark.verdicts.none'); }, icon: 'bi-check-circle', tone: 'border-emerald-200 bg-emerald-50 text-emerald-800 dark:border-emerald-900 dark:bg-emerald-900/30 dark:text-emerald-200' },
 };
 const KIND_ICONS = { ai: 'bi-stars text-violet-500', provenance: 'bi-patch-check text-blue-500', rights: 'bi-c-circle text-amber-500' };
 const verdict = computed(() => (check.report ? VERDICTS[check.report.verdict] || VERDICTS.none : null));
@@ -82,11 +85,11 @@ onBeforeUnmount(reset);
 const pickFile = async (picked) => {
     if (!picked) return;
     if (!/^image\/(png|jpeg|webp|gif|avif|bmp)$/.test(picked.type) && !/\.(png|jpe?g|webp|gif|avif|bmp)$/i.test(picked.name)) {
-        error.value = 'Choose an image: PNG, JPG, WebP, GIF or AVIF.';
+        error.value = t('seo.watermark.chooseImage');
         return;
     }
     if (picked.size > props.maxBytes) {
-        error.value = `The image is larger than ${Math.round(props.maxBytes / 1024 / 1024)} MB.`;
+        error.value = t('seo.watermark.tooLarge', { size: Math.round(props.maxBytes / 1024 / 1024) });
         return;
     }
     error.value = '';
@@ -95,11 +98,11 @@ const pickFile = async (picked) => {
     try {
         bitmap = await createImageBitmap(picked);
     } catch {
-        error.value = 'Your browser could not open this image.';
+        error.value = t('seo.watermark.cannotOpen');
         return;
     }
     if (bitmap.width * bitmap.height > MAX_PIXELS) {
-        error.value = 'The image is over 40 megapixels; resize it first.';
+        error.value = t('seo.watermark.tooManyPixels');
         return;
     }
     file.value = picked;
@@ -224,7 +227,7 @@ const remove = async () => {
         canUndo.value = true;
         edited.value = true;
     } catch (e) {
-        error.value = e.message || 'The marks could not be removed.';
+        error.value = e.message || t('seo.watermark.removeFailed');
     } finally {
         working.value = false;
     }
@@ -265,7 +268,7 @@ const downloadCleanCopy = () => {
     const ext = { 'image/jpeg': 'jpg', 'image/webp': 'webp', 'image/png': 'png' }[type];
     imageCanvas.value.toBlob((blob) => {
         if (!blob) {
-            error.value = 'A clean copy could not be created.';
+            error.value = t('seo.watermark.copyFailed');
             return;
         }
         const link = document.createElement('a');
@@ -283,13 +286,13 @@ const segmentButton = (active) => (active ? 'bg-white font-medium shadow-sm dark
 </script>
 
 <template>
-    <Head title="Image Watermark" />
+    <Head :title="t('seo.watermark.title')" />
 
     <AuthenticatedLayout>
         <template #header>
             <div>
-                <h1 class="text-lg font-semibold">Image Watermark</h1>
-                <p class="text-sm text-slate-500 dark:text-slate-400">Check an image for watermarks, AI labels and ownership details, and remove visible marks such as logos, date stamps and text overlays.</p>
+                <h1 class="text-lg font-semibold">{{ t('seo.watermark.title') }}</h1>
+                <p class="text-sm text-slate-500 dark:text-slate-400">{{ t('seo.watermark.subtitle') }}</p>
             </div>
         </template>
 
@@ -307,17 +310,17 @@ const segmentButton = (active) => (active ? 'bg-white font-medium shadow-sm dark
                         <input type="file" accept="image/png,image/jpeg,image/webp,image/gif,image/avif,image/bmp" class="sr-only" @change="pickFile($event.target.files[0]); $event.target.value = ''" />
                         <i class="bi bi-cloud-arrow-up text-3xl text-slate-400"></i>
                         <span v-if="file" class="font-medium">{{ file.name }} <span class="font-normal text-slate-500">· {{ size.width }}×{{ size.height }} · {{ formatBytes(file.size) }}</span></span>
-                        <span v-else class="font-medium">Drop an image here or click to choose</span>
-                        <span class="text-xs text-slate-500 dark:text-slate-400">PNG, JPG, WebP, GIF or AVIF, up to {{ Math.round(maxBytes / 1024 / 1024) }} MB. The original file is checked as-is.</span>
+                        <span v-else class="font-medium">{{ t('seo.watermark.drop') }}</span>
+                        <span class="text-xs text-slate-500 dark:text-slate-400">{{ t('seo.watermark.dropHint', { size: Math.round(maxBytes / 1024 / 1024) }) }}</span>
                     </label>
                 </section>
 
                 <section v-if="file" :class="card">
                     <div class="border-b border-slate-100 px-4 py-3 dark:border-slate-700">
-                        <h2 class="text-sm font-semibold">Watermark check</h2>
+                        <h2 class="text-sm font-semibold">{{ t('seo.watermark.check') }}</h2>
                     </div>
                     <div class="space-y-3 p-4">
-                        <p v-if="check.loading" class="text-sm text-slate-500"><i class="bi bi-arrow-repeat mr-1 inline-block animate-spin"></i>Reading the file's metadata…</p>
+                        <p v-if="check.loading" class="text-sm text-slate-500"><i class="bi bi-arrow-repeat mr-1 inline-block animate-spin"></i>{{ t('seo.watermark.reading') }}</p>
                         <p v-else-if="check.error" class="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700 dark:border-red-900 dark:bg-red-900/30 dark:text-red-300">{{ check.error }}</p>
                         <template v-else-if="check.report">
                             <div class="rounded-lg border px-3 py-2 text-sm" :class="verdict.tone">
@@ -334,7 +337,7 @@ const segmentButton = (active) => (active ? 'bg-white font-medium shadow-sm dark
                                 </li>
                             </ul>
                             <details v-if="check.report.metadata.length" class="text-xs">
-                                <summary class="cursor-pointer font-medium text-slate-600 dark:text-slate-300">All metadata read ({{ check.report.metadata.length }})</summary>
+                                <summary class="cursor-pointer font-medium text-slate-600 dark:text-slate-300">{{ t('seo.watermark.allMetadata', { count: check.report.metadata.length }) }}</summary>
                                 <dl class="mt-2 max-h-64 space-y-1.5 overflow-auto">
                                     <div v-for="(m, i) in check.report.metadata" :key="i">
                                         <dt class="font-mono text-slate-500">{{ m.source }} · {{ m.key }}</dt>
@@ -343,49 +346,49 @@ const segmentButton = (active) => (active ? 'bg-white font-medium shadow-sm dark
                                 </dl>
                             </details>
                             <p class="text-xs text-slate-500 dark:text-slate-400">
-                                <i class="bi bi-info-circle mr-1"></i>This reads labels stored in the file. Invisible pixel watermarks such as SynthID are encoded into the image itself; this tool cannot reliably detect or remove them.
+                                <i class="bi bi-info-circle mr-1"></i>{{ t('seo.watermark.invisibleNote') }}
                             </p>
-                            <button type="button" @click="downloadCleanCopy" class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm hover:bg-slate-50 dark:border-slate-600 dark:hover:bg-slate-700"><i class="bi bi-file-earmark-minus mr-1"></i>Download copy without file metadata</button>
-                            <p class="text-xs text-slate-500 dark:text-slate-400">This removes embedded metadata and Content Credentials from the exported copy. It does not remove invisible pixel watermarks.</p>
+                            <button type="button" @click="downloadCleanCopy" class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm hover:bg-slate-50 dark:border-slate-600 dark:hover:bg-slate-700"><i class="bi bi-file-earmark-minus mr-1"></i>{{ t('seo.watermark.downloadClean') }}</button>
+                            <p class="text-xs text-slate-500 dark:text-slate-400">{{ t('seo.watermark.cleanNote') }}</p>
                         </template>
                     </div>
                 </section>
 
                 <section v-if="file" :class="card" class="space-y-4 p-4">
-                    <h2 class="text-sm font-semibold">Remove a visible mark</h2>
+                    <h2 class="text-sm font-semibold">{{ t('seo.watermark.removeTitle') }}</h2>
                     <div>
-                        <label class="mb-1 block text-xs font-medium">Select with</label>
+                        <label class="mb-1 block text-xs font-medium">{{ t('seo.watermark.selectWith') }}</label>
                         <div :class="segment" class="grid-cols-3">
-                            <button v-for="t in [{ v: 'brush', t: 'Brush', i: 'bi-brush' }, { v: 'box', t: 'Box', i: 'bi-bounding-box' }, { v: 'eraser', t: 'Eraser', i: 'bi-eraser' }]" :key="t.v" type="button" @click="tool = t.v" class="rounded-md px-2 py-1.5" :class="segmentButton(tool === t.v)"><i class="bi mr-1" :class="t.i"></i>{{ t.t }}</button>
+                            <button v-for="opt in [{ v: 'brush', label: t('seo.watermark.tools.brush'), i: 'bi-brush' }, { v: 'box', label: t('seo.watermark.tools.box'), i: 'bi-bounding-box' }, { v: 'eraser', label: t('seo.watermark.tools.eraser'), i: 'bi-eraser' }]" :key="opt.v" type="button" @click="tool = opt.v" class="rounded-md px-2 py-1.5" :class="segmentButton(tool === opt.v)"><i class="bi mr-1" :class="opt.i"></i>{{ opt.label }}</button>
                         </div>
                     </div>
                     <div v-if="tool !== 'box'">
-                        <label class="flex justify-between text-xs font-medium"><span>Brush size</span><span class="text-slate-500">{{ brushSize }} px</span></label>
+                        <label class="flex justify-between text-xs font-medium"><span>{{ t('seo.watermark.brushSize') }}</span><span class="text-slate-500">{{ brushSize }} px</span></label>
                         <input v-model.number="brushSize" type="range" min="2" :max="Math.max(40, Math.round(Math.max(size.width, size.height) / 8))" class="w-full" />
                     </div>
                     <template v-else>
-                        <label class="flex items-start gap-2 text-sm"><input v-model="detect" type="checkbox" class="mt-0.5 rounded border-slate-300" /><span>Select only the mark inside the box <span class="block text-xs text-slate-500 dark:text-slate-400">Picks out text and logo strokes, leaving the background to rebuild from. Turn off to remove the whole box.</span></span></label>
+                        <label class="flex items-start gap-2 text-sm"><input v-model="detect" type="checkbox" class="mt-0.5 rounded border-slate-300" /><span>{{ t('seo.watermark.detect') }} <span class="block text-xs text-slate-500 dark:text-slate-400">{{ t('seo.watermark.detectHint') }}</span></span></label>
                         <div v-if="detect">
-                            <label class="flex justify-between text-xs font-medium"><span>Sensitivity</span><span class="text-slate-500">{{ sensitivity }}</span></label>
+                            <label class="flex justify-between text-xs font-medium"><span>{{ t('seo.watermark.sensitivity') }}</span><span class="text-slate-500">{{ sensitivity }}</span></label>
                             <input v-model.number="sensitivity" type="range" min="1" max="100" class="w-full" />
-                            <p class="text-xs text-slate-500 dark:text-slate-400">Raise it for faint, see-through marks; lower it if background detail gets selected.</p>
+                            <p class="text-xs text-slate-500 dark:text-slate-400">{{ t('seo.watermark.sensitivityHint') }}</p>
                         </div>
                     </template>
                     <div>
-                        <label class="flex justify-between text-xs font-medium"><span>Grow selection</span><span class="text-slate-500">{{ grow }} px</span></label>
+                        <label class="flex justify-between text-xs font-medium"><span>{{ t('seo.watermark.grow') }}</span><span class="text-slate-500">{{ grow }} px</span></label>
                         <input v-model.number="grow" type="range" min="0" max="12" class="w-full" />
-                        <p class="text-xs text-slate-500 dark:text-slate-400">Covers soft edges and shadows around the mark.</p>
+                        <p class="text-xs text-slate-500 dark:text-slate-400">{{ t('seo.watermark.growHint') }}</p>
                     </div>
                     <div>
-                        <label class="mb-1 block text-xs font-medium">Fill</label>
+                        <label class="mb-1 block text-xs font-medium">{{ t('seo.watermark.fill') }}</label>
                         <div :class="segment" class="grid-cols-2">
-                            <button type="button" @click="method = 'texture'" class="rounded-md px-2 py-1.5" :class="segmentButton(method === 'texture')">Match texture</button>
-                            <button type="button" @click="method = 'smooth'" class="rounded-md px-2 py-1.5" :class="segmentButton(method === 'smooth')">Smooth</button>
+                            <button type="button" @click="method = 'texture'" class="rounded-md px-2 py-1.5" :class="segmentButton(method === 'texture')">{{ t('seo.watermark.texture') }}</button>
+                            <button type="button" @click="method = 'smooth'" class="rounded-md px-2 py-1.5" :class="segmentButton(method === 'smooth')">{{ t('seo.watermark.smooth') }}</button>
                         </div>
-                        <p class="mt-1 text-xs text-slate-500 dark:text-slate-400">{{ method === 'texture' ? 'Copies matching patches from around the mark; best on photos, grass, fabric and patterns.' : 'Blends the surrounding colors inward; fastest, best for thin text on skies, walls and gradients.' }}</p>
+                        <p class="mt-1 text-xs text-slate-500 dark:text-slate-400">{{ method === 'texture' ? t('seo.watermark.textureHint') : t('seo.watermark.smoothHint') }}</p>
                     </div>
                     <p class="rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300">
-                        <i class="bi bi-shield-check mr-1"></i>Only remove marks from images you own or are licensed to edit.<template v-if="check.report && check.report.verdict !== 'none'"> This image's {{ check.report.verdict === 'ai' ? 'AI label' : check.report.verdict === 'provenance' ? 'Content Credentials' : 'copyright details' }} still apply after a visible mark is removed.</template>
+                        <i class="bi bi-shield-check mr-1"></i>{{ t('seo.watermark.ownOnly') }}<template v-if="check.report && check.report.verdict !== 'none'"> {{ t('seo.watermark.stillApply', { what: check.report.verdict === 'ai' ? t('seo.watermark.aiLabel') : check.report.verdict === 'provenance' ? 'Content Credentials' : t('seo.watermark.copyright') }) }}</template>
                     </p>
                 </section>
             </div>
@@ -396,17 +399,17 @@ const segmentButton = (active) => (active ? 'bg-white font-medium shadow-sm dark
 
                 <div v-if="!file" class="rounded-xl border border-dashed border-slate-300 bg-white p-12 text-center text-sm text-slate-500 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-400">
                     <i class="bi bi-eraser mb-2 block text-3xl"></i>
-                    Add an image to see what watermarks and AI labels it carries, then paint over a visible mark to remove it.
+                    {{ t('seo.watermark.empty') }}
                 </div>
 
                 <template v-else>
                     <div :class="card" class="flex flex-wrap items-center gap-2 p-3">
                         <button type="button" :disabled="!hasMask || working" @click="remove" class="rounded-md bg-blue-600 px-4 py-2 text-sm text-white hover:bg-blue-700 disabled:opacity-50">
-                            <i class="bi mr-1" :class="working ? 'bi-arrow-repeat inline-block animate-spin' : 'bi-magic'"></i>{{ working ? `Removing… ${Math.round(progress * 100)}%` : 'Remove selected' }}
+                            <i class="bi mr-1" :class="working ? 'bi-arrow-repeat inline-block animate-spin' : 'bi-magic'"></i>{{ working ? t('seo.watermark.removing', { percent: Math.round(progress * 100) }) : t('seo.watermark.removeSelected') }}
                         </button>
-                        <button type="button" :disabled="!hasMask || working" @click="clearMask" class="rounded-md border border-slate-300 px-3 py-2 text-sm hover:bg-slate-50 disabled:opacity-50 dark:border-slate-600 dark:hover:bg-slate-700">Clear selection</button>
-                        <button type="button" :disabled="!canUndo || working" @click="undo" class="rounded-md border border-slate-300 px-3 py-2 text-sm hover:bg-slate-50 disabled:opacity-50 dark:border-slate-600 dark:hover:bg-slate-700"><i class="bi bi-arrow-counterclockwise mr-1"></i>Undo</button>
-                        <button type="button" :disabled="!edited || working" @click="restoreOriginal" class="rounded-md border border-slate-300 px-3 py-2 text-sm hover:bg-slate-50 disabled:opacity-50 dark:border-slate-600 dark:hover:bg-slate-700">Start over</button>
+                        <button type="button" :disabled="!hasMask || working" @click="clearMask" class="rounded-md border border-slate-300 px-3 py-2 text-sm hover:bg-slate-50 disabled:opacity-50 dark:border-slate-600 dark:hover:bg-slate-700">{{ t('seo.watermark.clearSelection') }}</button>
+                        <button type="button" :disabled="!canUndo || working" @click="undo" class="rounded-md border border-slate-300 px-3 py-2 text-sm hover:bg-slate-50 disabled:opacity-50 dark:border-slate-600 dark:hover:bg-slate-700"><i class="bi bi-arrow-counterclockwise mr-1"></i>{{ t('seo.watermark.undo') }}</button>
+                        <button type="button" :disabled="!edited || working" @click="restoreOriginal" class="rounded-md border border-slate-300 px-3 py-2 text-sm hover:bg-slate-50 disabled:opacity-50 dark:border-slate-600 dark:hover:bg-slate-700">{{ t('seo.watermark.startOver') }}</button>
                         <button
                             type="button"
                             :disabled="!edited || working"
@@ -414,9 +417,9 @@ const segmentButton = (active) => (active ? 'bg-white font-medium shadow-sm dark
                             @pointerdown="comparing = true"
                             @pointerup="comparing = false"
                             @pointerleave="comparing = false"
-                        ><i class="bi bi-eye mr-1"></i>Hold to compare</button>
+                        ><i class="bi bi-eye mr-1"></i>{{ t('seo.watermark.compare') }}</button>
                         <span class="flex-1"></span>
-                        <button type="button" :disabled="!edited || working" @click="download" class="rounded-md bg-emerald-600 px-4 py-2 text-sm text-white hover:bg-emerald-700 disabled:opacity-50"><i class="bi bi-download mr-1"></i>Download</button>
+                        <button type="button" :disabled="!edited || working" @click="download" class="rounded-md bg-emerald-600 px-4 py-2 text-sm text-white hover:bg-emerald-700 disabled:opacity-50"><i class="bi bi-download mr-1"></i>{{ t('seo.watermark.download') }}</button>
                     </div>
 
                     <div :class="card" class="p-3">
@@ -432,11 +435,11 @@ const segmentButton = (active) => (active ? 'bg-white font-medium shadow-sm dark
                                 @pointercancel="onPointerUp"
                             ></canvas>
                             <div v-if="boxStyle" class="pointer-events-none absolute border-2 border-dashed border-blue-500 bg-blue-500/10" :style="boxStyle"></div>
-                            <img v-if="comparing" :src="originalUrl" alt="Original" class="pointer-events-none absolute inset-0 h-full w-full" />
+                            <img v-if="comparing" :src="originalUrl" :alt="t('seo.watermark.original')" class="pointer-events-none absolute inset-0 h-full w-full" />
                         </div>
                         <p class="mt-2 text-center text-xs text-slate-500 dark:text-slate-400">
-                            {{ tool === 'box' ? 'Drag a box around the mark.' : tool === 'eraser' ? 'Paint to shrink the red selection.' : 'Paint over the mark; it turns red.' }}
-                            Run it again on what's left for a cleaner result. The download is a new file without the original's metadata.
+                            {{ tool === 'box' ? t('seo.watermark.hintBox') : tool === 'eraser' ? t('seo.watermark.hintEraser') : t('seo.watermark.hintBrush') }}
+                            {{ t('seo.watermark.hintAgain') }}
                         </p>
                     </div>
                 </template>

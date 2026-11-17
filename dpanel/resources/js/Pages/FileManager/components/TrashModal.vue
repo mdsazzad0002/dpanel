@@ -1,4 +1,7 @@
 <script setup>
+import { useI18n } from 'vue-i18n';
+
+const { t } = useI18n();
 defineProps({
     fm: {
         type: Object,
@@ -9,10 +12,10 @@ defineProps({
 
 <template>
     <div v-if="fm.modalType === 'trash'" class="min-h-0 flex-1 space-y-3 overflow-y-auto">
-        <p class="text-xs text-slate-500">Deleted items are zipped and kept here before being permanently removed.</p>
+        <p class="text-xs text-slate-500">{{ t('fileManager.trash.intro') }}</p>
 
-        <div v-if="fm.trashLoading" class="py-6 text-center text-sm text-slate-500">Loading…</div>
-        <div v-else-if="fm.trashItems.length === 0" class="py-6 text-center text-sm text-slate-500">Trash is empty.</div>
+        <div v-if="fm.trashLoading" class="py-6 text-center text-sm text-slate-500">{{ t('common.loading') }}</div>
+        <div v-else-if="fm.trashItems.length === 0" class="py-6 text-center text-sm text-slate-500">{{ t('fileManager.trash.empty') }}</div>
 
         <template v-else>
             <div class="flex items-center justify-between gap-3 border-b border-slate-200 pb-2 dark:border-slate-700">
@@ -22,7 +25,7 @@ defineProps({
                         :checked="fm.trashSelectedPaths.length > 0 && fm.trashSelectedPaths.length === fm.trashItems.length"
                         @change="fm.toggleSelectAllTrash()"
                     />
-                    {{ fm.trashSelectedPaths.length ? `${fm.trashSelectedPaths.length} selected` : 'Select all' }}
+                    {{ fm.trashSelectedPaths.length ? t('fileManager.trash.selected', { count: fm.trashSelectedPaths.length }) : t('fileManager.trash.selectAll') }}
                 </label>
                 <button
                     v-if="fm.trashSelectedPaths.length"
@@ -31,7 +34,7 @@ defineProps({
                     class="rounded-md border border-red-300 px-2.5 py-1 text-xs font-medium text-red-600 hover:bg-red-50 disabled:opacity-50 dark:border-red-800 dark:text-red-400 dark:hover:bg-red-500/10"
                     @click="fm.destroySelectedTrashItems()"
                 >
-                    <i class="bi bi-trash3 mr-1"></i>{{ fm.trashBulkActionLoading ? 'Deleting…' : `Delete Forever (${fm.trashSelectedPaths.length})` }}
+                    <i class="bi bi-trash3 mr-1"></i>{{ fm.trashBulkActionLoading ? t('fileManager.trash.deleting') : t('fileManager.trash.deleteForeverCount', { count: fm.trashSelectedPaths.length }) }}
                 </button>
             </div>
 
@@ -49,7 +52,7 @@ defineProps({
                                 <p class="truncate font-medium text-slate-800 dark:text-slate-100">
                                     <i class="bi mr-1" :class="item.type === 'dir' ? 'bi-folder-fill text-amber-500' : 'bi-file-earmark text-slate-400'"></i>{{ item.file_name }}
                                 </p>
-                                <p class="mt-0.5 text-xs text-slate-500">From: /{{ item.original_directory || '(root)' }}</p>
+                                <p class="mt-0.5 text-xs text-slate-500">{{ t('fileManager.trash.from', { path: item.original_directory || t('fileManager.trash.root') }) }}</p>
                                 <p class="text-xs text-slate-400">{{ item.deleted_at }}</p>
                             </div>
                         </div>
@@ -60,7 +63,7 @@ defineProps({
                                 class="rounded-md border border-slate-300 px-2.5 py-1 text-xs font-medium hover:bg-slate-100 disabled:opacity-50 dark:border-slate-600 dark:hover:bg-slate-800"
                                 @click="fm.restoreTrashItem(item.trash_path)"
                             >
-                                <i class="bi bi-arrow-counterclockwise mr-1"></i>Restore
+                                <i class="bi bi-arrow-counterclockwise mr-1"></i>{{ t('fileManager.trash.restore') }}
                             </button>
                             <button
                                 type="button"
@@ -68,7 +71,7 @@ defineProps({
                                 class="rounded-md border border-red-300 px-2.5 py-1 text-xs font-medium text-red-600 hover:bg-red-50 disabled:opacity-50 dark:border-red-800 dark:text-red-400 dark:hover:bg-red-500/10"
                                 @click="fm.destroyTrashItem(item.trash_path)"
                             >
-                                <i class="bi bi-trash3 mr-1"></i>Delete Forever
+                                <i class="bi bi-trash3 mr-1"></i>{{ t('fileManager.trash.deleteForever') }}
                             </button>
                         </div>
                     </div>

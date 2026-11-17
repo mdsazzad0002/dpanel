@@ -1,0 +1,53 @@
+{
+    "index": {
+        "title": "Billing System",
+        "subtitle": "Connect an external billing platform to automate customer accounts.",
+        "configured": "Configured",
+        "setupRequired": "Setup required",
+        "whmcsHelp": "Securely provision plans, change packages, suspend accounts and create one-time panel login links from WHMCS.",
+        "openGuide": "Open setup guide"
+    },
+    "whmcs": {
+        "title": "Billing with WHMCS",
+        "subtitle": "Backend-only provisioning, lifecycle automation and one-time SSO.",
+        "back": "Billing services",
+        "ready": "Integration ready",
+        "incomplete": "Configuration incomplete",
+        "step1": "1. Configure dPanel",
+        "step1Help": "Add these values to dPanel’s {file}. Use the public outbound IP of the WHMCS server; multiple IPs or CIDRs are comma-separated.",
+        "set": "Set",
+        "missing": "Missing",
+        "allowedIps": "Allowed IPs",
+        "allowedDomains": "Allowed domains",
+        "copied": "Copied",
+        "copy": "Copy",
+        "thenRun": "Then run:",
+        "oneCommand": "One-command setup and .env sync",
+        "oneCommandHelp": "Replace the example IP and domain, then copy/paste. Existing keys are updated, missing keys are added, and an existing secret is preserved.",
+        "generate": "Generate Secret",
+        "copyCommand": "Copy Command",
+        "reset": "Reset",
+        "editHelp": "Edit the IP/domain first, generate a secret, then copy the command. Generating again replaces only the secret in this textarea.",
+        "operations": "Available operations",
+        "ops": {
+            "test": "Connection Test",
+            "sync": "Plan Sync",
+            "create": "Create Account",
+            "change": "Change Plan",
+            "suspend": "Suspend",
+            "unsuspend": "Unsuspend",
+            "terminate": "Terminate",
+            "login": "Auto Login"
+        },
+        "security": "Security",
+        "sec1": "dPanel rejects requests before processing unless the source IP and signed WHMCS domain both match their allowlists.",
+        "sec2": "Every request is HMAC-SHA256 signed with method, path, WHMCS domain, timestamp, nonce and raw-body hash.",
+        "sec3": "Timestamps older than {seconds} seconds and reused nonces are rejected.",
+        "sec4": "SSO URLs expire after {seconds} seconds and are consumed only once. Redirect the browser only to the returned URL.",
+        "trouble": "Troubleshooting",
+        "e403": "Check WHMCS outbound IP and proxy forwarding.",
+        "e401": "Client ID, shared secret, signature or server clock does not match.",
+        "e409": "Nonce was replayed or the email belongs to another account.",
+        "e422": "The plan slug or required service/customer data is invalid."
+    }
+}

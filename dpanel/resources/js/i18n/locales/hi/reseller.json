@@ -1,0 +1,23 @@
+{
+    "panel": {
+        "title": "रीसेलर पैनल",
+        "subtitle": "ग्राहकों की वेबसाइटें, डेटाबेस और अनुरोध प्रबंधित करें।",
+        "websiteRequests": "वेबसाइट अनुरोध",
+        "databaseRequests": "डेटाबेस अनुरोध",
+        "pending": "लंबित: {count}",
+        "quick": "त्वरित कार्रवाइयाँ",
+        "createWebsite": "वेबसाइट बनाएँ",
+        "websiteList": "वेबसाइट सूची",
+        "createDatabase": "डेटाबेस बनाएँ",
+        "databaseList": "डेटाबेस सूची",
+        "userPanel": "उपयोगकर्ता पैनल",
+        "recentWebsite": "हाल के वेबसाइट अनुरोध",
+        "recentDatabase": "हाल के डेटाबेस अनुरोध",
+        "domain": "डोमेन",
+        "status": "स्थिति",
+        "created": "बनाया गया",
+        "database": "डेटाबेस",
+        "noWebsite": "कोई वेबसाइट अनुरोध नहीं मिला।",
+        "noDatabase": "कोई डेटाबेस अनुरोध नहीं मिला।"
+    }
+}

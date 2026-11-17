@@ -5,6 +5,9 @@ let openPanels = 0;
 
 <script setup>
 import { onMounted, onUnmounted, watch } from 'vue';
+import { useI18n } from 'vue-i18n';
+
+const { t } = useI18n();
 
 const props = defineProps({
     show: { type: Boolean, default: false },
@@ -82,7 +85,7 @@ onUnmounted(() => {
                         <p v-if="subtitle" class="mt-0.5 text-sm text-slate-500 dark:text-slate-400">{{ subtitle }}</p>
                     </div>
                     <button @click="close" class="rounded-md p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-600 dark:hover:bg-slate-800 dark:hover:text-slate-300">
-                        <span class="sr-only">Close</span>
+                        <span class="sr-only">{{ t('common.close') }}</span>
                         <i class="bi bi-x-lg"></i>
                     </button>
                 </div>

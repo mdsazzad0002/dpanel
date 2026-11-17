@@ -1,6 +1,9 @@
 <script setup>
 import { ref, watch } from 'vue';
 import { Link, usePage } from '@inertiajs/vue3';
+import { useI18n } from 'vue-i18n';
+
+const { t } = useI18n();
 
 // Step-by-step help: the usual way to serve an app is a Docker website, which
 // gets a domain, SSL and the File Manager; this page is for everything else.
@@ -32,10 +35,10 @@ const websitesUrl = () => {
 };
 
 const siteSteps = [
-    { title: 'Create a website', body: 'Add the domain under Websites, as for any other site. Its folder, SSL and File Manager come with it.' },
-    { title: 'Switch its runtime to Docker', body: 'On the website\'s Manage page open Runtime settings and pick Docker. Enter the image (for example nginx:alpine), the port the app listens on, and the path inside the container where the site folder should appear.' },
-    { title: 'Upload your files', body: 'Use that website\'s File Manager: upload files or a zip and extract it in the site folder. The container sees the same folder, so you never upload into the container itself.' },
-    { title: 'Open it', body: 'The domain works right away; the container\'s port stays on 127.0.0.1. Tick "Open port to the internet" on the Docker Service card only if you also want http://server-ip:port.' },
+    { get title() { return t('docker.usageGuide.steps.create.title'); }, get body() { return t('docker.usageGuide.steps.create.body'); } },
+    { get title() { return t('docker.usageGuide.steps.runtime.title'); }, get body() { return t('docker.usageGuide.steps.runtime.body'); } },
+    { get title() { return t('docker.usageGuide.steps.upload.title'); }, get body() { return t('docker.usageGuide.steps.upload.body'); } },
+    { get title() { return t('docker.usageGuide.steps.open.title'); }, get body() { return t('docker.usageGuide.steps.open.body'); } },
 ];
 </script>
 
@@ -43,15 +46,15 @@ const siteSteps = [
     <section class="rounded-xl border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900">
         <button type="button" class="flex w-full items-center justify-between gap-3 p-6 text-left" @click="open = !open">
             <div>
-                <h2 class="text-base font-semibold">How to run an app with Docker</h2>
-                <p class="mt-1 text-sm text-slate-500 dark:text-slate-400">What to do in which order, and where your files go.</p>
+                <h2 class="text-base font-semibold">{{ t('docker.usageGuide.title') }}</h2>
+                <p class="mt-1 text-sm text-slate-500 dark:text-slate-400">{{ t('docker.usageGuide.subtitle') }}</p>
             </div>
-            <span class="shrink-0 text-xs text-slate-500 dark:text-slate-400">{{ open ? 'Hide' : 'Show' }}</span>
+            <span class="shrink-0 text-xs text-slate-500 dark:text-slate-400">{{ open ? t('docker.shared.hide') : t('docker.shared.show') }}</span>
         </button>
 
         <div v-if="open" class="space-y-6 border-t border-slate-200 p-6 dark:border-slate-800">
             <div>
-                <h3 class="text-sm font-medium">Serve a website from a container (recommended)</h3>
+                <h3 class="text-sm font-medium">{{ t('docker.usageGuide.siteTitle') }}</h3>
                 <ol class="mt-3 space-y-4">
                     <li v-for="(step, i) in siteSteps" :key="step.title" class="flex gap-3">
                         <span class="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-indigo-600 text-xs font-semibold text-white">{{ i + 1 }}</span>
@@ -61,21 +64,18 @@ const siteSteps = [
                         </div>
                     </li>
                 </ol>
-                <Link v-if="websitesUrl()" :href="websitesUrl()" class="mt-4 inline-block text-sm font-medium text-indigo-600 hover:underline dark:text-indigo-400">Go to Websites →</Link>
+                <Link v-if="websitesUrl()" :href="websitesUrl()" class="mt-4 inline-block text-sm font-medium text-indigo-600 hover:underline dark:text-indigo-400">{{ t('docker.usageGuide.goWebsites') }}</Link>
             </div>
 
             <div class="rounded-md border border-slate-200 p-4 dark:border-slate-700">
-                <h3 class="text-sm font-medium">Run a container without a domain</h3>
+                <h3 class="text-sm font-medium">{{ t('docker.usageGuide.noDomainTitle') }}</h3>
                 <p class="mt-1 text-sm text-slate-600 dark:text-slate-300">
-                    For databases, workers or tools that need no website, use "Run container" at the top of this page. Keep data the container writes
-                    in a named volume (a plain name such as <code>my-app-data</code>), which Docker creates and keeps across recreates.
-                    Containers here, their sites and stack services all appear in the list above; a site's container is named <code>dpanel-site-…</code>,
-                    manage it from its website instead.
+                    <i18n-t keypath="docker.usageGuide.noDomainBody" scope="global"><template #volume><code>my-app-data</code></template><template #site><code>dpanel-site-…</code></template></i18n-t>
                 </p>
             </div>
 
             <p class="text-xs text-slate-500 dark:text-slate-400">
-                If an app cannot write to its site folder, it runs as a different user than the site. Keep that data in a named volume, or let it only read the folder.
+                {{ t('docker.usageGuide.permNote') }}
             </p>
         </div>
     </section>

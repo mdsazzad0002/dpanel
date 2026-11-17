@@ -11,6 +11,9 @@ import LoginLocationSettings from './components/LoginLocationSettings.vue';
 import Offcanvas from '@/Components/Offcanvas.vue';
 import { useLoginAudit } from './useLoginAudit';
 import { coordinates } from './loginEventFormat';
+import { useI18n } from 'vue-i18n';
+
+const { t } = useI18n();
 
 const props = defineProps({
     clientIp: { type: String, default: '' },
@@ -90,15 +93,15 @@ onMounted(load);
 </script>
 
 <template>
-    <Head title="Login Audit" />
+    <Head :title="t('security.loginAudit.index.title')" />
 
     <AuthenticatedLayout>
         <template #header>
             <div class="flex flex-wrap items-center justify-between gap-3">
                 <div>
-                    <h1 class="text-lg font-semibold">Login Audit</h1>
+                    <h1 class="text-lg font-semibold">{{ t('security.loginAudit.index.title') }}</h1>
                     <p class="text-sm text-slate-500 dark:text-slate-400">
-                        Every {{ sshSupported ? 'panel and SSH' : 'panel' }} login, failed attempt and logout, with the IP and where it came from. Kept for {{ retentionDays }} days.
+                        {{ sshSupported ? t('security.loginAudit.index.subtitleSsh', { days: retentionDays }) : t('security.loginAudit.index.subtitle', { days: retentionDays }) }}
                     </p>
                 </div>
                 <div class="flex flex-wrap gap-2">
@@ -107,8 +110,8 @@ onMounted(load);
                     class="rounded-md border border-slate-300 px-3 py-2 text-xs hover:bg-slate-100 dark:border-slate-700 dark:hover:bg-slate-800"
                     @click="settingsOpen = true"
                 >
-                    <i class="bi bi-gear" /> Settings
-                    <span class="ml-1 text-slate-500 dark:text-slate-400">HTTPS: {{ locationModes.https }} · HTTP: {{ locationModes.http }}</span>
+                    <i class="bi bi-gear" /> {{ t('security.loginAudit.index.settings') }}
+                    <span class="ml-1 text-slate-500 dark:text-slate-400">HTTPS: {{ t(`security.loginAudit.location.modes.${locationModes.https}.title`) }} · HTTP: {{ t(`security.loginAudit.location.modes.${locationModes.http}.title`) }}</span>
                 </button>
                 <button
                     type="button"
@@ -117,7 +120,7 @@ onMounted(load);
                     @click="syncNow"
                 >
                     <i class="bi bi-arrow-clockwise" />
-                    {{ busy === 'sync' ? 'Syncing…' : (sshSupported ? 'Sync SSH now' : 'Refresh') }}
+                    {{ busy === 'sync' ? t('security.loginAudit.index.syncing') : (sshSupported ? t('security.loginAudit.index.syncSsh') : t('common.refresh')) }}
                 </button>
                 </div>
             </div>
@@ -139,8 +142,8 @@ onMounted(load);
                 <div role="tablist" class="mb-3 flex gap-1 border-b border-slate-200 dark:border-slate-800">
                     <button
                         v-for="item in [
-                            { name: 'table', label: 'Login history', icon: 'bi-table', count: meta.total },
-                            { name: 'map', label: 'Map', icon: 'bi-geo-alt', count: points.length },
+                            { name: 'table', label: t('security.loginAudit.table.title'), icon: 'bi-table', count: meta.total },
+                            { name: 'map', label: t('security.loginAudit.index.map'), icon: 'bi-geo-alt', count: points.length },
                         ]"
                         :key="item.name"
                         type="button"
@@ -177,8 +180,8 @@ onMounted(load);
 
         <Offcanvas
             :show="settingsOpen"
-            title="Device location at login"
-            subtitle="Rules for HTTPS and HTTP"
+            :title="t('security.loginAudit.index.locTitle')"
+            :subtitle="t('security.loginAudit.index.locSubtitle')"
             width="lg"
             @close="settingsOpen = false"
         >

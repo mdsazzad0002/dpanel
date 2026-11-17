@@ -1,11 +1,14 @@
 <script setup>
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue';
+import { useI18n } from 'vue-i18n';
+
+const { t } = useI18n();
 
 const props = defineProps({
     modelValue: { type: [String, Number, null], default: null },
     options: { type: Array, default: () => [] }, // [{ value, label }]
-    placeholder: { type: String, default: 'Select…' },
-    searchPlaceholder: { type: String, default: 'Search…' },
+    placeholder: { type: String, default: '' },
+    searchPlaceholder: { type: String, default: '' },
     disabled: { type: Boolean, default: false },
     maxVisible: { type: Number, default: 30 },
     // Remote mode: `options` is whatever the parent already fetched for the current query —
@@ -107,7 +110,7 @@ onUnmounted(() => document.removeEventListener('mousedown', onClickOutside));
         >
             <slot name="prefix" />
             <span :class="selected ? (buttonClass ? '' : 'text-slate-800 dark:text-slate-100') : 'text-slate-400'" class="truncate">
-                {{ selected ? selected.label : placeholder }}
+                {{ selected ? selected.label : (placeholder || t('ui.searchableSelect.placeholder')) }}
             </span>
             <i class="bi bi-chevron-down ml-2 shrink-0 text-xs text-slate-400"></i>
         </button>
@@ -131,7 +134,7 @@ onUnmounted(() => document.removeEventListener('mousedown', onClickOutside));
                         ref="searchInput"
                         v-model="query"
                         type="text"
-                        :placeholder="searchPlaceholder"
+                        :placeholder="searchPlaceholder || t('ui.searchableSelect.search')"
                         class="w-full rounded-lg border border-slate-300 bg-white py-1.5 pl-8 pr-7 text-sm focus:border-cyan-500 focus:outline-none focus:ring-1 focus:ring-cyan-500 dark:border-slate-600 dark:bg-slate-800"
                         @keydown="onKeydown"
                     />
@@ -147,8 +150,8 @@ onUnmounted(() => document.removeEventListener('mousedown', onClickOutside));
                 </div>
 
                 <ul class="max-h-72 overflow-y-auto py-1 text-sm">
-                    <li v-if="loading && visible.length === 0" class="px-3 py-4 text-center text-xs text-slate-400">Loading…</li>
-                    <li v-else-if="visible.length === 0" class="px-3 py-4 text-center text-xs text-slate-400">No matches.</li>
+                    <li v-if="loading && visible.length === 0" class="px-3 py-4 text-center text-xs text-slate-400">{{ t('common.loading') }}</li>
+                    <li v-else-if="visible.length === 0" class="px-3 py-4 text-center text-xs text-slate-400">{{ t('ui.searchableSelect.noMatches') }}</li>
                     <template v-else>
                         <li
                             v-for="(option, index) in visible"
@@ -168,7 +171,7 @@ onUnmounted(() => document.removeEventListener('mousedown', onClickOutside));
                 </ul>
 
                 <div v-if="!remote && filtered.length > visible.length" class="border-t border-slate-200 px-3 py-1.5 text-center text-[11px] text-slate-400 dark:border-slate-700">
-                    Showing {{ visible.length }} of {{ filtered.length }} — keep typing to narrow results
+                    {{ t('ui.searchableSelect.showing', { shown: visible.length, total: filtered.length }) }}
                 </div>
             </div>
         </Transition>

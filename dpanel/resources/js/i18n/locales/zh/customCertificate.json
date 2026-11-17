@@ -1,0 +1,17 @@
+{
+    "open": "上传证书",
+    "title": "为 {domain} 上传证书",
+    "help": "使用您购买或获得的证书。安装前会进行检查：必须属于此域名、未过期且与私钥匹配。",
+    "fields": {
+        "certificate": "证书",
+        "private_key": "私钥",
+        "chain": "CA 证书链（可选）"
+    },
+    "chooseFile": "选择文件",
+    "note": "它不会自动续期：在到期前 30、7 和 1 天您会收到通知。要恢复为免费证书，请使用 Reinstall SSL。",
+    "install": "安装证书",
+    "installing": "正在安装…",
+    "installed": "您的证书已安装。",
+    "failed": "证书未能安装。",
+    "fileTooLarge": "该文件太大，不可能是证书或私钥。"
+}

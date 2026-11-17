@@ -1,0 +1,180 @@
+{
+    "controlCenter": {
+        "title": "ServerPanel Control Center",
+        "subtitle": "Server, command ও task-এর একত্রিত দৃশ্য।",
+        "servers": "Server",
+        "online": "Online",
+        "runningTasks": "চলমান task",
+        "failedTasks": "ব্যর্থ task",
+        "terminal": "Terminal",
+        "removed": "সরানো হয়েছে",
+        "recentServers": "সাম্প্রতিক server",
+        "openAll": "সব খুলুন",
+        "commandTerminal": "Command terminal",
+        "terminalRemoved": "নিরাপত্তার জন্য SSH terminal ও memory-ভিত্তিক command chat সরিয়ে ফেলা হয়েছে। এর বদলে Server, Task ও অন্যান্য management screen ব্যবহার করুন।",
+        "recentTasks": "সাম্প্রতিক task"
+    },
+    "form": {
+        "name": "নাম",
+        "host": "Host",
+        "port": "Port",
+        "username": "Username",
+        "authType": "Auth ধরন",
+        "password": "Password",
+        "privateKey": "Private key",
+        "passphrase": "Passphrase",
+        "mode": "Mode",
+        "modes": {
+            "setup": "setup",
+            "normal": "স্বাভাবিক",
+            "emergency": "জরুরি"
+        },
+        "notes": "নোট"
+    },
+    "servers": {
+        "form": {
+            "edit": "Server সম্পাদনা",
+            "add": "Server যোগ করুন",
+            "encrypted": "Credentials encrypt করে রাখা হয় এবং আর কখনও দেখানো হয় না।",
+            "update": "Server update করুন",
+            "save": "Server save করুন"
+        },
+        "show": {
+            "title": "Server {name}",
+            "testing": "পরীক্ষা হচ্ছে...",
+            "test": "Connection পরীক্ষা করুন",
+            "scanning": "Scan হচ্ছে...",
+            "scan": "Scan",
+            "openControlCenter": "Control Center খুলুন",
+            "settings": "Settings",
+            "field": {
+                "status": "Status:",
+                "mode": "Mode:",
+                "username": "Username:",
+                "os": "OS:",
+                "kernel": "Kernel:",
+                "architecture": "Architecture:",
+                "cpuCores": "CPU core:",
+                "ram": "RAM:",
+                "disk": "Disk:"
+            },
+            "recentCommands": "সাম্প্রতিক command",
+            "logRemoved": "Terminal log সরানো হয়েছে",
+            "connectionTests": "সর্বশেষ connection পরীক্ষা"
+        },
+        "index": {
+            "title": "Server",
+            "subtitle": "সহজ server তালিকা ও দ্রুত কাজ",
+            "online": "Online",
+            "errors": "Error",
+            "failedCommands": "ব্যর্থ command",
+            "hostAs": "{host}, user {user}",
+            "lastConnected": "শেষ connect: {time}",
+            "openCommands": "Command খুলুন",
+            "openDetails": "বিস্তারিত খুলুন",
+            "edit": "সম্পাদনা"
+        }
+    },
+    "tasks": {
+        "title": "Server task",
+        "create": "Task তৈরি করুন",
+        "taskTitle": "Task-এর শিরোনাম",
+        "taskGoal": "Task-এর লক্ষ্য",
+        "priority": {
+            "critical": "সংকটপূর্ণ",
+            "high": "উচ্চ",
+            "medium": "মাঝারি",
+            "low": "নিম্ন",
+            "info": "তথ্য"
+        },
+        "tasks": "Task",
+        "open": "Task খুলুন",
+        "show": {
+            "title": "Task {title}",
+            "start": "শুরু করুন",
+            "field": {
+                "goal": "লক্ষ্য:",
+                "status": "Status:",
+                "priority": "অগ্রাধিকার:",
+                "server": "Server:"
+            },
+            "aiPlan": "AI পরিকল্পনা (placeholder)",
+            "steps": "Task-এর ধাপ",
+            "detailsRemoved": "Command-এর বিবরণ সরানো হয়েছে",
+            "timeline": "Command timeline"
+        }
+    },
+    "commands": {
+        "show": {
+            "you": "আপনি",
+            "emptyCommand": "(খালি command)",
+            "exit": "Exit: {code}",
+            "server": "Server",
+            "summary": "সারাংশ:",
+            "suggestedFix": "প্রস্তাবিত সমাধান:",
+            "aiAssistant": "AI সহকারী",
+            "noAnalysis": "এখনও কোনো AI বিশ্লেষণ নেই।",
+            "event": "Event: {type}",
+            "title": "Command {id}",
+            "heading": "Command chat-এর ইতিহাস",
+            "retry": "আবার চেষ্টা করুন",
+            "report": "TXT report download করুন",
+            "chatPanel": "Chat panel",
+            "structure": "কথোপকথনের কাঠামো",
+            "statusLine": "Status: {status}",
+            "riskLine": "ঝুঁকি: {risk}",
+            "analysisReady": "বিশ্লেষণ প্রস্তুত",
+            "waitingAnalysis": "বিশ্লেষণের অপেক্ষায়",
+            "meta": "Command-এর তথ্য",
+            "status": "Status:",
+            "risk": "ঝুঁকি:",
+            "fixCommands": "প্রস্তাবিত সমাধান command",
+            "runFix": "সমাধান চালান",
+            "open": "খুলুন",
+            "noFixes": "কোনো প্রস্তাবিত সমাধান command নেই।",
+            "approve": "Command অনুমোদন করুন"
+        },
+        "index": {
+            "errUsername": "Admin user command তৈরি করতে username লাগবে।",
+            "errPassword": "Admin user command তৈরি করতে panel password লাগবে।",
+            "deleteConfirm": "এই command log মুছবেন?",
+            "failed": "Command ব্যর্থ হয়েছে।",
+            "empty": "(খালি)",
+            "step": "ধাপ {n}",
+            "headTitle": "Terminal chat command",
+            "title": "Terminal command chat",
+            "newChat": "নতুন chat",
+            "search": "Command খুঁজুন",
+            "allStatus": "সব status",
+            "allRisk": "সব ঝুঁকি",
+            "allServers": "সব server",
+            "filter": "Filter",
+            "markdownHistory": "Markdown ইতিহাস",
+            "noMarkdown": "এখনও কোনো markdown ইতিহাস নেই।",
+            "upgradeLogs": "System upgrade log",
+            "noUpgradeLogs": "এখনও কোনো upgrade log নেই।",
+            "delete": "মুছুন",
+            "selectHint": "Chat-এর ইতিহাস খুলতে বাঁ দিক থেকে একটি command বাছুন।",
+            "history": "Chat-এর ইতিহাস: {id}",
+            "report": "Report",
+            "endClose": "শেষ করে বন্ধ করুন",
+            "installerSteps": "Installer-এর ধাপ",
+            "terminalInput": "Terminal input",
+            "selectServer": "Server বাছুন",
+            "commandPlaceholder": "পুরো command লিখুন (পরবর্তী মিল পাওয়া ব্যবহারের জন্য রাখা হয়)",
+            "autoFix": "স্বয়ংক্রিয় replay task: error হলে AI-এর নিরাপদ fix command স্বয়ংক্রিয়ভাবে চালান",
+            "sending": "পাঠানো হচ্ছে...",
+            "send": "Command পাঠান",
+            "helper": {
+                "title": "Admin user সহায়ক",
+                "help": "Portal access-এর জন্য একটি {cmd} command তৈরি করে। Shell default-ভাবে {shell}, তাই আপনি নিজে না বদলালে account-টি interactive shell user থেকে আলাদা থাকে।",
+                "username": "Username",
+                "email": "Panel email",
+                "password": "Panel password",
+                "disableRoot": "SSH root login বন্ধ করুন",
+                "build": "Admin user command তৈরি করুন",
+                "result": "ফলাফল terminal command box-এ বসানো হয়, তারপর বাছাই করা server-এ submit করতে পারবেন।"
+            }
+        }
+    }
+}

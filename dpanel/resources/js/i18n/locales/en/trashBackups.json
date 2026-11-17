@@ -1,0 +1,39 @@
+{
+    "bulk": {
+        "confirm": "Permanently delete {count} trash backup(s)? Deleted archives cannot be restored.",
+        "httpFailed": "Delete failed with HTTP {status}.",
+        "failed": "Trash backup delete failed.",
+        "selected": "{count} selected",
+        "selectAll": "Select all",
+        "deleting": "Deleting...",
+        "delete": "Delete Selected"
+    },
+    "index": {
+        "downloadHttp": "Download failed with HTTP {status}.",
+        "downloadFailed": "Trash backup download failed.",
+        "restoreConfirm": "Restore {domain} from Trash Backup?",
+        "recoverHttp": "Recovery failed with HTTP {status}.",
+        "recovered": "Website recovered successfully.",
+        "recoverFailed": "Website recovery failed.",
+        "title": "Trash Backup",
+        "subtitle": "Recover deleted websites or download their automatic archives.",
+        "cleanup": "Automatic Cleanup",
+        "cleanupHelp": "Configured automatically. No manual Artisan command is required.",
+        "enabled": "Enabled",
+        "keepFor": "Keep For",
+        "days": "days",
+        "dailyTime": "Daily Time",
+        "saving": "Saving...",
+        "schedule": "{days} days · Daily at {time}",
+        "disabled": "Disabled",
+        "empty": "No deleted website backups",
+        "emptyHelp": "A downloadable ZIP will appear here after a website is deleted.",
+        "deleted": "Deleted {date}",
+        "recovering": "Recovering...",
+        "restore": "Restore Website",
+        "exists": "Website already exists",
+        "downloading": "Downloading...",
+        "download": "Download ZIP",
+        "missing": "Archive missing"
+    }
+}

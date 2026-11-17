@@ -1,0 +1,38 @@
+{
+    "markdown": {
+        "copy": "复制",
+        "copied": "已复制"
+    },
+    "searchableSelect": {
+        "placeholder": "请选择…",
+        "search": "搜索…",
+        "noMatches": "无匹配项。",
+        "showing": "显示 {shown} / {total} 项——继续输入以缩小结果"
+    },
+    "terminal": {
+        "connecting": "正在连接…",
+        "openFailed": "无法打开终端。",
+        "connected": "已连接",
+        "error": "连接错误",
+        "closed": "会话已关闭（代码 {code}）",
+        "title": "终端",
+        "reconnect": "重新连接",
+        "clear": "清屏"
+    },
+    "legal": {
+        "back": "返回",
+        "updated": "最后更新：{date}",
+        "privacy": "隐私政策",
+        "terms": "条款与条件"
+    },
+    "location": {
+        "unsupported": "此浏览器不支持定位。",
+        "needsHttps": "此浏览器在普通 HTTP 下不提供定位。请通过 HTTPS 打开面板。",
+        "failed": "无法读取你的位置。",
+        "errors": {
+            "blocked": "定位访问被阻止。请在浏览器设置中允许此网站使用定位，然后重试。",
+            "unavailable": "你的设备无法找到位置。请开启定位服务后重试。",
+            "timeout": "获取位置耗时过长。请重试。"
+        }
+    }
+}

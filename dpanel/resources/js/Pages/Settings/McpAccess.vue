@@ -4,6 +4,9 @@ import { computed, ref } from 'vue';
 import { Head, useForm, usePage } from '@inertiajs/vue3';
 import axios from 'axios';
 import AccessGroups from './McpAccess/Partials/AccessGroups.vue';
+import { useI18n } from 'vue-i18n';
+
+const { t } = useI18n();
 
 const page = usePage();
 const panelToken = page.props.panel?.token;
@@ -71,13 +74,13 @@ const snippets = computed(() => ({
     }, null, 2),
 }));
 
-const clients = [
-    ...(props.oauthEnabled ? [{ id: 'claude-ai', label: 'claude.ai / Claude apps', hint: 'Settings → Connectors → Add custom connector. No token needed: you sign in to this panel and approve it.' }] : []),
-    { id: 'claude-code', label: 'Claude Code', hint: props.oauthEnabled ? 'Run in your terminal. Or drop the --header and sign in with /mcp instead.' : 'Run in your terminal.' },
-    { id: 'claude-desktop', label: 'Claude Desktop', hint: 'Add to claude_desktop_config.json (needs Node.js for mcp-remote).' },
-    { id: 'cursor', label: 'Cursor', hint: 'Add to ~/.cursor/mcp.json.' },
-    { id: 'vscode', label: 'VS Code', hint: 'Add to .vscode/mcp.json.' },
-];
+const clients = computed(() => [
+    ...(props.oauthEnabled ? [{ id: 'claude-ai', label: 'claude.ai / Claude apps', hint: t('settings.mcpAccess.hints.claudeAi') }] : []),
+    { id: 'claude-code', label: 'Claude Code', hint: props.oauthEnabled ? t('settings.mcpAccess.hints.claudeCodeOauth') : t('settings.mcpAccess.hints.claudeCode') },
+    { id: 'claude-desktop', label: 'Claude Desktop', hint: t('settings.mcpAccess.hints.claudeDesktop') },
+    { id: 'cursor', label: 'Cursor', hint: t('settings.mcpAccess.hints.cursor') },
+    { id: 'vscode', label: 'VS Code', hint: t('settings.mcpAccess.hints.vscode') },
+]);
 
 const create = async () => {
     if (!form.value.name.trim() || creating.value) return;
@@ -98,24 +101,24 @@ const create = async () => {
         form.value = { name: '', scope: 'read', access_group_id: '', expires_in_days: '' };
     } catch (e) {
         const errors = e.response?.data?.errors || {};
-        createError.value = Object.values(errors)[0]?.[0] || e.response?.data?.message || 'Could not create the token.';
+        createError.value = Object.values(errors)[0]?.[0] || e.response?.data?.message || t('settings.mcpAccess.createFailed');
     } finally {
         creating.value = false;
     }
 };
 
-const toggle = (t) => toggleForm.patch(panelRoute('mcp.tokens.toggle', { mcpToken: t.id }), {
+const toggle = (token) => toggleForm.patch(panelRoute('mcp.tokens.toggle', { mcpToken: token.id }), {
     preserveScroll: true,
-    onSuccess: () => { t.is_active = !t.is_active; },
+    onSuccess: () => { token.is_active = !token.is_active; },
 });
 
-const remove = (t) => {
-    if (!confirm(`Revoke MCP token "${t.name}"? Clients using it lose access immediately.`)) return;
-    deleteForm.delete(panelRoute('mcp.tokens.destroy', { mcpToken: t.id }), {
+const remove = (token) => {
+    if (!confirm(t('settings.mcpAccess.revokeConfirm', { name: token.name }))) return;
+    deleteForm.delete(panelRoute('mcp.tokens.destroy', { mcpToken: token.id }), {
         preserveScroll: true,
         onSuccess: () => {
-            tokenList.value = tokenList.value.filter((x) => x.id !== t.id);
-            if (t.access_group) bumpGroupCount(t.access_group.id, -1);
+            tokenList.value = tokenList.value.filter((x) => x.id !== token.id);
+            if (token.access_group) bumpGroupCount(token.access_group.id, -1);
         },
     });
 };
@@ -131,80 +134,80 @@ const copy = async (key, text) => {
 };
 
 const fmtDate = (iso) => {
-    if (!iso) return 'Never';
+    if (!iso) return t('settings.mcpAccess.never');
     const d = new Date(iso);
     return Number.isNaN(d.getTime()) ? '—' : d.toLocaleString();
 };
 </script>
 
 <template>
-    <Head title="MCP Access" />
+    <Head :title="t('settings.mcpAccess.title')" />
 
     <AuthenticatedLayout>
         <template #header>
             <div>
-                <h1 class="text-lg font-semibold">MCP Access</h1>
-                <p class="text-sm text-slate-500 dark:text-slate-400">Connect Claude, Cursor or any MCP client to this panel, so it can diagnose and fix server problems from anywhere.</p>
+                <h1 class="text-lg font-semibold">{{ t('settings.mcpAccess.title') }}</h1>
+                <p class="text-sm text-slate-500 dark:text-slate-400">{{ t('settings.mcpAccess.subtitle') }}</p>
             </div>
         </template>
 
         <div class="space-y-4">
             <div v-if="!enabled" class="rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800 dark:border-amber-800 dark:bg-amber-950 dark:text-amber-300">
-                The MCP endpoint is turned off (<code>DPANEL_MCP_ENABLED=false</code>). Tokens can be issued, but clients can't connect until it's enabled.
+                <i18n-t keypath="settings.mcpAccess.disabled" scope="global"><template #env><code>DPANEL_MCP_ENABLED=false</code></template></i18n-t>
             </div>
 
             <div class="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-slate-200 bg-white p-4 text-sm dark:border-slate-700 dark:bg-slate-800">
                 <div>
-                    <span class="font-medium">Commands on this panel host:</span>
+                    <span class="font-medium">{{ t('settings.mcpAccess.localTitle') }}</span>
                     <span class="ml-1 rounded px-2 py-0.5 text-xs" :class="{
                         'bg-slate-100 text-slate-500': localAccess === 'off',
                         'bg-sky-100 text-sky-700': localAccess === 'read',
                         'bg-amber-100 text-amber-700': localAccess === 'full',
                         'bg-slate-100 text-slate-600': localAccess === 'unknown',
-                    }">{{ { off: 'Off', read: 'Read-only', full: 'Full', unknown: 'Enabled' }[localAccess] || localAccess }}</span>
-                    <p class="mt-1 text-xs text-slate-500">Lets MCP clients run commands here without adding this machine as an SSH server. Only root on the host can change it.</p>
+                    }">{{ { off: t('settings.mcpAccess.local.off'), read: t('settings.mcpAccess.readOnly'), full: t('settings.mcpAccess.full'), unknown: t('settings.mcpAccess.local.unknown') }[localAccess] || localAccess }}</span>
+                    <p class="mt-1 text-xs text-slate-500">{{ t('settings.mcpAccess.localText') }}</p>
                 </div>
                 <code class="rounded bg-slate-100 px-2 py-1 text-xs dark:bg-slate-900">sudo dpanel mcp local {{ localAccess === 'off' ? 'on read' : 'off' }}</code>
             </div>
 
             <div v-if="newToken" class="rounded-lg border border-emerald-200 bg-emerald-50 p-4 text-sm dark:border-emerald-800 dark:bg-emerald-950">
-                <p class="font-medium text-emerald-800 dark:text-emerald-300">Copy this token now — it won't be shown again. The setup snippets below already include it.</p>
+                <p class="font-medium text-emerald-800 dark:text-emerald-300">{{ t('settings.mcpAccess.copyNow') }}</p>
                 <div class="mt-2 flex items-center gap-2">
                     <code class="flex-1 select-all break-all rounded-md border border-emerald-300 bg-white px-3 py-2 text-xs dark:border-emerald-700 dark:bg-slate-900">{{ newToken }}</code>
-                    <button @click="copy('token', newToken)" class="shrink-0 rounded-md border border-emerald-300 px-3 py-2 text-xs hover:bg-emerald-100 dark:border-emerald-700 dark:hover:bg-emerald-900">{{ copiedKey === 'token' ? 'Copied!' : 'Copy' }}</button>
+                    <button @click="copy('token', newToken)" class="shrink-0 rounded-md border border-emerald-300 px-3 py-2 text-xs hover:bg-emerald-100 dark:border-emerald-700 dark:hover:bg-emerald-900">{{ copiedKey === 'token' ? t('settings.mcpAccess.copied') : t('settings.mcpAccess.copy') }}</button>
                 </div>
             </div>
 
             <form @submit.prevent="create" class="grid gap-3 rounded-lg border border-slate-200 bg-white p-4 sm:grid-cols-[1fr_auto_auto_auto_auto] sm:items-end dark:border-slate-700 dark:bg-slate-800">
                 <div>
-                    <label class="mb-1 block text-xs font-medium">Token name</label>
-                    <input v-model="form.name" type="text" placeholder="e.g. My laptop – Claude Code"
+                    <label class="mb-1 block text-xs font-medium">{{ t('settings.mcpAccess.tokenName') }}</label>
+                    <input v-model="form.name" type="text" :placeholder="t('settings.mcpAccess.tokenNamePlaceholder')"
                         class="w-full rounded-md border border-slate-300 px-2 py-1.5 text-sm dark:border-slate-600 dark:bg-slate-900" />
                 </div>
                 <div>
-                    <label class="mb-1 block text-xs font-medium">Access</label>
+                    <label class="mb-1 block text-xs font-medium">{{ t('settings.mcpAccess.access') }}</label>
                     <select v-model="form.scope" class="w-full rounded-md border border-slate-300 px-2 py-1.5 text-sm dark:border-slate-600 dark:bg-slate-900">
-                        <option value="read">Read-only (diagnose)</option>
-                        <option value="full">Full (diagnose &amp; fix)</option>
+                        <option value="read">{{ t('settings.mcpAccess.readOption') }}</option>
+                        <option value="full">{{ t('settings.mcpAccess.fullOption') }}</option>
                     </select>
                 </div>
                 <div>
-                    <label class="mb-1 block text-xs font-medium">Tools</label>
+                    <label class="mb-1 block text-xs font-medium">{{ t('settings.mcpAccess.tools') }}</label>
                     <select v-model="form.access_group_id" class="w-full rounded-md border border-slate-300 px-2 py-1.5 text-sm dark:border-slate-600 dark:bg-slate-900">
-                        <option value="">All tools</option>
+                        <option value="">{{ t('settings.mcpAccess.allTools') }}</option>
                         <option v-for="g in groupList" :key="g.id" :value="g.id">{{ g.name }} ({{ g.tools.length }})</option>
                     </select>
                 </div>
                 <div>
-                    <label class="mb-1 block text-xs font-medium">Expires after (days)</label>
-                    <input v-model="form.expires_in_days" type="number" min="1" placeholder="Never"
+                    <label class="mb-1 block text-xs font-medium">{{ t('settings.mcpAccess.expiresAfter') }}</label>
+                    <input v-model="form.expires_in_days" type="number" min="1" :placeholder="t('settings.mcpAccess.never')"
                         class="w-full rounded-md border border-slate-300 px-2 py-1.5 text-sm sm:w-32 dark:border-slate-600 dark:bg-slate-900" />
                 </div>
                 <button type="submit" :disabled="creating"
-                    class="rounded-md bg-blue-600 px-4 py-2 text-sm text-white hover:bg-blue-700 disabled:opacity-50">Create token</button>
+                    class="rounded-md bg-blue-600 px-4 py-2 text-sm text-white hover:bg-blue-700 disabled:opacity-50">{{ t('settings.mcpAccess.create') }}</button>
                 <div v-if="createError" class="text-xs text-red-600 sm:col-span-5">{{ createError }}</div>
                 <p v-if="form.scope === 'full'" class="text-xs text-amber-600 sm:col-span-5">
-                    Full access lets the AI client run state-changing commands (install packages, restart services, edit files) on your servers as their SSH user. Dangerous commands are still refused and every command is logged.
+                    {{ t('settings.mcpAccess.fullWarning') }}
                 </p>
             </form>
 
@@ -214,47 +217,47 @@ const fmtDate = (iso) => {
                 <table class="min-w-full divide-y divide-slate-200 text-sm dark:divide-slate-700">
                     <thead class="bg-slate-50 text-left text-xs text-slate-500 dark:bg-slate-800">
                         <tr>
-                            <th class="px-4 py-3 font-medium">Name</th>
-                            <th class="px-4 py-3 font-medium">Token</th>
-                            <th class="px-4 py-3 font-medium">Access</th>
-                            <th class="px-4 py-3 font-medium">Tools</th>
-                            <th class="px-4 py-3 font-medium">Status</th>
-                            <th class="px-4 py-3 font-medium">Owner</th>
-                            <th class="px-4 py-3 font-medium">Last used</th>
-                            <th class="px-4 py-3 font-medium">Expires</th>
-                            <th class="px-4 py-3 text-right font-medium">Actions</th>
+                            <th class="px-4 py-3 font-medium">{{ t('settings.mcpAccess.cols.name') }}</th>
+                            <th class="px-4 py-3 font-medium">{{ t('settings.mcpAccess.cols.token') }}</th>
+                            <th class="px-4 py-3 font-medium">{{ t('settings.mcpAccess.access') }}</th>
+                            <th class="px-4 py-3 font-medium">{{ t('settings.mcpAccess.tools') }}</th>
+                            <th class="px-4 py-3 font-medium">{{ t('settings.mcpAccess.cols.status') }}</th>
+                            <th class="px-4 py-3 font-medium">{{ t('settings.mcpAccess.cols.owner') }}</th>
+                            <th class="px-4 py-3 font-medium">{{ t('settings.mcpAccess.cols.lastUsed') }}</th>
+                            <th class="px-4 py-3 font-medium">{{ t('settings.mcpAccess.cols.expires') }}</th>
+                            <th class="px-4 py-3 text-right font-medium">{{ t('settings.mcpAccess.cols.actions') }}</th>
                         </tr>
                     </thead>
                     <tbody class="divide-y divide-slate-200 dark:divide-slate-700">
                         <tr v-if="!tokenList.length">
-                            <td colspan="9" class="px-4 py-6 text-center text-sm text-slate-400">No MCP tokens yet.</td>
+                            <td colspan="9" class="px-4 py-6 text-center text-sm text-slate-400">{{ t('settings.mcpAccess.empty') }}</td>
                         </tr>
-                        <tr v-for="t in tokenList" :key="t.id" class="hover:bg-slate-50 dark:hover:bg-slate-700/40">
+                        <tr v-for="tok in tokenList" :key="tok.id" class="hover:bg-slate-50 dark:hover:bg-slate-700/40">
                             <td class="px-4 py-3 font-medium">
-                                {{ t.name }}
-                                <span v-if="t.via_oauth" class="ml-1 rounded bg-violet-100 px-1.5 py-0.5 text-[10px] font-normal text-violet-700" title="Connected by signing in with OAuth">OAuth</span>
+                                {{ tok.name }}
+                                <span v-if="tok.via_oauth" class="ml-1 rounded bg-violet-100 px-1.5 py-0.5 text-[10px] font-normal text-violet-700" :title="t('settings.mcpAccess.oauthTitle')">OAuth</span>
                             </td>
-                            <td class="px-4 py-3"><code class="text-xs text-slate-400">{{ t.token_prefix }}</code></td>
+                            <td class="px-4 py-3"><code class="text-xs text-slate-400">{{ tok.token_prefix }}</code></td>
                             <td class="px-4 py-3">
-                                <span class="rounded px-2 py-0.5 text-xs" :class="t.scope === 'full' ? 'bg-amber-100 text-amber-700' : 'bg-sky-100 text-sky-700'">{{ t.scope === 'full' ? 'Full' : 'Read-only' }}</span>
+                                <span class="rounded px-2 py-0.5 text-xs" :class="tok.scope === 'full' ? 'bg-amber-100 text-amber-700' : 'bg-sky-100 text-sky-700'">{{ tok.scope === 'full' ? t('settings.mcpAccess.full') : t('settings.mcpAccess.readOnly') }}</span>
                             </td>
                             <td class="px-4 py-3 text-xs">
-                                <span v-if="t.access_group" class="rounded bg-indigo-100 px-2 py-0.5 text-indigo-700">{{ t.access_group.name }}</span>
-                                <span v-else class="text-slate-400">All tools</span>
+                                <span v-if="tok.access_group" class="rounded bg-indigo-100 px-2 py-0.5 text-indigo-700">{{ tok.access_group.name }}</span>
+                                <span v-else class="text-slate-400">{{ t('settings.mcpAccess.allTools') }}</span>
                             </td>
                             <td class="px-4 py-3">
-                                <span v-if="t.expired" class="rounded bg-red-100 px-2 py-0.5 text-xs text-red-700">Expired</span>
-                                <span v-else class="rounded px-2 py-0.5 text-xs" :class="t.is_active ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-500'">{{ t.is_active ? 'Active' : 'Disabled' }}</span>
+                                <span v-if="tok.expired" class="rounded bg-red-100 px-2 py-0.5 text-xs text-red-700">{{ t('settings.mcpAccess.expired') }}</span>
+                                <span v-else class="rounded px-2 py-0.5 text-xs" :class="tok.is_active ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-500'">{{ tok.is_active ? t('settings.mcpAccess.active') : t('settings.mcpAccess.disabledLabel') }}</span>
                             </td>
-                            <td class="px-4 py-3 text-slate-500">{{ t.owner }}</td>
+                            <td class="px-4 py-3 text-slate-500">{{ tok.owner }}</td>
                             <td class="px-4 py-3 text-slate-500">
-                                {{ fmtDate(t.last_used_at) }}
-                                <div v-if="t.last_used_ip" class="text-xs text-slate-400">{{ t.last_used_ip }}</div>
+                                {{ fmtDate(tok.last_used_at) }}
+                                <div v-if="tok.last_used_ip" class="text-xs text-slate-400">{{ tok.last_used_ip }}</div>
                             </td>
-                            <td class="px-4 py-3 text-slate-500">{{ t.expires_at ? fmtDate(t.expires_at) : 'Never' }}</td>
+                            <td class="px-4 py-3 text-slate-500">{{ tok.expires_at ? fmtDate(tok.expires_at) : t('settings.mcpAccess.never') }}</td>
                             <td class="space-x-1 whitespace-nowrap px-4 py-3 text-right">
-                                <button @click="toggle(t)" class="rounded border border-slate-300 px-2 py-1 text-xs hover:bg-slate-100 dark:border-slate-600">{{ t.is_active ? 'Disable' : 'Enable' }}</button>
-                                <button @click="remove(t)" class="rounded border border-red-300 px-2 py-1 text-xs text-red-600 hover:bg-red-50 dark:border-red-700">Revoke</button>
+                                <button @click="toggle(tok)" class="rounded border border-slate-300 px-2 py-1 text-xs hover:bg-slate-100 dark:border-slate-600">{{ tok.is_active ? t('settings.mcpAccess.disable') : t('settings.mcpAccess.enable') }}</button>
+                                <button @click="remove(tok)" class="rounded border border-red-300 px-2 py-1 text-xs text-red-600 hover:bg-red-50 dark:border-red-700">{{ t('settings.mcpAccess.revoke') }}</button>
                             </td>
                         </tr>
                     </tbody>
@@ -263,11 +266,11 @@ const fmtDate = (iso) => {
 
             <div class="rounded-lg border border-slate-200 bg-white p-4 dark:border-slate-700 dark:bg-slate-800">
                 <div class="flex flex-wrap items-center justify-between gap-2">
-                    <h2 class="text-sm font-semibold">Connect a client</h2>
+                    <h2 class="text-sm font-semibold">{{ t('settings.mcpAccess.connect') }}</h2>
                     <div class="flex items-center gap-2 text-xs text-slate-500">
-                        Endpoint
+                        {{ t('settings.mcpAccess.endpoint') }}
                         <code class="rounded bg-slate-100 px-1.5 py-0.5 dark:bg-slate-900">{{ endpointUrl }}</code>
-                        <button @click="copy('url', endpointUrl)" class="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200" title="Copy endpoint">
+                        <button @click="copy('url', endpointUrl)" class="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200" :title="t('settings.mcpAccess.copyEndpoint')">
                             <i class="bi" :class="copiedKey === 'url' ? 'bi-check2' : 'bi-clipboard'"></i>
                         </button>
                     </div>
@@ -281,19 +284,19 @@ const fmtDate = (iso) => {
                 <p class="mt-2 text-xs text-slate-500">{{ clients.find((c) => c.id === client)?.hint }}</p>
                 <div class="relative mt-2">
                     <pre class="overflow-x-auto rounded-md bg-slate-900 p-3 text-xs text-slate-100">{{ snippets[client] }}</pre>
-                    <button @click="copy('snippet', snippets[client])" class="absolute right-2 top-2 rounded border border-slate-600 px-2 py-0.5 text-xs text-slate-200 hover:bg-slate-700">{{ copiedKey === 'snippet' ? 'Copied!' : 'Copy' }}</button>
+                    <button @click="copy('snippet', snippets[client])" class="absolute right-2 top-2 rounded border border-slate-600 px-2 py-0.5 text-xs text-slate-200 hover:bg-slate-700">{{ copiedKey === 'snippet' ? t('settings.mcpAccess.copied') : t('settings.mcpAccess.copy') }}</button>
                 </div>
-                <p v-if="!newToken" class="mt-2 text-xs text-slate-400">Create a token above and the snippets fill it in for you.</p>
+                <p v-if="!newToken" class="mt-2 text-xs text-slate-400">{{ t('settings.mcpAccess.snippetHint') }}</p>
             </div>
 
             <div class="rounded-lg border border-slate-200 bg-white p-4 dark:border-slate-700 dark:bg-slate-800">
-                <h2 class="text-sm font-semibold">Available tools</h2>
+                <h2 class="text-sm font-semibold">{{ t('settings.mcpAccess.available') }}</h2>
                 <div class="mt-2 flex flex-wrap gap-1.5">
                     <span v-for="tool in tools" :key="tool.name" class="rounded border px-2 py-0.5 text-xs"
                         :class="tool.read_only ? 'border-slate-200 text-slate-600 dark:border-slate-600 dark:text-slate-300' : 'border-amber-300 text-amber-700 dark:border-amber-700 dark:text-amber-400'"
                         :title="tool.title">{{ tool.name }}</span>
                 </div>
-                <p class="mt-2 text-xs text-slate-400">Amber tools can change server state; with a read-only token they only accept diagnostic commands.</p>
+                <p class="mt-2 text-xs text-slate-400">{{ t('settings.mcpAccess.amberHint') }}</p>
             </div>
         </div>
     </AuthenticatedLayout>

@@ -1,0 +1,20 @@
+{
+    "manage": {
+        "deleteConfirm": "Delete role \"{name}\"?",
+        "title": "Manage Roles",
+        "subtitle": "Permissions come from a fixed system list; pick which apply to each role.",
+        "create": "Create Role",
+        "role": "Role",
+        "permissions": "Permissions",
+        "users": "Users",
+        "actions": "Actions",
+        "system": "System",
+        "noPermissions": "No permissions",
+        "edit": "Edit",
+        "delete": "Delete",
+        "empty": "No roles found.",
+        "editTitle": "Edit \"{name}\"",
+        "name": "Role name",
+        "namePlaceholder": "e.g. support_agent"
+    }
+}

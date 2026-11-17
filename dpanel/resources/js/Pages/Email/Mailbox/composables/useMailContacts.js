@@ -1,5 +1,8 @@
 import { computed, inject, provide, ref } from 'vue';
 import { emailOf } from '../components/mailAddresses';
+import { i18n } from '@/i18n';
+
+const t = (...args) => i18n.global.t(...args);
 
 const KEY = Symbol('mailContacts');
 
@@ -14,7 +17,7 @@ export function provideMailContacts(endpoint) {
 
     const request = async (method, url, data) => {
         const response = await window.axios({ method, url, data, headers: { Accept: 'application/json' } });
-        if (!response?.data?.success) throw new Error(response?.data?.message || 'Contacts request failed.');
+        if (!response?.data?.success) throw new Error(response?.data?.message || t('email.mailbox.contacts.requestFailed'));
 
         return response.data;
     };

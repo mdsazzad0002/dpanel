@@ -1,0 +1,200 @@
+{
+    "index": {
+        "services": {
+            "cyberpanelSsh": {
+                "name": "SSH দিয়ে CyberPanel / HestiaCP / aaPanel / Plesk",
+                "description": "SSH-এ connect করে website ও তাদের database খুঁজে বের করুন। Panel-এর ধরন স্বয়ংক্রিয়ভাবে শনাক্ত হয়।"
+            },
+            "cpanelFull": {
+                "name": "cPanel full backup",
+                "description": "সম্পূর্ণ cpmove account অথবা বাছাই করা resource restore করুন।"
+            },
+            "dpanelFull": {
+                "name": "DPanel থেকে DPanel",
+                "description": "সম্পূর্ণ DPanel backup package এই server-এ migrate করুন।"
+            },
+            "cpanelPartial": {
+                "name": "cPanel partial backup",
+                "description": "cPanel থেকে আলাদাভাবে download করা Home Directory ও MySQL backup import করুন।"
+            },
+            "directadmin": {
+                "name": "DirectAdmin backup",
+                "description": "সব বা বাছাই করা domain ও database সহ একজন DirectAdmin user migrate করুন।"
+            },
+            "plesk": {
+                "name": "Plesk backup archive",
+                "description": "Upload করা .tar Plesk backup file থেকে import করুন। চালু Plesk server-এর জন্য উপরের SSH দিয়ে CyberPanel / HestiaCP / aaPanel / Plesk ব্যবহার করুন।"
+            },
+            "wordpress": {
+                "name": "WordPress migration",
+                "description": "একটি WordPress site (file + database) এখানকার একটি website-এ সরান; এর address নতুন domain-এ update হয়।"
+            }
+        },
+        "archives": {
+            "cpanel": {
+                "title": "cPanel full backup",
+                "description": "cpmove-USER.tar.gz ও Backup Wizard-এর backup-MM.DD.YYYY_HH-MM-SS_USER.tar.gz সমর্থিত। পরীক্ষার পর পুরো account restore করুন অথবা domain, file ও database আলাদাভাবে বাছুন।"
+            },
+            "cpanelPartial": {
+                "title": "cPanel partial backup",
+                "description": "cPanel → Backup থেকে Home Directory backup ও যেকোনো MySQL database backup upload করুন। Partial backup-এ account লেখা থাকে না, তাই কোন system user (ও main domain)-এ restore হবে তা লিখুন।"
+            },
+            "directadmin": {
+                "title": "DirectAdmin backup",
+                "description": "DirectAdmin-এ তৈরি একটি user backup upload করুন (user.RESELLER.USER.tar.gz বা .tar.zst)। DirectAdmin-এর মতোই domain-গুলো /home/USER/domains/DOMAIN/public_html-এ restore হয়।"
+            },
+            "plesk": {
+                "title": "Plesk backup archive",
+                "description": "Password সুরক্ষা ছাড়া Plesk Backup Manager থেকে download করা একটি backup upload করুন। প্রতিটি domain /home/USER/domains/DOMAIN-এ restore হয়, site থাকে httpdocs-এ।"
+            }
+        },
+        "title": {
+            "dpanel": "DPanel থেকে DPanel migration",
+            "cyberpanelSsh": "CyberPanel / HestiaCP / aaPanel / Plesk SSH migration",
+            "wordpress": "WordPress migration",
+            "default": "Migration import"
+        },
+        "chunkProgress": "DPanel package upload হচ্ছে… {done} / {total} chunk পাঠানো হয়েছে।",
+        "uploadComplete": "Upload সম্পন্ন। DPanel package যাচাই চলছে।",
+        "packageUploadFailed": "DPanel package upload ব্যর্থ হয়েছে।",
+        "uploadFailed": "Upload ব্যর্থ হয়েছে।",
+        "restoreNotStarted": "DPanel restore শুরু করা যায়নি।",
+        "restoreFailed": "Restore ব্যর্থ হয়েছে।",
+        "removeConfirm": "{name} সরাবেন?",
+        "chooseService": "Migration service বাছুন",
+        "chooseServiceHelp": "Backup কোথা থেকে এসেছে এবং আপনার কাছে কোন ধরনের package আছে তা বাছুন।",
+        "comingSoon": "শীঘ্রই আসছে",
+        "allServices": "সব migration service",
+        "wp": {
+            "intro": "আগে website তৈরি করুন, তারপর তাতে import করুন। আপনার লাগবে WordPress file ({config} থাকা folder-এর .zip বা .tar.gz) এবং একটি database export (.sql, যেমন phpMyAdmin বা {cmd} থেকে)।",
+            "step1": "File-গুলো website-এর file প্রতিস্থাপন করে; বর্তমানগুলো আগে এর trash-এ রাখা হয়।",
+            "step2": "Database import হয়, এবং {config} সেটির দিকে নির্দেশ করা হয়।",
+            "step3": "Site address ({a}, {b}) ও post-এর link নতুন domain-এ সরে যায়।",
+            "target": "লক্ষ্য website বাছুন",
+            "importHere": "এখানে WordPress import করুন",
+            "noWebsite": "এখনও কোনো website নেই। আগে domain-এর জন্য {link}।",
+            "createWebsite": "Website তৈরি করুন"
+        },
+        "dpanel": {
+            "title": "DPanel full migration",
+            "description": "DPanel-এ তৈরি একটি full backup package upload করুন। Restore-এর আগে package যাচাই করা হয়।",
+            "warningTitle": "Full-panel restore সতর্কতা:",
+            "warning": "restore করলে লক্ষ্য server-এর {env}, {storage} data ও configure করা panel database source backup দিয়ে প্রতিস্থাপিত হয়। এটি শুধু website migration নয়। আগে লক্ষ্য server-এর আলাদা backup নিন এবং শুধু নির্ধারিত লক্ষ্য server-এ চালিয়ে যান।"
+        },
+        "partial": {
+            "user": "System user",
+            "domain": "Main domain",
+            "domainHelp": "(public_html থেকে চলে)"
+        },
+        "inspecting": "পরীক্ষা হচ্ছে…",
+        "uploadInspect": "Upload ও পরীক্ষা করুন",
+        "uploading": "Upload হচ্ছে…",
+        "uploaded": "Upload করা migration",
+        "uploadedHelp": "রাখা যেকোনো archive থেকে full বা partial restore চালিয়ে যান।",
+        "fullBackup": "Full DPanel backup",
+        "account": "Account: {account}",
+        "status": {
+            "uploading": "upload হচ্ছে",
+            "inspecting": "পরীক্ষা হচ্ছে",
+            "ready": "প্রস্তুত",
+            "restoring": "restore হচ্ছে",
+            "completed": "সম্পন্ন",
+            "failed": "ব্যর্থ",
+            "restore_failed": "restore ব্যর্থ",
+            "prepared": "প্রস্তুত করা",
+            "expired": "মেয়াদোত্তীর্ণ",
+            "downloading": "download হচ্ছে",
+            "downloaded": "download হয়েছে",
+            "download_failed": "download ব্যর্থ"
+        },
+        "remove": "সরান",
+        "connected": "{site} ({framework}) নতুন login দিয়ে database {database}-এর সাথে যুক্ত।",
+        "validationDone": "Package যাচাই সম্পন্ন।",
+        "typeRestore": "এই DPanel server প্রতিস্থাপন নিশ্চিত করতে {word} লিখুন",
+        "startingRestore": "Full restore শুরু হচ্ছে…",
+        "restoreFull": "Full DPanel backup restore করুন",
+        "fullAccount": "পুরো account restore করুন",
+        "fullAccountHelp": "সব domain, home file ও database",
+        "type": {
+            "domains": "domain",
+            "files": "file",
+            "databases": "database"
+        },
+        "clearAll": "সব বাদ দিন",
+        "selectAll": "সব বাছুন",
+        "noneFound": "কিছু পাওয়া যায়নি",
+        "restoring": "Restore হচ্ছে…",
+        "restoreSelected": "বাছাই করা item restore করুন",
+        "empty": "এখনও কোনো migration archive upload করা হয়নি।"
+    },
+    "ssh": {
+        "loaded": "{name} load হয়েছে।",
+        "loadFailed": "Save করা SSH connection load করা যায়নি।",
+        "deleteConfirm": "Save করা এই SSH connection মুছবেন?",
+        "deleted": "Save করা SSH connection মুছে ফেলা হয়েছে।",
+        "deleteFailed": "Save করা SSH connection মোছা যায়নি।",
+        "connected": "{host}-এ connect হয়েছে। {count}টি website পাওয়া গেছে।",
+        "inspectFailed": "CyberPanel server পরীক্ষা করা যায়নি।",
+        "stepFailed": "Migration ধাপ ব্যর্থ হয়েছে। জানানো সমস্যা ঠিক করে আবার চেষ্টা করুন।",
+        "creatingArchive": "Remote file archive তৈরি হচ্ছে…",
+        "creatingDump": "Remote database dump তৈরি হচ্ছে…",
+        "downloadStarted": "{file} download শুরু হয়েছে।",
+        "downloadFailed": "বাছাই করা source download করা যায়নি।",
+        "connectTitle": "SSH দিয়ে connect করুন",
+        "connectHelp": "CyberPanel, HestiaCP, aaPanel ও Plesk স্বয়ংক্রিয়ভাবে শনাক্ত হয়। Credentials শুধু বর্তমান request-এ ব্যবহৃত হয় এবং SSH access save চালু করলেই কেবল রাখা হয়।",
+        "selectSaved": "Save করা panel বাছুন",
+        "useConnection": "Connection ব্যবহার করুন",
+        "delete": "মুছুন",
+        "host": "Host",
+        "port": "SSH port",
+        "username": "Username",
+        "auth": "Authentication",
+        "password": "Password",
+        "privateKey": "Private key",
+        "passphrase": "Key passphrase",
+        "optional": "(ঐচ্ছিক)",
+        "saveAccess": "SSH access save করুন",
+        "saveAccessHelp": "একান্ত দরকার না হলে পরামর্শ দেওয়া হয় না। Password/private key DPanel-এর database-এ encrypt করে রাখা হবে। অবিশ্বস্ত panel installation-এ কখনও এটি চালু করবেন না।",
+        "connectionName": "Connection নাম",
+        "connectionNamePlaceholder": "Production CyberPanel",
+        "connecting": "Connect হচ্ছে…",
+        "connect": "Connect করে খুঁজুন",
+        "sourceTitle": "একটি migration source বাছুন",
+        "directories": "{count}টি directory",
+        "databases": "{count}টি database",
+        "domain": "Domain",
+        "optionalHelper": "(ঐচ্ছিক সহায়ক)",
+        "customSelection": "নিজস্ব বাছাই",
+        "sourceDatabase": "Source database",
+        "noDatabase": "কোনো database নয়",
+        "sourcePath": "Source file-এর অবস্থান",
+        "sourcePathHelp": "যেকোনো বৈধ অবস্থান লিখুন অথবা খুঁজে পাওয়া কোনো directory বাছুন।",
+        "phpVersion": "PHP version",
+        "asSubdomain": "Subdomain হিসেবে তৈরি করুন",
+        "parentDomain": "Parent domain",
+        "parentHelp": "বিদ্যমান parent বাছুন অথবা নতুন একটি লিখুন। Parent না থাকলে স্বয়ংক্রিয়ভাবে তৈরি হবে।",
+        "subdomainName": "Subdomain নাম",
+        "willCreate": "তৈরি হবে: {domain}",
+        "newDomain": "নতুন DPanel domain",
+        "onlyThis": "শুধু এই file অবস্থান ও এই database নিয়ে কাজ হবে। অন্য website ও database অন্তর্ভুক্ত হবে না।",
+        "preparingFiles": "File প্রস্তুত হচ্ছে…",
+        "downloadFiles": "বাছাই করা file download করুন",
+        "preparingDatabase": "Database প্রস্তুত হচ্ছে…",
+        "downloadDatabase": "বাছাই করা database download করুন",
+        "step": {
+            "prepare": "অস্থায়ী storage প্রস্তুত",
+            "download": "বাছাই করা source download",
+            "website": "Website account তৈরি",
+            "restore": "File সরানো ও database import",
+            "verify": "Website live কিনা যাচাই"
+        },
+        "stepStatus": {
+            "waiting": "অপেক্ষমাণ",
+            "running": "চলছে",
+            "completed": "সম্পন্ন",
+            "failed": "ব্যর্থ"
+        },
+        "runningStep": "বর্তমান ধাপ চলছে…",
+        "migrate": "তৈরি করে ধাপে ধাপে migrate করুন"
+    }
+}

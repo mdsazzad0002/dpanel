@@ -5,6 +5,9 @@ import { computed, ref } from 'vue';
 import ProtectedFolders from './SiteProtection/ProtectedFolders.vue';
 import UploadAndHotlink from './SiteProtection/UploadAndHotlink.vue';
 import Firewall from './SiteProtection/Firewall.vue';
+import { useI18n } from 'vue-i18n';
+
+const { t } = useI18n();
 
 const props = defineProps({
     websites: { type: Array, default: () => [] },
@@ -22,21 +25,21 @@ const isGuarded = (w) => w.directories.length > 0 || w.no_php_paths.length > 0 |
 </script>
 
 <template>
-    <Head title="Site Protection" />
+    <Head :title="t('rules.siteProtection.title')" />
     <AuthenticatedLayout>
         <div class="space-y-6">
             <div>
-                <h1 class="text-2xl font-semibold">Site Protection</h1>
-                <p class="mt-1 text-sm text-slate-500">Ask for a password on a folder, stop PHP from running in upload folders, and stop other sites from embedding your images, accept traffic only through Cloudflare, and screen requests with a web application firewall. The edge gateway checks these before anything else answers.</p>
+                <h1 class="text-2xl font-semibold">{{ t('rules.siteProtection.title') }}</h1>
+                <p class="mt-1 text-sm text-slate-500">{{ t('rules.siteProtection.intro') }}</p>
             </div>
 
             <div v-if="websites.length === 0" class="rounded-lg border border-dashed border-slate-300 p-8 text-center text-sm text-slate-500 dark:border-slate-700">
-                No websites yet.
+                {{ t('rules.siteProtection.empty') }}
             </div>
 
             <div v-else class="grid gap-6 lg:grid-cols-[16rem_1fr]">
                 <aside class="space-y-2">
-                    <input v-model="search" type="search" placeholder="Search websites" class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-800" />
+                    <input v-model="search" type="search" :placeholder="t('rules.siteProtection.search')" class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-800" />
                     <ul class="max-h-[60vh] overflow-y-auto rounded-md border border-slate-200 dark:border-slate-700">
                         <li v-for="website in filtered" :key="website.id">
                             <button
@@ -46,7 +49,7 @@ const isGuarded = (w) => w.directories.length > 0 || w.no_php_paths.length > 0 |
                                 @click="selectedId = website.id"
                             >
                                 <span class="truncate">{{ website.domain }}</span>
-                                <i v-if="isGuarded(website)" class="bi bi-shield-check text-emerald-600" title="Protection on"></i>
+                                <i v-if="isGuarded(website)" class="bi bi-shield-check text-emerald-600" :title="t('rules.siteProtection.on')"></i>
                             </button>
                         </li>
                     </ul>

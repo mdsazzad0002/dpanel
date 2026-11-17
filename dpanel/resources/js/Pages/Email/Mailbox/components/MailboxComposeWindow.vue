@@ -2,6 +2,9 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import RichTextEditor from './RichTextEditor.vue';
 import RecipientInput from './RecipientInput.vue';
+import { useI18n } from 'vue-i18n';
+
+const { t } = useI18n();
 
 const props = defineProps({
     open: {
@@ -46,7 +49,7 @@ const showToolbar = ref(true);
 const showCc = computed(() => ccRequested.value || cc.value.trim() !== '');
 const showBcc = computed(() => bccRequested.value || bcc.value.trim() !== '');
 const hasDraft = computed(() => [to.value, cc.value, bcc.value, subject.value, body.value].some((value) => String(value || '').trim() !== ''));
-const title = computed(() => subject.value.trim() || 'New message');
+const title = computed(() => subject.value.trim() || t('email.mailbox.composer.newMessage'));
 const isMac = typeof navigator !== 'undefined' && /mac/i.test(navigator.platform || navigator.userAgent || '');
 
 const ui = computed(() => (props.isDark
@@ -121,7 +124,7 @@ const send = () => {
 };
 
 const discard = () => {
-    if (hasDraft.value && !confirm('Discard this draft?')) return;
+    if (hasDraft.value && !confirm(t('email.mailbox.composer.discardDraft'))) return;
     emit('discard');
 };
 
@@ -162,12 +165,12 @@ onBeforeUnmount(() => document.removeEventListener('keydown', handleDocumentKeyd
             v-if="!open"
             type="button"
             class="fixed bottom-5 right-5 z-[52] flex h-14 items-center gap-2.5 rounded-2xl bg-blue-600 pl-4 pr-5 text-sm font-semibold text-white shadow-lg shadow-blue-600/30 transition hover:bg-blue-700 hover:shadow-xl hover:shadow-blue-600/30 focus:outline-none focus-visible:ring-4 focus-visible:ring-blue-500/40 max-sm:w-14 max-sm:justify-center max-sm:px-0"
-            :title="`Compose (c)`"
-            aria-label="Compose"
+            :title="t('email.mailbox.composer.composeKey')"
+            :aria-label="t('email.mailbox.compose')"
             @click="openCompose"
         >
             <i class="bi bi-pencil-square text-lg"></i>
-            <span class="max-sm:hidden">{{ hasDraft ? 'Draft' : 'Compose' }}</span>
+            <span class="max-sm:hidden">{{ hasDraft ? t('email.mailbox.composer.draft') : t('email.mailbox.compose') }}</span>
             <span v-if="hasDraft" class="absolute -right-1 -top-1 h-3.5 w-3.5 rounded-full bg-amber-400 ring-2 ring-white dark:ring-slate-950"></span>
         </button>
     </transition>
@@ -187,7 +190,7 @@ onBeforeUnmount(() => document.removeEventListener('keydown', handleDocumentKeyd
         <section
             v-if="open"
             role="dialog"
-            aria-label="Compose message"
+            :aria-label="t('email.mailbox.composer.dialog')"
             :class="[
                 ui.window,
                 'fixed z-[55] flex origin-bottom-right flex-col overflow-hidden border shadow-2xl transition-[width,height,inset] duration-200',
@@ -205,13 +208,13 @@ onBeforeUnmount(() => document.removeEventListener('keydown', handleDocumentKeyd
                 @click="minimized ? restore() : null"
             >
                 <p class="min-w-0 flex-1 truncate text-sm font-medium">{{ title }}</p>
-                <button type="button" :class="[ui.headerButton, 'flex h-8 w-8 items-center justify-center rounded-md transition']" :title="minimized ? 'Restore' : 'Minimize'" :aria-label="minimized ? 'Restore' : 'Minimize'" @click.stop="toggleMinimize">
+                <button type="button" :class="[ui.headerButton, 'flex h-8 w-8 items-center justify-center rounded-md transition']" :title="minimized ? t('email.mailbox.composer.restore') : t('email.mailbox.composer.minimize')" :aria-label="minimized ? t('email.mailbox.composer.restore') : t('email.mailbox.composer.minimize')" @click.stop="toggleMinimize">
                     <i :class="['bi text-sm', minimized ? 'bi-chevron-up' : 'bi-dash-lg']"></i>
                 </button>
-                <button type="button" :class="[ui.headerButton, 'flex h-8 w-8 items-center justify-center rounded-md transition max-sm:hidden']" :title="maximized ? 'Exit full screen' : 'Full screen'" :aria-label="maximized ? 'Exit full screen' : 'Full screen'" @click.stop="toggleMaximize">
+                <button type="button" :class="[ui.headerButton, 'flex h-8 w-8 items-center justify-center rounded-md transition max-sm:hidden']" :title="maximized ? t('email.mailbox.composer.exitFull') : t('email.mailbox.composer.full')" :aria-label="maximized ? t('email.mailbox.composer.exitFull') : t('email.mailbox.composer.full')" @click.stop="toggleMaximize">
                     <i :class="['bi text-sm', maximized ? 'bi-fullscreen-exit' : 'bi-arrows-angle-expand']"></i>
                 </button>
-                <button type="button" :class="[ui.headerButton, 'flex h-8 w-8 items-center justify-center rounded-md transition']" title="Close (draft is kept)" aria-label="Close" @click.stop="close">
+                <button type="button" :class="[ui.headerButton, 'flex h-8 w-8 items-center justify-center rounded-md transition']" :title="t('email.mailbox.composer.closeKeep')" :aria-label="t('common.close')" @click.stop="close">
                     <i class="bi bi-x-lg text-sm"></i>
                 </button>
             </header>
@@ -219,25 +222,25 @@ onBeforeUnmount(() => document.removeEventListener('keydown', handleDocumentKeyd
             <form v-show="!minimized" class="flex min-h-0 flex-1 flex-col" @submit.prevent="send">
                 <!-- From -->
                 <div v-if="fromEmail" :class="[ui.field, 'flex items-center gap-3 border-b px-4 py-2 text-sm']">
-                    <span :class="[ui.label, 'w-14 shrink-0']">From</span>
+                    <span :class="[ui.label, 'w-14 shrink-0']">{{ t('email.mailbox.composer.from') }}</span>
                     <span :class="[ui.input, 'truncate']">{{ fromEmail }}</span>
                     <span
                         v-if="sandbox"
                         class="ml-auto shrink-0 rounded bg-amber-100 px-1.5 py-0.5 text-[11px] font-medium text-amber-800"
-                        title="Sandbox mode: only recipients on this server receive this message"
-                    >Sandbox</span>
+                        :title="t('email.mailbox.composer.sandboxTitle')"
+                    >{{ t('email.mailbox.composer.sandbox') }}</span>
                 </div>
 
                 <!-- To -->
                 <div :class="[ui.field, 'flex items-center gap-3 border-b px-4 text-sm']">
-                    <label for="compose-to" :class="[ui.label, 'w-14 shrink-0']">To</label>
+                    <label for="compose-to" :class="[ui.label, 'w-14 shrink-0']">{{ t('email.mailbox.composer.to') }}</label>
                     <RecipientInput
                         id="compose-to"
                         ref="toInput"
                         v-model="to"
                         :is-dark="isDark"
                         :input-class="[ui.input, 'h-11 w-full border-0 bg-transparent p-0 text-sm outline-none focus:ring-0']"
-                        placeholder="Name or email"
+                        :placeholder="t('email.mailbox.composer.nameOrEmail')"
                     />
                     <button v-if="!showCc" type="button" :class="[ui.link, 'text-xs font-medium transition']" @click="ccRequested = true">Cc</button>
                     <button v-if="!showBcc" type="button" :class="[ui.link, 'text-xs font-medium transition']" @click="bccRequested = true">Bcc</button>
@@ -245,23 +248,23 @@ onBeforeUnmount(() => document.removeEventListener('keydown', handleDocumentKeyd
 
                 <div v-if="showCc" :class="[ui.field, 'flex items-center gap-3 border-b px-4 text-sm']">
                     <label for="compose-cc" :class="[ui.label, 'w-14 shrink-0']">Cc</label>
-                    <RecipientInput id="compose-cc" v-model="cc" :is-dark="isDark" :input-class="[ui.input, 'h-11 w-full border-0 bg-transparent p-0 text-sm outline-none focus:ring-0']" placeholder="Separate addresses with commas" />
+                    <RecipientInput id="compose-cc" v-model="cc" :is-dark="isDark" :input-class="[ui.input, 'h-11 w-full border-0 bg-transparent p-0 text-sm outline-none focus:ring-0']" :placeholder="t('email.mailbox.composer.separate')" />
                 </div>
 
                 <div v-if="showBcc" :class="[ui.field, 'flex items-center gap-3 border-b px-4 text-sm']">
                     <label for="compose-bcc" :class="[ui.label, 'w-14 shrink-0']">Bcc</label>
-                    <RecipientInput id="compose-bcc" v-model="bcc" :is-dark="isDark" :input-class="[ui.input, 'h-11 w-full border-0 bg-transparent p-0 text-sm outline-none focus:ring-0']" placeholder="Hidden recipients" />
+                    <RecipientInput id="compose-bcc" v-model="bcc" :is-dark="isDark" :input-class="[ui.input, 'h-11 w-full border-0 bg-transparent p-0 text-sm outline-none focus:ring-0']" :placeholder="t('email.mailbox.composer.hidden')" />
                 </div>
 
                 <!-- Subject -->
                 <div :class="[ui.field, 'flex items-center gap-3 border-b px-4 text-sm']">
-                    <label for="compose-subject" class="sr-only">Subject</label>
+                    <label for="compose-subject" class="sr-only">{{ t('email.mailbox.composer.subject') }}</label>
                     <input
                         id="compose-subject"
                         v-model="subject"
                         type="text"
                         :class="[ui.input, 'h-10 min-w-0 flex-1 border-0 bg-transparent p-0 text-sm font-medium outline-none focus:ring-0']"
-                        placeholder="Subject"
+                        :placeholder="t('email.mailbox.composer.subject')"
                     >
                 </div>
 
@@ -284,12 +287,12 @@ onBeforeUnmount(() => document.removeEventListener('keydown', handleDocumentKeyd
                         :disabled="sending"
                     >
                         <i :class="['bi', sending ? 'bi-arrow-repeat animate-spin' : 'bi-send']"></i>
-                        {{ sending ? 'Sending…' : 'Send' }}
+                        {{ sending ? t('email.mailbox.composer.sending') : t('email.mailbox.composer.send') }}
                     </button>
                     <button
                         type="button"
                         :class="[showToolbar ? 'bg-blue-100 text-blue-800 dark:bg-blue-500/20 dark:text-blue-200' : ui.iconButton, 'flex h-9 w-9 items-center justify-center rounded-full text-sm font-semibold transition']"
-                        title="Formatting options"
+                        :title="t('email.mailbox.composer.formatting')"
                         :aria-pressed="showToolbar"
                         @click="showToolbar = !showToolbar"
                     >Aa</button>
@@ -298,8 +301,8 @@ onBeforeUnmount(() => document.removeEventListener('keydown', handleDocumentKeyd
                     <button
                         type="button"
                         :class="[ui.iconButton, 'ml-auto flex h-9 w-9 items-center justify-center rounded-md transition hover:!text-rose-600']"
-                        title="Discard draft"
-                        aria-label="Discard draft"
+                        :title="t('email.mailbox.composer.discardDraftLabel')"
+                        :aria-label="t('email.mailbox.composer.discardDraftLabel')"
                         @click="discard"
                     >
                         <i class="bi bi-trash3"></i>

@@ -2,6 +2,9 @@
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
 import { Link } from '@inertiajs/vue3';
 import { formatBytes, initialOf } from './mailboxFolders';
+import { useI18n } from 'vue-i18n';
+
+const { t } = useI18n();
 
 const props = defineProps({
     mailbox: {
@@ -88,7 +91,7 @@ const filterMenuOpen = ref(false);
 const hasSearchQuery = computed(() => props.searchQuery.trim().length > 0);
 const isFiltered = computed(() => props.messageFilter !== 'all');
 const displayName = computed(() => {
-    const local = String(props.mailbox.email || '').split('@')[0] || 'Mailbox';
+    const local = String(props.mailbox.email || '').split('@')[0] || t('email.mailbox.topbar.mailbox');
 
     return local.charAt(0).toUpperCase() + local.slice(1);
 });
@@ -209,7 +212,7 @@ onBeforeUnmount(() => {
                 <button
                     type="button"
                     :class="[ui.iconButton, 'flex h-9 w-9 shrink-0 items-center justify-center rounded-md transition md:hidden']"
-                    aria-label="Open menu"
+                    :aria-label="t('email.mailbox.topbar.openMenu')"
                     @click="emit('toggle-mobile-sidebar')"
                 >
                     <i class="bi bi-list text-xl"></i>
@@ -232,8 +235,8 @@ onBeforeUnmount(() => {
                         :value="searchQuery"
                         type="search"
                         class="h-full min-w-0 flex-1 border-none bg-transparent p-0 text-sm outline-none ring-0 placeholder:text-slate-400 focus:ring-0 [&::-webkit-search-cancel-button]:hidden"
-                        placeholder="Search mail"
-                        aria-label="Search mail"
+                        :placeholder="t('email.mailbox.topbar.search')"
+                        :aria-label="t('email.mailbox.topbar.search')"
                         @input="emit('update:searchQuery', $event.target.value)"
                     >
 
@@ -244,7 +247,7 @@ onBeforeUnmount(() => {
                         v-if="hasSearchQuery"
                         type="button"
                         :class="[ui.iconButton, 'flex h-7 w-7 items-center justify-center rounded-md transition']"
-                        aria-label="Clear search"
+                        :aria-label="t('email.mailbox.topbar.clearSearch')"
                         @click="clearSearch"
                     >
                         <i class="bi bi-x-lg text-xs"></i>
@@ -264,11 +267,11 @@ onBeforeUnmount(() => {
                             ]"
                             aria-haspopup="menu"
                             :aria-expanded="filterMenuOpen"
-                            :title="`Filter: ${activeFilterLabel}`"
+                            :title="t('email.mailbox.topbar.filterTitle', { filter: activeFilterLabel })"
                             @click="toggleFilterMenu"
                         >
                             <i class="bi bi-sliders2 text-sm"></i>
-                            <span class="hidden sm:inline">{{ isFiltered ? activeFilterLabel : 'Filter' }}</span>
+                            <span class="hidden sm:inline">{{ isFiltered ? activeFilterLabel : t('email.mailbox.topbar.filter') }}</span>
                         </button>
 
                         <transition
@@ -282,7 +285,7 @@ onBeforeUnmount(() => {
                                 role="menu"
                                 :class="[ui.menu, 'absolute right-0 top-[calc(100%+0.5rem)] z-40 w-60 rounded-lg border p-1 shadow-xl']"
                             >
-                                <p :class="[ui.muted, 'px-2.5 pb-1 pt-1.5 text-[11px] font-semibold uppercase tracking-wider']">Show</p>
+                                <p :class="[ui.muted, 'px-2.5 pb-1 pt-1.5 text-[11px] font-semibold uppercase tracking-wider']">{{ t('email.mailbox.topbar.show') }}</p>
                                 <button
                                     v-for="option in filterOptions"
                                     :key="option.value"
@@ -309,8 +312,8 @@ onBeforeUnmount(() => {
                 <button
                     type="button"
                     :class="[ui.iconButton, 'flex h-9 w-9 items-center justify-center rounded-md transition disabled:opacity-60']"
-                    title="Refresh"
-                    aria-label="Refresh"
+                    :title="t('common.refresh')"
+                    :aria-label="t('common.refresh')"
                     :disabled="loading"
                     @click="emit('refresh-inbox')"
                 >
@@ -320,8 +323,8 @@ onBeforeUnmount(() => {
                 <button
                     type="button"
                     :class="[ui.iconButton, 'hidden h-9 w-9 items-center justify-center rounded-md transition sm:flex']"
-                    :title="isDark ? 'Light mode' : 'Dark mode'"
-                    :aria-label="isDark ? 'Switch to light mode' : 'Switch to dark mode'"
+                    :title="isDark ? t('email.mailbox.topbar.light') : t('email.mailbox.topbar.dark')"
+                    :aria-label="isDark ? t('email.mailbox.topbar.switchLight') : t('email.mailbox.topbar.switchDark')"
                     @click="emit('toggle-theme')"
                 >
                     <i :class="['bi text-base', isDark ? 'bi-sun' : 'bi-moon']"></i>
@@ -336,7 +339,7 @@ onBeforeUnmount(() => {
                         :class="[ui.iconButton, 'flex items-center gap-2 rounded-full p-0.5 transition lg:rounded-lg lg:py-1 lg:pl-1 lg:pr-2']"
                         aria-haspopup="menu"
                         :aria-expanded="accountMenuOpen"
-                        aria-label="Account menu"
+                        :aria-label="t('email.mailbox.topbar.accountMenu')"
                         @click="toggleAccountMenu"
                     >
                         <span :class="[avatarColor(mailbox.email), 'relative flex h-8 w-8 shrink-0 items-center justify-center overflow-hidden rounded-full text-sm font-semibold text-white']">
@@ -375,24 +378,24 @@ onBeforeUnmount(() => {
                                     <p :class="[ui.muted, 'truncate text-xs']">{{ mailbox.email }}</p>
                                     <div class="mt-1 flex items-center gap-3 text-xs">
                                         <label class="cursor-pointer font-medium text-blue-600 hover:underline dark:text-blue-400">
-                                            {{ mailbox.avatar_url ? 'Change photo' : 'Add photo' }}
+                                            {{ mailbox.avatar_url ? t('email.mailbox.topbar.changePhoto') : t('email.mailbox.topbar.addPhoto') }}
                                             <input type="file" accept="image/png,image/jpeg,image/webp" class="sr-only" @change="onPhotoPicked">
                                         </label>
-                                        <button v-if="mailbox.avatar_url" type="button" :class="[ui.muted, 'hover:underline']" @click="emit('remove-photo')">Remove</button>
+                                        <button v-if="mailbox.avatar_url" type="button" :class="[ui.muted, 'hover:underline']" @click="emit('remove-photo')">{{ t('email.mailbox.topbar.removePhoto') }}</button>
                                     </div>
                                 </div>
                             </div>
 
                             <div :class="[ui.divider, 'grid grid-cols-2 gap-px border-y text-xs', isDark ? 'bg-slate-800' : 'bg-slate-200']">
                                 <div :class="[isDark ? 'bg-slate-900' : 'bg-white', 'px-4 py-2.5']">
-                                    <p :class="ui.muted">Status</p>
+                                    <p :class="ui.muted">{{ t('email.mailbox.topbar.status') }}</p>
                                     <p :class="[ui.strong, 'mt-0.5 flex items-center gap-1.5 font-medium capitalize']">
                                         <span :class="['h-1.5 w-1.5 rounded-full', mailbox.status === 'active' ? 'bg-emerald-500' : 'bg-slate-400']"></span>
-                                        {{ mailbox.status || 'Unknown' }}
+                                        {{ mailbox.status === 'active' ? t('email.mailbox.topbar.active') : (mailbox.status || t('email.mailbox.topbar.unknown')) }}
                                     </p>
                                 </div>
                                 <div :class="[isDark ? 'bg-slate-900' : 'bg-white', 'px-4 py-2.5']">
-                                    <p :class="ui.muted">Storage</p>
+                                    <p :class="ui.muted">{{ t('email.mailbox.sidebar.storage') }}</p>
                                     <p :class="[ui.strong, 'mt-0.5 font-medium tabular-nums']">
                                         {{ formatBytes(mailbox.used_bytes) }} / {{ mailbox.quota_mb ? `${mailbox.quota_mb} MB` : '∞' }}
                                     </p>
@@ -401,7 +404,7 @@ onBeforeUnmount(() => {
 
                             <!-- Switch account -->
                             <div v-if="relatedMailboxes.length" class="p-1.5">
-                                <p :class="[ui.muted, 'px-2.5 pb-1 pt-1.5 text-[11px] font-semibold uppercase tracking-wider']">Switch account</p>
+                                <p :class="[ui.muted, 'px-2.5 pb-1 pt-1.5 text-[11px] font-semibold uppercase tracking-wider']">{{ t('email.mailbox.topbar.switchAccount') }}</p>
                                 <div class="max-h-56 overflow-y-auto">
                                     <button
                                         v-for="item in relatedMailboxes"
@@ -426,7 +429,7 @@ onBeforeUnmount(() => {
                                     :class="[ui.menuItem, 'flex w-full items-center gap-2.5 rounded-md px-2.5 py-2 text-sm transition']"
                                 >
                                     <i :class="[ui.muted, 'bi bi-grid text-[15px]']"></i>
-                                    Manage mailboxes
+                                    {{ t('email.mailbox.topbar.manage') }}
                                 </Link>
                                 <button
                                     type="button"
@@ -435,7 +438,7 @@ onBeforeUnmount(() => {
                                     @click="accountMenuOpen = false; emit('open-contacts')"
                                 >
                                     <i :class="[ui.muted, 'bi bi-person-lines-fill text-[15px]']"></i>
-                                    Contacts
+                                    {{ t('email.mailbox.contacts.title') }}
                                 </button>
                                 <button
                                     type="button"
@@ -444,7 +447,7 @@ onBeforeUnmount(() => {
                                     @click="emit('toggle-theme')"
                                 >
                                     <i :class="[ui.muted, 'bi text-[15px]', isDark ? 'bi-sun' : 'bi-moon']"></i>
-                                    <span class="flex-1">{{ isDark ? 'Light mode' : 'Dark mode' }}</span>
+                                    <span class="flex-1">{{ isDark ? t('email.mailbox.topbar.light') : t('email.mailbox.topbar.dark') }}</span>
                                 </button>
                             </div>
 
@@ -457,7 +460,7 @@ onBeforeUnmount(() => {
                                     :class="[isDark ? 'text-rose-300 hover:bg-rose-500/10' : 'text-rose-600 hover:bg-rose-50', 'flex w-full items-center gap-2.5 rounded-md px-2.5 py-2 text-left text-sm font-medium transition']"
                                 >
                                     <i class="bi bi-box-arrow-right text-[15px]"></i>
-                                    Sign out
+                                    {{ t('email.mailbox.topbar.signOut') }}
                                 </Link>
                             </div>
                         </div>

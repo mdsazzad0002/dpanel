@@ -1,0 +1,16 @@
+{
+    "title": "SMTP Relay",
+    "subtitle": "বাইরে যাওয়া সব mail অন্য server দিয়ে পাঠান",
+    "now": "এখন বাইরের mail",
+    "direct": "এই server থেকে সরাসরি যায়",
+    "through": "{host}:{port} দিয়ে যায়",
+    "host": "Relay server",
+    "port": "Port",
+    "username": "Username",
+    "password": "Password",
+    "help": "TLS সবসময় লাগে। Password Postfix-এ যায়, panel রাখে না, তাই প্রতিবার save-এ আবার দিন।",
+    "save": "Save ও প্রয়োগ",
+    "disable": "সরাসরি পাঠান",
+    "disableConfirm": "বাইরের mail আবার এই server থেকে সরাসরি পাঠাবেন?",
+    "failed": "Postfix বদলায়নি।"
+}

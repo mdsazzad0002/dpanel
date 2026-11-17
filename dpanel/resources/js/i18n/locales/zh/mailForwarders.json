@@ -1,0 +1,23 @@
+{
+    "title": "转发器与全部接收",
+    "subtitle": "仅用于转发的地址，以及发往未知地址的邮件去向",
+    "add": "添加转发器",
+    "address": "地址",
+    "domain": "域名",
+    "destinations": "转发到",
+    "goesTo": "发往",
+    "formHelp": "不会创建邮箱：发往此地址的邮件直接转发。多个地址用逗号分隔。",
+    "addButton": "添加",
+    "list": "转发器",
+    "empty": "暂无转发器。",
+    "remove": "删除",
+    "removeConfirm": "停止转发 {address}？发往该地址的邮件将被拒收。",
+    "addFailed": "未能添加转发器。",
+    "removeFailed": "未能删除转发器。",
+    "catchAll": "全部接收",
+    "catchAllHelp": "发往本域名下既无邮箱也无转发器地址的邮件将送到这里。留空则拒收。",
+    "catchAllOff": "关闭：未知地址将被拒收",
+    "save": "保存",
+    "catchAllFailed": "未能保存全部接收设置。",
+    "noDomains": "您还没有网站或邮箱域名。"
+}

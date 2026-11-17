@@ -4,6 +4,9 @@ import { Head, Link } from '@inertiajs/vue3';
 import { computed, onMounted, ref, watch } from 'vue';
 import { usePanelApi } from '@/Pages/Websites/composables/usePanelApi';
 import Offcanvas from '@/Components/Offcanvas.vue';
+import { useI18n } from 'vue-i18n';
+
+const { t } = useI18n();
 
 const props = defineProps({
     website: { type: Object, required: true },
@@ -33,8 +36,8 @@ const formatBytes = (bytes) => {
     return `${value.toFixed(unit === 0 ? 0 : 1)} ${units[unit]}`;
 };
 const formatTtl = (ttl) => {
-    if (ttl === -1) return 'No expiry';
-    if (ttl < 0) return 'Expired';
+    if (ttl === -1) return t('websites.redisExplorer.noExpiry');
+    if (ttl < 0) return t('websites.redisExplorer.expired');
     const d = Math.floor(ttl / 86400), h = Math.floor((ttl % 86400) / 3600), m = Math.floor((ttl % 3600) / 60), s = ttl % 60;
     return [d && `${d}d`, h && `${h}h`, m && `${m}m`, (!d && !h) && `${s}s`].filter(Boolean).join(' ');
 };
@@ -93,10 +96,10 @@ const toggleAll = () => {
 };
 
 const deleteKeys = async (names) => {
-    if (!names.length || !confirm(`Delete ${names.length} key(s) from ${props.website.domain}? This cannot be undone.`)) return;
+    if (!names.length || !confirm(t('websites.redisExplorer.deleteConfirm', { count: names.length, domain: props.website.domain }))) return;
     try {
         const data = await requestJson(r('websites.redis-explorer.destroy'), { body: { names } });
-        notice.value = `Deleted ${data.deleted} key(s).`;
+        notice.value = t('websites.redisExplorer.deleted', { count: data.deleted });
         keys.value = keys.value.filter((k) => !names.includes(k.name));
         selected.value = selected.value.filter((n) => !names.includes(n));
         if (detailName.value && names.includes(detailName.value)) closeDetail();
@@ -160,7 +163,7 @@ const startEdit = () => {
 const saveValue = async () => {
     try {
         await requestJson(r('websites.redis-explorer.update'), { body: { name: detail.value.name, value: editValue.value } });
-        notice.value = 'Value saved.';
+        notice.value = t('websites.redisExplorer.valueSaved');
         editing.value = false;
         openKey(detail.value.name);
     } catch (e) {
@@ -169,10 +172,10 @@ const saveValue = async () => {
 };
 const saveTtl = async (persist = false) => {
     const ttl = persist ? null : parseInt(ttlInput.value, 10);
-    if (!persist && !(ttl > 0)) { detailError.value = 'Enter a TTL in seconds.'; return; }
+    if (!persist && !(ttl > 0)) { detailError.value = t('websites.redisExplorer.ttlRequired'); return; }
     try {
         await requestJson(r('websites.redis-explorer.ttl'), { body: { name: detail.value.name, ttl } });
-        notice.value = persist ? 'Expiry removed.' : `TTL set to ${formatTtl(ttl)}.`;
+        notice.value = persist ? t('websites.redisExplorer.expiryRemoved') : t('websites.redisExplorer.ttlSet', { ttl: formatTtl(ttl) });
         openKey(detail.value.name);
     } catch (e) {
         detailError.value = e.message;
@@ -197,28 +200,28 @@ onMounted(() => { loadKeys(true); loadStats(); });
 </script>
 
 <template>
-    <Head :title="`Redis Explorer - ${website.domain}`" />
+    <Head :title="t('websites.redisExplorer.headTitle', { domain: website.domain })" />
 
     <AuthenticatedLayout>
         <template #header>
             <div>
-                <h1 class="text-lg font-semibold">Redis Explorer</h1>
-                <p class="text-sm text-slate-500 dark:text-slate-400">Browse and inspect the Redis keys stored by {{ website.domain }}.</p>
+                <h1 class="text-lg font-semibold">{{ t('websites.redisExplorer.title') }}</h1>
+                <p class="text-sm text-slate-500 dark:text-slate-400">{{ t('websites.redisExplorer.subtitle', { domain: website.domain }) }}</p>
             </div>
         </template>
 
         <div class="space-y-4">
             <div class="flex flex-wrap items-center justify-between gap-2">
                 <div class="min-w-0 text-xs text-slate-500 dark:text-slate-400">
-                    <span class="font-mono">{{ redis.host }}:{{ redis.port }}</span> · DB {{ redis.database }} · prefix
+                    <span class="font-mono">{{ redis.host }}:{{ redis.port }}</span> · DB {{ redis.database }} · {{ t('websites.redisExplorer.prefix') }}
                     <code class="break-all rounded bg-slate-100 px-1.5 py-0.5 text-slate-700 dark:bg-slate-800 dark:text-slate-200">{{ redis.prefix }}</code>
                 </div>
                 <div class="flex gap-2">
                     <button type="button" class="rounded-md border border-slate-300 px-3 py-2 text-sm hover:bg-slate-100 dark:border-slate-700 dark:hover:bg-slate-800" @click="refreshAll">
-                        <i class="bi bi-arrow-clockwise"></i> Refresh
+                        <i class="bi bi-arrow-clockwise"></i> {{ t('common.refresh') }}
                     </button>
-                    <Link :href="r('websites.redis-cache.index')" class="rounded-md border border-slate-300 px-3 py-2 text-sm hover:bg-slate-100 dark:border-slate-700 dark:hover:bg-slate-800">Redis Setup</Link>
-                    <Link :href="r('websites.manage')" class="rounded-md border border-slate-300 px-3 py-2 text-sm hover:bg-slate-100 dark:border-slate-700 dark:hover:bg-slate-800">Back to Website</Link>
+                    <Link :href="r('websites.redis-cache.index')" class="rounded-md border border-slate-300 px-3 py-2 text-sm hover:bg-slate-100 dark:border-slate-700 dark:hover:bg-slate-800">{{ t('websites.redisExplorer.setup') }}</Link>
+                    <Link :href="r('websites.manage')" class="rounded-md border border-slate-300 px-3 py-2 text-sm hover:bg-slate-100 dark:border-slate-700 dark:hover:bg-slate-800">{{ t('websites.redisExplorer.back') }}</Link>
                 </div>
             </div>
 
@@ -228,16 +231,16 @@ onMounted(() => { loadKeys(true); loadStats(); });
             <!-- Stats -->
             <section class="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
                 <div class="rounded-xl border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-900">
-                    <p class="text-xs font-semibold uppercase tracking-wide text-slate-500">Keys</p>
+                    <p class="text-xs font-semibold uppercase tracking-wide text-slate-500">{{ t('websites.redisExplorer.keys') }}</p>
                     <p class="mt-1 text-2xl font-semibold">{{ statsLoading && !stats ? '…' : (stats?.namespace.key_count ?? 0).toLocaleString() }}<span v-if="stats && !stats.namespace.complete" class="text-sm text-slate-500">+</span></p>
                 </div>
                 <div class="rounded-xl border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-900">
-                    <p class="text-xs font-semibold uppercase tracking-wide text-slate-500">Memory used</p>
+                    <p class="text-xs font-semibold uppercase tracking-wide text-slate-500">{{ t('websites.redisExplorer.memoryUsed') }}</p>
                     <p class="mt-1 text-2xl font-semibold">{{ statsLoading && !stats ? '…' : formatBytes(stats?.namespace.memory_bytes ?? 0) }}</p>
-                    <p v-if="stats && !stats.namespace.complete" class="text-xs text-slate-500">First {{ stats.namespace.key_count.toLocaleString() }} keys</p>
+                    <p v-if="stats && !stats.namespace.complete" class="text-xs text-slate-500">{{ t('websites.redisExplorer.firstKeys', { count: stats.namespace.key_count.toLocaleString() }) }}</p>
                 </div>
                 <div class="rounded-xl border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-900 lg:col-span-2">
-                    <p class="text-xs font-semibold uppercase tracking-wide text-slate-500">Key types</p>
+                    <p class="text-xs font-semibold uppercase tracking-wide text-slate-500">{{ t('websites.redisExplorer.keyTypes') }}</p>
                     <div class="mt-2 flex flex-wrap gap-1.5">
                         <button
                             v-for="(count, type) in stats?.namespace.types || {}"
@@ -245,22 +248,22 @@ onMounted(() => { loadKeys(true); loadStats(); });
                             type="button"
                             :class="[typeClass(type), typeFilter === type ? 'ring-2 ring-offset-1 ring-slate-400 dark:ring-offset-slate-900' : '']"
                             class="rounded-full px-2.5 py-1 text-xs font-medium"
-                            :title="`Show only ${type} keys`"
+                            :title="t('websites.redisExplorer.onlyType', { type })"
                             @click="typeFilter = typeFilter === type ? '' : type"
                         >{{ type }} · {{ count.toLocaleString() }}</button>
-                        <span v-if="stats && !Object.keys(stats.namespace.types).length" class="text-sm text-slate-500">No keys yet</span>
+                        <span v-if="stats && !Object.keys(stats.namespace.types).length" class="text-sm text-slate-500">{{ t('websites.redisExplorer.noKeysYet') }}</span>
                     </div>
                 </div>
             </section>
 
             <section v-if="isAdmin && stats?.server" class="flex flex-wrap gap-x-6 gap-y-1 rounded-xl border border-slate-200 bg-white px-4 py-3 text-xs text-slate-600 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-300">
-                <span class="font-semibold uppercase tracking-wide text-slate-500">Server (admin)</span>
+                <span class="font-semibold uppercase tracking-wide text-slate-500">{{ t('websites.redisExplorer.server') }}</span>
                 <span>Redis {{ stats.server.version }}</span>
-                <span>Used {{ stats.server.used_memory_human }}</span>
-                <span>Peak {{ stats.server.used_memory_peak_human }}</span>
-                <span>Max {{ stats.server.maxmemory_human === '0B' ? 'unlimited' : stats.server.maxmemory_human }}</span>
-                <span>Policy {{ stats.server.maxmemory_policy }}</span>
-                <span>Fragmentation {{ stats.server.fragmentation_ratio }}</span>
+                <span>{{ t('websites.redisExplorer.used', { value: stats.server.used_memory_human }) }}</span>
+                <span>{{ t('websites.redisExplorer.peak', { value: stats.server.used_memory_peak_human }) }}</span>
+                <span>{{ t('websites.redisExplorer.max', { value: stats.server.maxmemory_human === '0B' ? t('websites.redisExplorer.unlimited') : stats.server.maxmemory_human }) }}</span>
+                <span>{{ t('websites.redisExplorer.policy', { value: stats.server.maxmemory_policy }) }}</span>
+                <span>{{ t('websites.redisExplorer.fragmentation', { value: stats.server.fragmentation_ratio }) }}</span>
             </section>
 
             <div>
@@ -272,21 +275,21 @@ onMounted(() => { loadKeys(true); loadStats(); });
                             <input
                                 v-model="search"
                                 type="search"
-                                placeholder="Search keys (use * for pattern)"
+                                :placeholder="t('websites.redisExplorer.search')"
                                 class="w-full rounded-md border border-slate-300 bg-white py-2 pl-9 pr-3 text-sm dark:border-slate-700 dark:bg-slate-950"
                             >
                         </div>
                         <div class="flex items-center justify-between text-xs text-slate-500">
                             <label class="flex items-center gap-2">
-                                <input type="checkbox" :checked="allSelected" class="rounded" @change="toggleAll"> Select all
+                                <input type="checkbox" :checked="allSelected" class="rounded" @change="toggleAll"> {{ t('websites.redisExplorer.selectAll') }}
                             </label>
-                            <span>{{ visibleKeys.length }} shown<span v-if="typeFilter"> · {{ typeFilter }}</span></span>
+                            <span>{{ t('websites.redisExplorer.shown', { count: visibleKeys.length }) }}<span v-if="typeFilter"> · {{ typeFilter }}</span></span>
                             <button
                                 type="button"
                                 :disabled="!selected.length"
                                 class="rounded bg-red-600 px-2.5 py-1 font-medium text-white disabled:opacity-40"
                                 @click="deleteKeys([...selected])"
-                            >Delete ({{ selected.length }})</button>
+                            >{{ t('websites.redisExplorer.deleteCount', { count: selected.length }) }}</button>
                         </div>
                     </div>
 
@@ -304,23 +307,23 @@ onMounted(() => { loadKeys(true); loadStats(); });
                             <span class="shrink-0 text-[11px] text-slate-400">{{ k.ttl === -1 ? '∞' : formatTtl(k.ttl) }}</span>
                         </li>
                         <li v-if="!loading && !visibleKeys.length" class="px-3 py-10 text-center text-sm text-slate-500">
-                            {{ search ? 'No keys match this search.' : 'No keys found for this website.' }}
+                            {{ search ? t('websites.redisExplorer.noMatch') : t('websites.redisExplorer.noKeys') }}
                         </li>
                     </ul>
 
                     <div class="border-t border-slate-200 p-2 text-center dark:border-slate-800">
-                        <span v-if="loading" class="text-xs text-slate-500">Loading…</span>
-                        <button v-else-if="hasMore" type="button" class="text-sm font-medium text-blue-600 hover:underline dark:text-blue-400" @click="loadKeys(false)">Load more keys</button>
-                        <span v-else class="text-xs text-slate-400">End of keys</span>
+                        <span v-if="loading" class="text-xs text-slate-500">{{ t('common.loading') }}</span>
+                        <button v-else-if="hasMore" type="button" class="text-sm font-medium text-blue-600 hover:underline dark:text-blue-400" @click="loadKeys(false)">{{ t('websites.redisExplorer.loadMoreKeys') }}</button>
+                        <span v-else class="text-xs text-slate-400">{{ t('websites.redisExplorer.end') }}</span>
                     </div>
                 </section>
 
                 <!-- Key detail -->
-                <Offcanvas :show="detailOpen" :title="detailName" subtitle="Redis key" width="wide" @close="closeDetail">
-                    <div v-if="detailLoading && !detail" class="p-10 text-center text-sm text-slate-500">Loading key…</div>
+                <Offcanvas :show="detailOpen" :title="detailName" :subtitle="t('websites.redisExplorer.redisKey')" width="wide" @close="closeDetail">
+                    <div v-if="detailLoading && !detail" class="p-10 text-center text-sm text-slate-500">{{ t('websites.redisExplorer.loadingKey') }}</div>
                     <div v-else-if="!detail" class="flex flex-col items-center justify-center p-10 text-center text-sm text-slate-500">
                         <i class="bi bi-hdd-stack text-3xl text-slate-300 dark:text-slate-600"></i>
-                        <p class="mt-2">{{ detailError || 'This key could not be loaded.' }}</p>
+                        <p class="mt-2">{{ detailError || t('websites.redisExplorer.loadFailed') }}</p>
                     </div>
                     <div v-else class="-mx-5 -my-4 flex min-h-full flex-col">
                         <div class="space-y-3 border-b border-slate-200 p-4 dark:border-slate-800">
@@ -330,20 +333,20 @@ onMounted(() => { loadKeys(true); loadStats(); });
                                     <p class="mt-2 break-all font-mono text-sm font-medium">{{ detail.name }}</p>
                                 </div>
                                 <button type="button" class="shrink-0 rounded-md border border-red-300 px-3 py-1.5 text-sm text-red-600 hover:bg-red-50 dark:border-red-900 dark:hover:bg-red-950" @click="deleteKeys([detail.name])">
-                                    <i class="bi bi-trash"></i> Delete
+                                    <i class="bi bi-trash"></i> {{ t('websites.redisExplorer.delete') }}
                                 </button>
                             </div>
                             <dl class="grid grid-cols-2 gap-2 text-xs sm:grid-cols-4">
                                 <div><dt class="text-slate-500">TTL</dt><dd class="font-medium">{{ formatTtl(detail.ttl) }}</dd></div>
-                                <div><dt class="text-slate-500">Memory</dt><dd class="font-medium">{{ formatBytes(detail.memory_bytes) }}</dd></div>
-                                <div><dt class="text-slate-500">{{ detail.type === 'string' ? 'Length' : 'Items' }}</dt><dd class="font-medium">{{ detail.type === 'string' ? formatBytes(detail.size) : detail.size.toLocaleString() }}</dd></div>
-                                <div><dt class="text-slate-500">Encoding</dt><dd class="font-medium">{{ detail.encoding || '—' }}</dd></div>
+                                <div><dt class="text-slate-500">{{ t('websites.redisExplorer.memory') }}</dt><dd class="font-medium">{{ formatBytes(detail.memory_bytes) }}</dd></div>
+                                <div><dt class="text-slate-500">{{ detail.type === 'string' ? t('websites.redisExplorer.length') : t('websites.redisExplorer.items') }}</dt><dd class="font-medium">{{ detail.type === 'string' ? formatBytes(detail.size) : detail.size.toLocaleString() }}</dd></div>
+                                <div><dt class="text-slate-500">{{ t('websites.redisExplorer.encoding') }}</dt><dd class="font-medium">{{ detail.encoding || '—' }}</dd></div>
                             </dl>
                             <div class="flex flex-wrap items-center gap-2">
-                                <input v-model="ttlInput" type="number" min="1" placeholder="TTL seconds" class="w-32 rounded-md border border-slate-300 px-2 py-1 text-xs dark:border-slate-700 dark:bg-slate-950">
-                                <button type="button" class="rounded-md border border-slate-300 px-2.5 py-1 text-xs hover:bg-slate-100 dark:border-slate-700 dark:hover:bg-slate-800" @click="saveTtl(false)">Set TTL</button>
-                                <button v-if="detail.ttl !== -1" type="button" class="rounded-md border border-slate-300 px-2.5 py-1 text-xs hover:bg-slate-100 dark:border-slate-700 dark:hover:bg-slate-800" @click="saveTtl(true)">Remove expiry</button>
-                                <span v-if="detailLoading" class="text-xs text-slate-500">Refreshing…</span>
+                                <input v-model="ttlInput" type="number" min="1" :placeholder="t('websites.redisExplorer.ttlSeconds')" class="w-32 rounded-md border border-slate-300 px-2 py-1 text-xs dark:border-slate-700 dark:bg-slate-950">
+                                <button type="button" class="rounded-md border border-slate-300 px-2.5 py-1 text-xs hover:bg-slate-100 dark:border-slate-700 dark:hover:bg-slate-800" @click="saveTtl(false)">{{ t('websites.redisExplorer.setTtl') }}</button>
+                                <button v-if="detail.ttl !== -1" type="button" class="rounded-md border border-slate-300 px-2.5 py-1 text-xs hover:bg-slate-100 dark:border-slate-700 dark:hover:bg-slate-800" @click="saveTtl(true)">{{ t('websites.redisExplorer.removeExpiry') }}</button>
+                                <span v-if="detailLoading" class="text-xs text-slate-500">{{ t('websites.redisExplorer.refreshing') }}</span>
                             </div>
                             <p v-if="detailError" class="text-xs text-red-600">{{ detailError }}</p>
                         </div>
@@ -354,17 +357,17 @@ onMounted(() => { loadKeys(true); loadStats(); });
                                 <div class="flex items-center gap-2 text-xs">
                                     <span class="rounded bg-slate-100 px-2 py-0.5 font-medium dark:bg-slate-800">{{ detail.value.format }}</span>
                                     <template v-if="detail.value.pretty && !editing">
-                                        <button type="button" :class="viewMode === 'pretty' ? 'font-semibold text-blue-600 dark:text-blue-400' : 'text-slate-500'" @click="viewMode = 'pretty'">Pretty</button>
-                                        <button type="button" :class="viewMode === 'raw' ? 'font-semibold text-blue-600 dark:text-blue-400' : 'text-slate-500'" @click="viewMode = 'raw'">Raw</button>
+                                        <button type="button" :class="viewMode === 'pretty' ? 'font-semibold text-blue-600 dark:text-blue-400' : 'text-slate-500'" @click="viewMode = 'pretty'">{{ t('websites.redisExplorer.pretty') }}</button>
+                                        <button type="button" :class="viewMode === 'raw' ? 'font-semibold text-blue-600 dark:text-blue-400' : 'text-slate-500'" @click="viewMode = 'raw'">{{ t('websites.redisExplorer.raw') }}</button>
                                     </template>
-                                    <span v-if="detail.truncated" class="text-amber-600">Showing first {{ formatBytes(detail.value.raw.length) }}</span>
+                                    <span v-if="detail.truncated" class="text-amber-600">{{ t('websites.redisExplorer.showingFirst', { size: formatBytes(detail.value.raw.length) }) }}</span>
                                 </div>
                                 <div class="flex gap-2">
-                                    <button v-if="!editing" type="button" class="rounded-md border border-slate-300 px-2.5 py-1 text-xs hover:bg-slate-100 dark:border-slate-700 dark:hover:bg-slate-800" @click="copyValue">{{ copied ? 'Copied!' : 'Copy' }}</button>
-                                    <button v-if="detail.editable && !editing" type="button" class="rounded-md bg-blue-600 px-2.5 py-1 text-xs font-medium text-white hover:bg-blue-700" @click="startEdit">Edit</button>
+                                    <button v-if="!editing" type="button" class="rounded-md border border-slate-300 px-2.5 py-1 text-xs hover:bg-slate-100 dark:border-slate-700 dark:hover:bg-slate-800" @click="copyValue">{{ copied ? t('websites.redisCache.copied') : t('websites.redisCache.copy') }}</button>
+                                    <button v-if="detail.editable && !editing" type="button" class="rounded-md bg-blue-600 px-2.5 py-1 text-xs font-medium text-white hover:bg-blue-700" @click="startEdit">{{ t('websites.aliasApi.edit') }}</button>
                                     <template v-if="editing">
-                                        <button type="button" class="rounded-md border border-slate-300 px-2.5 py-1 text-xs dark:border-slate-700" @click="editing = false">Cancel</button>
-                                        <button type="button" class="rounded-md bg-blue-600 px-2.5 py-1 text-xs font-medium text-white hover:bg-blue-700" @click="saveValue">Save</button>
+                                        <button type="button" class="rounded-md border border-slate-300 px-2.5 py-1 text-xs dark:border-slate-700" @click="editing = false">{{ t('common.cancel') }}</button>
+                                        <button type="button" class="rounded-md bg-blue-600 px-2.5 py-1 text-xs font-medium text-white hover:bg-blue-700" @click="saveValue">{{ t('common.save') }}</button>
                                     </template>
                                 </div>
                             </div>
@@ -378,10 +381,10 @@ onMounted(() => { loadKeys(true); loadStats(); });
                                 <thead class="sticky top-0 bg-slate-50 text-slate-500 dark:bg-slate-800">
                                     <tr>
                                         <th v-if="detail.type === 'list'" class="w-14 px-2 py-2">#</th>
-                                        <th v-if="detail.type === 'hash'" class="px-2 py-2">Field</th>
-                                        <th v-if="detail.type === 'zset'" class="w-24 px-2 py-2">Score</th>
+                                        <th v-if="detail.type === 'hash'" class="px-2 py-2">{{ t('websites.redisExplorer.field') }}</th>
+                                        <th v-if="detail.type === 'zset'" class="w-24 px-2 py-2">{{ t('websites.redisExplorer.score') }}</th>
                                         <th v-if="detail.type === 'stream'" class="w-40 px-2 py-2">ID</th>
-                                        <th class="px-2 py-2">Value</th>
+                                        <th class="px-2 py-2">{{ t('websites.redisExplorer.value') }}</th>
                                     </tr>
                                 </thead>
                                 <tbody class="divide-y divide-slate-100 dark:divide-slate-800">
@@ -392,15 +395,15 @@ onMounted(() => { loadKeys(true); loadStats(); });
                                         <td v-if="detail.type === 'stream'" class="px-2 py-1.5 font-mono">{{ item.id }}</td>
                                         <td class="px-2 py-1.5">
                                             <pre class="max-h-48 overflow-auto whitespace-pre-wrap break-all font-mono">{{ memberText(item.value) }}</pre>
-                                            <span v-if="item.value.truncated" class="text-[10px] text-amber-600">truncated</span>
+                                            <span v-if="item.value.truncated" class="text-[10px] text-amber-600">{{ t('websites.redisExplorer.truncated') }}</span>
                                         </td>
                                     </tr>
-                                    <tr v-if="!detail.items?.length"><td colspan="2" class="px-2 py-6 text-center text-slate-500">Empty</td></tr>
+                                    <tr v-if="!detail.items?.length"><td colspan="2" class="px-2 py-6 text-center text-slate-500">{{ t('websites.redisExplorer.empty') }}</td></tr>
                                 </tbody>
                             </table>
                             <div v-if="detail.next_cursor !== '0'" class="mt-3 text-center">
                                 <button type="button" :disabled="detailLoading" class="text-sm font-medium text-blue-600 hover:underline disabled:opacity-50 dark:text-blue-400" @click="openKey(detail.name, detail.next_cursor)">
-                                    Load more ({{ detail.items.length }} of {{ detail.size.toLocaleString() }})
+                                    {{ t('websites.redisExplorer.loadMore', { shown: detail.items.length, total: detail.size.toLocaleString() }) }}
                                 </button>
                             </div>
                         </div>

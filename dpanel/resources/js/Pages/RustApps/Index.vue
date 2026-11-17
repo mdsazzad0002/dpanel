@@ -4,6 +4,9 @@ import RustAppCard from './components/RustAppCard.vue';
 import RustAppFormPanel from './components/RustAppFormPanel.vue';
 import { Head, router, usePage } from '@inertiajs/vue3';
 import { onBeforeUnmount, ref, watch } from 'vue';
+import { useI18n } from 'vue-i18n';
+
+const { t } = useI18n();
 
 const page = usePage();
 const panelToken = page.props.panel?.token;
@@ -32,17 +35,17 @@ onBeforeUnmount(() => clearInterval(poll));
 </script>
 
 <template>
-    <Head title="Rust Apps" />
+    <Head :title="t('rustApps.index.title')" />
 
     <AuthenticatedLayout>
         <template #header>
             <div class="flex flex-wrap items-center justify-between gap-3">
                 <div>
-                    <h1 class="text-lg font-semibold">Rust Apps</h1>
-                    <p class="text-sm text-slate-500 dark:text-slate-400">Builds Cargo projects and runs them as your site user. Publish them from Rules → Port Share.</p>
+                    <h1 class="text-lg font-semibold">{{ t('rustApps.index.title') }}</h1>
+                    <p class="text-sm text-slate-500 dark:text-slate-400">{{ t('rustApps.index.subtitle') }}</p>
                 </div>
                 <button @click="openCreate" :disabled="!owners.length" class="rounded-md bg-emerald-600 px-3 py-2 text-sm text-white hover:bg-emerald-700 disabled:opacity-50">
-                    <i class="bi bi-plus-lg mr-1"></i>New Rust app
+                    <i class="bi bi-plus-lg mr-1"></i>{{ t('rustApps.index.new') }}
                 </button>
             </div>
         </template>
@@ -53,11 +56,11 @@ onBeforeUnmount(() => clearInterval(poll));
 
             <div v-if="!projects.length" class="rounded-xl border border-dashed border-slate-300 bg-white p-10 text-center dark:border-slate-600 dark:bg-slate-800">
                 <i class="bi bi-hexagon text-3xl text-slate-400"></i>
-                <p class="mt-2 text-sm font-medium">{{ owners.length ? 'No Rust apps yet' : 'No home directory available' }}</p>
+                <p class="mt-2 text-sm font-medium">{{ owners.length ? t('rustApps.index.empty') : t('rustApps.index.noHome') }}</p>
                 <p class="mt-1 text-sm text-slate-500 dark:text-slate-400">
-                    {{ owners.length ? 'Create one, then publish it from Rules → Port Share.' : 'Apps run inside a website user\'s home. Create a website first.' }}
+                    {{ owners.length ? t('rustApps.index.emptyHelp') : t('rustApps.index.noHomeHelp') }}
                 </p>
-                <button v-if="owners.length" @click="openCreate" class="mt-4 rounded-md bg-emerald-600 px-3 py-2 text-sm text-white hover:bg-emerald-700">New Rust app</button>
+                <button v-if="owners.length" @click="openCreate" class="mt-4 rounded-md bg-emerald-600 px-3 py-2 text-sm text-white hover:bg-emerald-700">{{ t('rustApps.index.new') }}</button>
             </div>
 
             <div class="grid gap-4 md:grid-cols-2 xl:grid-cols-3">

@@ -4,6 +4,9 @@ import SearchableSelect from '@/Components/SearchableSelect.vue';
 import InputError from '@/Components/InputError.vue';
 import { useForm } from '@inertiajs/vue3';
 import { computed, watch } from 'vue';
+import { useI18n } from 'vue-i18n';
+
+const { t } = useI18n();
 
 /**
  * Create/edit one share: a website path and what answers it — a Node.js
@@ -20,12 +23,12 @@ const props = defineProps({
 });
 const emit = defineEmits(['close']);
 
-const sources = [
-    { value: 'node', label: 'Node.js app', icon: 'bi bi-hexagon' },
-    { value: 'python', label: 'Python app', icon: 'bi bi-filetype-py' },
-    { value: 'rust', label: 'Rust app', icon: 'bi bi-gear-wide-connected' },
-    { value: 'port', label: 'Any local port', icon: 'bi bi-ethernet' },
-];
+const sources = computed(() => [
+    { value: 'node', label: t('rules.portShares.form.src.node'), icon: 'bi bi-hexagon' },
+    { value: 'python', label: t('rules.portShares.form.src.python'), icon: 'bi bi-filetype-py' },
+    { value: 'rust', label: t('rules.portShares.form.src.rust'), icon: 'bi bi-gear-wide-connected' },
+    { value: 'port', label: t('rules.portShares.form.src.port'), icon: 'bi bi-ethernet' },
+]);
 const appsOf = (source) => props.projects.filter((p) => p.runtime === source);
 
 const form = useForm({ website_id: '', path_prefix: '/', source: 'node', app_project_id: '', target_port: '', strip_prefix: false });
@@ -91,32 +94,32 @@ const submit = () => {
     <Offcanvas
         :show="show"
         width="lg"
-        :title="editing ? 'Edit port share' : 'Create port share'"
-        subtitle="The edge gateway reverse-proxies the website path to an app or local port."
+        :title="editing ? t('rules.portShares.form.editTitle') : t('rules.portShares.create')"
+        :subtitle="t('rules.portShares.form.subtitle')"
         @close="emit('close')"
     >
         <form class="space-y-4" @submit.prevent="submit">
             <div>
-                <label class="mb-1 block text-sm font-medium">Website</label>
+                <label class="mb-1 block text-sm font-medium">{{ t('rules.portShares.form.website') }}</label>
                 <SearchableSelect
                     v-model="form.website_id"
                     :options="websiteOptions"
                     :disabled="editing"
-                    placeholder="Select a website…"
-                    search-placeholder="Search domains…"
+                    :placeholder="t('rules.portShares.form.selectWebsite')"
+                    :search-placeholder="t('rules.portShares.form.searchDomains')"
                 />
                 <InputError :message="form.errors.website_id" class="mt-1" />
             </div>
 
             <div>
-                <label class="mb-1 block text-sm font-medium">Path</label>
-                <input v-model="form.path_prefix" type="text" placeholder="/ or /api" class="w-full rounded-lg border-slate-300 font-mono text-sm dark:border-slate-600 dark:bg-slate-900" />
-                <p class="mt-1 text-xs text-slate-500 dark:text-slate-400"><code>/</code> hands the whole website to the app. A path like <code>/api</code> sends only that part; the rest stays on {{ baseLabel }}.</p>
+                <label class="mb-1 block text-sm font-medium">{{ t('rules.portShares.form.path') }}</label>
+                <input v-model="form.path_prefix" type="text" :placeholder="t('rules.portShares.form.pathPh')" class="w-full rounded-lg border-slate-300 font-mono text-sm dark:border-slate-600 dark:bg-slate-900" />
+                <p class="mt-1 text-xs text-slate-500 dark:text-slate-400"><i18n-t keypath="rules.portShares.form.pathHelp" scope="global"><template #root><code>/</code></template><template #example><code>/api</code></template><template #base>{{ baseLabel }}</template></i18n-t></p>
                 <InputError :message="form.errors.path_prefix" class="mt-1" />
             </div>
 
             <div>
-                <label class="mb-1 block text-sm font-medium">Served by</label>
+                <label class="mb-1 block text-sm font-medium">{{ t('rules.portShares.form.servedBy') }}</label>
                 <div class="mb-2 grid grid-cols-3 gap-2">
                     <button
                         v-for="option in sources"
@@ -130,11 +133,10 @@ const submit = () => {
 
                 <template v-if="form.source !== 'port'">
                     <select v-if="appsOf(form.source).length" v-model="form.app_project_id" class="w-full rounded-lg border-slate-300 text-sm dark:border-slate-600 dark:bg-slate-900">
-                        <option v-for="p in appsOf(form.source)" :key="p.id" :value="p.id">{{ p.name }} — port {{ p.port }}{{ p.status === 'running' ? '' : ' (stopped)' }}</option>
+                        <option v-for="p in appsOf(form.source)" :key="p.id" :value="p.id">{{ p.status === 'running' ? t('rules.portShares.form.appOption', { name: p.name, port: p.port }) : t('rules.portShares.form.appOptionStopped', { name: p.name, port: p.port }) }}</option>
                     </select>
                     <p v-else class="text-sm text-slate-500 dark:text-slate-400">
-                        No {{ sourceLabel }} apps yet.
-                        <a :href="panelRoute(appsPage)" class="text-blue-600 hover:underline dark:text-blue-400">Create one</a>, or share a local port.
+                        <i18n-t keypath="rules.portShares.form.noApps" scope="global"><template #runtime>{{ sourceLabel }}</template><template #link><a :href="panelRoute(appsPage)" class="text-blue-600 hover:underline dark:text-blue-400">{{ t('rules.portShares.form.createOne') }}</a></template></i18n-t>
                     </p>
                     <InputError :message="form.errors.app_project_id" class="mt-1" />
                 </template>
@@ -142,7 +144,7 @@ const submit = () => {
                     <input v-model.number="form.target_port" type="number" min="1" max="65535" placeholder="3000" class="w-full rounded-lg border-slate-300 text-sm dark:border-slate-600 dark:bg-slate-900" />
                     <InputError :message="form.errors.target_port" class="mt-1" />
                     <div v-if="listening.length" class="mt-2 flex flex-wrap items-center gap-1">
-                        <span class="text-xs text-slate-500 dark:text-slate-400">Listening now:</span>
+                        <span class="text-xs text-slate-500 dark:text-slate-400">{{ t('rules.portShares.form.listening') }}</span>
                         <button
                             v-for="row in listening.slice(0, 24)"
                             :key="row.port"
@@ -158,21 +160,21 @@ const submit = () => {
 
             <label v-if="cleanPath !== '/'" class="flex items-start gap-2 text-sm">
                 <input v-model="form.strip_prefix" type="checkbox" class="mt-0.5 rounded border-slate-300" />
-                <span>Strip the path before forwarding<span class="block text-xs text-slate-500 dark:text-slate-400">On for apps that expect to live at <code>/</code>.</span></span>
+                <span>{{ t('rules.portShares.form.strip') }}<span class="block text-xs text-slate-500 dark:text-slate-400"><i18n-t keypath="rules.portShares.form.stripHelp" scope="global"><template #root><code>/</code></template></i18n-t></span></span>
             </label>
 
             <div class="rounded-lg bg-slate-50 p-3 text-xs dark:bg-slate-800">
-                <p class="mb-1 font-medium text-slate-600 dark:text-slate-300">Preview</p>
+                <p class="mb-1 font-medium text-slate-600 dark:text-slate-300">{{ t('rules.portShares.form.preview') }}</p>
                 <p class="flex flex-wrap items-center gap-1 font-mono text-slate-500 dark:text-slate-400">
                     <span>{{ publicUrl }}…</span><i class="bi bi-arrow-right"></i><span>{{ upstream }}…</span>
                 </p>
-                <p class="mt-2 text-slate-500 dark:text-slate-400">SSL, IP rules and redirects of the website still apply. Certificate checks under /.well-known/acme-challenge/ are never forwarded.</p>
+                <p class="mt-2 text-slate-500 dark:text-slate-400">{{ t('rules.portShares.form.previewNote') }}</p>
             </div>
 
             <div class="flex justify-end gap-2 border-t border-slate-200 pt-4 dark:border-slate-700">
-                <button type="button" @click="emit('close')" class="rounded-md border border-slate-300 px-3 py-2 text-sm dark:border-slate-600">Cancel</button>
+                <button type="button" @click="emit('close')" class="rounded-md border border-slate-300 px-3 py-2 text-sm dark:border-slate-600">{{ t('common.cancel') }}</button>
                 <button type="submit" :disabled="form.processing || !form.website_id || !port" class="rounded-md bg-blue-600 px-3 py-2 text-sm text-white hover:bg-blue-700 disabled:opacity-50">
-                    {{ editing ? 'Save' : 'Deploy' }}
+                    {{ editing ? t('common.save') : t('rules.portShares.form.deploy') }}
                 </button>
             </div>
         </form>

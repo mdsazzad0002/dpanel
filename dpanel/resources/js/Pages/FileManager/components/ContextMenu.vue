@@ -1,4 +1,7 @@
 <script setup>
+import { useI18n } from 'vue-i18n';
+
+const { t } = useI18n();
 defineProps({
     fm: {
         type: Object,
@@ -22,45 +25,45 @@ defineProps({
 
         <button type="button" class="flex w-full items-center gap-2 px-3 py-2 text-left text-sm hover:bg-slate-100 dark:hover:bg-slate-800" @click="fm.triggerContextAction('open')">
             <i class="bi text-xs text-slate-400" :class="fm.contextItem?.type === 'file' && fm.isSqliteFile(fm.contextItem?.name) ? 'bi-database' : 'bi-box-arrow-in-right'"></i>
-            {{ fm.contextItem?.type === 'dir' ? 'Open Folder' : fm.isSqliteFile(fm.contextItem?.name) ? 'Open in SQLite Viewer' : (fm.isPreviewable(fm.contextItem?.name) ? 'Preview' : (fm.isEditableFile(fm.contextItem?.name) ? 'Edit File' : 'Open File')) }}
+            {{ fm.contextItem?.type === 'dir' ? t('fileManager.context.openFolder') : fm.isSqliteFile(fm.contextItem?.name) ? t('fileManager.context.openSqlite') : (fm.isPreviewable(fm.contextItem?.name) ? t('fileManager.context.preview') : (fm.isEditableFile(fm.contextItem?.name) ? t('fileManager.context.editFile') : t('fileManager.context.openFile'))) }}
         </button>
         <button v-if="fm.contextItem?.type === 'file'" type="button" class="flex w-full items-center gap-2 px-3 py-2 text-left text-sm hover:bg-slate-100 dark:hover:bg-slate-800" @click="fm.triggerContextAction('download')">
             <i class="bi bi-download text-xs text-slate-400"></i>
-            Download
+            {{ t('fileManager.context.download') }}
         </button>
 
         <div class="my-1 border-t border-slate-200 dark:border-slate-700"></div>
 
         <button type="button" class="flex w-full items-center gap-2 px-3 py-2 text-left text-sm hover:bg-slate-100 dark:hover:bg-slate-800" @click="fm.triggerContextAction('rename')">
             <i class="bi bi-input-cursor-text text-xs text-slate-400"></i>
-            Rename
+            {{ t('fileManager.context.rename') }}
         </button>
         <button type="button" class="flex w-full items-center gap-2 px-3 py-2 text-left text-sm hover:bg-slate-100 dark:hover:bg-slate-800" @click="fm.triggerContextAction('permissions')">
             <i class="bi bi-shield-lock text-xs text-slate-400"></i>
-            Permissions
+            {{ t('fileManager.context.permissions') }}
         </button>
         <button type="button" class="flex w-full items-center gap-2 px-3 py-2 text-left text-sm hover:bg-slate-100 dark:hover:bg-slate-800" @click="fm.triggerContextAction('move')">
             <i class="bi bi-arrows-move text-xs text-slate-400"></i>
-            Move
+            {{ t('fileManager.context.move') }}
         </button>
         <button type="button" class="flex w-full items-center gap-2 px-3 py-2 text-left text-sm hover:bg-slate-100 dark:hover:bg-slate-800" @click="fm.triggerContextAction('copy')">
             <i class="bi bi-files text-xs text-slate-400"></i>
-            Copy
+            {{ t('fileManager.context.copy') }}
         </button>
         <button type="button" class="flex w-full items-center gap-2 px-3 py-2 text-left text-sm hover:bg-slate-100 dark:hover:bg-slate-800" @click="fm.triggerContextAction('zip')">
             <i class="bi bi-file-earmark-zip text-xs text-slate-400"></i>
-            Create Zip
+            {{ t('fileManager.context.zip') }}
         </button>
         <button v-if="fm.contextArchive" type="button" class="flex w-full items-center gap-2 px-3 py-2 text-left text-sm hover:bg-slate-100 dark:hover:bg-slate-800" @click="fm.triggerContextAction('unzip')">
             <i class="bi bi-file-earmark-arrow-up text-xs text-slate-400"></i>
-            Extract Archive
+            {{ t('fileManager.context.unzip') }}
         </button>
 
         <div class="my-1 border-t border-slate-200 dark:border-slate-700"></div>
 
         <button type="button" class="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-red-600 hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-900/20" @click="fm.triggerContextAction('delete')">
             <i class="bi bi-trash text-xs"></i>
-            Delete
+            {{ t('fileManager.context.delete') }}
         </button>
     </div>
 </template>

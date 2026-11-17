@@ -26,6 +26,9 @@ import TrashModal from './components/TrashModal.vue';
 import CreateFolderModal from './components/CreateFolderModal.vue';
 import CreateFileModal from './components/CreateFileModal.vue';
 import WebsiteTerminal from '@/Components/WebsiteTerminal.vue';
+import { useI18n } from 'vue-i18n';
+
+const { t } = useI18n();
 
 const props = defineProps({
     website: { type: Object, required: true },
@@ -57,7 +60,7 @@ const openTerminal = () => {
 </script>
 
 <template>
-    <Head :title="`File Manager - ${fm.websiteLabel}`" />
+    <Head :title="t('fileManager.index.headTitle', { site: fm.websiteLabel })" />
 
     <div class="relative isolate flex h-screen flex-col overflow-hidden bg-[radial-gradient(circle_at_top_left,rgba(59,130,246,0.10),transparent_30%),radial-gradient(circle_at_bottom_right,rgba(16,185,129,0.08),transparent_28%),linear-gradient(180deg,#f8fafc_0%,#eef2ff_100%)] font-sans text-slate-800 dark:bg-[radial-gradient(circle_at_top_left,rgba(59,130,246,0.10),transparent_24%),radial-gradient(circle_at_bottom_right,rgba(16,185,129,0.06),transparent_26%),linear-gradient(180deg,#0f172a_0%,#020617_100%)] dark:text-slate-200">
         <div class="pointer-events-none absolute -left-20 top-16 h-64 w-64 rounded-full bg-sky-300/20 blur-3xl dark:bg-sky-900/20"></div>
@@ -84,7 +87,7 @@ const openTerminal = () => {
                 <div v-if="fm.tableDragActive" class="pointer-events-none absolute inset-0 z-20 flex items-center justify-center rounded-xl border-2 border-dashed border-blue-500 bg-blue-500/10">
                     <div class="rounded-xl bg-white/95 px-6 py-4 text-center text-sm font-semibold text-blue-700 shadow-lg dark:bg-slate-900/95 dark:text-blue-300">
                         <i class="bi bi-cloud-arrow-up text-2xl mb-2 block text-blue-400"></i>
-                        Drop files to upload to
+                        {{ t('fileManager.index.dropTo') }}
                         <span class="font-mono text-blue-600 dark:text-blue-400">{{ fm.resolveDisplayPath(fm.props.currentPath) || '/' }}</span>
                     </div>
                 </div>
@@ -98,7 +101,7 @@ const openTerminal = () => {
                             v-model="fm.searchQuery"
                             type="text"
                             class="w-full rounded-xl border border-slate-200/80 bg-white/80 py-2 pl-8 pr-3 text-sm shadow-sm outline-none transition focus:border-sky-400 focus:bg-white dark:border-slate-700 dark:bg-slate-800/80 dark:text-slate-300 dark:focus:bg-slate-800"
-                            placeholder="Search files..."
+                            :placeholder="t('fileManager.topBar.search')"
                         >
                     </div>
                 </div>
@@ -106,8 +109,8 @@ const openTerminal = () => {
                 <FileTable :fm="fm" />
 
                 <div class="flex items-center justify-between border-t border-slate-200/80 bg-white/80 px-4 py-1.5 text-[11px] text-slate-500 backdrop-blur dark:border-slate-800/70 dark:bg-slate-950/70 dark:text-slate-400">
-                    <span>{{ fm.filteredItems.length }} items</span>
-                    <span v-if="fm.selectedCount" class="font-medium text-blue-600 dark:text-blue-400">{{ fm.selectedCount }} selected</span>
+                    <span>{{ t('fileManager.index.items', { count: fm.filteredItems.length }) }}</span>
+                    <span v-if="fm.selectedCount" class="font-medium text-blue-600 dark:text-blue-400">{{ t('fileManager.selection.selected', { count: fm.selectedCount }) }}</span>
                 </div>
             </section>
         </main>
@@ -122,11 +125,11 @@ const openTerminal = () => {
             v-show="!terminalOpen"
             type="button"
             class="fixed right-0 top-1/2 z-30 flex -translate-y-1/2 flex-col items-center gap-2 rounded-l-lg bg-slate-900 px-1.5 py-3 text-xs font-semibold tracking-wide text-slate-100 shadow-lg transition hover:bg-slate-800 hover:pr-2.5 dark:bg-slate-800 dark:hover:bg-slate-700"
-            title="Open terminal"
+            :title="t('fileManager.index.openTerminal')"
             @click="openTerminal"
         >
             <i class="bi bi-chevron-left text-[10px]"></i>
-            <span class="rotate-180 [writing-mode:vertical-rl]">Terminal</span>
+            <span class="rotate-180 [writing-mode:vertical-rl]">{{ t('fileManager.index.terminal') }}</span>
         </button>
 
         <template v-if="props.canUseTerminal && terminalMounted">
@@ -137,7 +140,7 @@ const openTerminal = () => {
                 <aside v-show="terminalOpen" class="fixed inset-y-0 right-0 z-40 w-full border-l border-slate-800 shadow-2xl md:w-[70vw]">
                     <WebsiteTerminal :website="props.website" fill>
                         <template #actions>
-                            <button type="button" class="text-slate-400 hover:text-white" title="Close terminal" @click="terminalOpen = false">
+                            <button type="button" class="text-slate-400 hover:text-white" :title="t('fileManager.index.closeTerminal')" @click="terminalOpen = false">
                                 <i class="bi bi-x-lg text-sm"></i>
                             </button>
                         </template>
@@ -155,20 +158,20 @@ const openTerminal = () => {
                 <div class="mb-4 flex items-center justify-between">
                     <h3 class="text-base font-semibold">
                         {{
-                            fm.modalType === 'create-folder' ? 'Create Folder'
-                                : fm.modalType === 'create-file' ? 'Create File'
-                                : fm.modalType === 'rename' ? 'Rename Item'
-                                : fm.modalType === 'permissions' ? 'Change Permissions'
-                                : fm.modalType === 'move' ? 'Move Item'
-                                : fm.modalType === 'copy' ? 'Copy Item'
-                                : fm.modalType === 'zip' ? 'Create Archive'
-                                : fm.modalType === 'unzip' ? 'Extract Archive'
-                                : fm.modalType === 'trash' ? 'Trash'
-                                : 'Upload File'
+                            fm.modalType === 'create-folder' ? t('fileManager.index.titles.createFolder')
+                                : fm.modalType === 'create-file' ? t('fileManager.index.titles.createFile')
+                                : fm.modalType === 'rename' ? t('fileManager.index.titles.rename')
+                                : fm.modalType === 'permissions' ? t('fileManager.index.titles.permissions')
+                                : fm.modalType === 'move' ? t('fileManager.index.titles.move')
+                                : fm.modalType === 'copy' ? t('fileManager.index.titles.copy')
+                                : fm.modalType === 'zip' ? t('fileManager.index.titles.zip')
+                                : fm.modalType === 'unzip' ? t('fileManager.index.titles.unzip')
+                                : fm.modalType === 'trash' ? t('fileManager.index.titles.trash')
+                                : t('fileManager.index.titles.upload')
                         }}
                     </h3>
                     <button type="button" class="rounded-md border border-slate-300 px-3 py-1.5 text-xs font-medium hover:bg-slate-100 dark:border-slate-700 dark:hover:bg-slate-800" @click="fm.closeModal">
-                        <i class="bi bi-x-lg mr-1"></i>Close
+                        <i class="bi bi-x-lg mr-1"></i>{{ t('common.close') }}
                     </button>
                 </div>
 

@@ -1,0 +1,9 @@
+{
+    "turnOn": "Wildcard SSL",
+    "turnOff": "Wildcard SSL: on",
+    "working": "Working...",
+    "help": "One certificate for {domain} and every *.{domain} subdomain. The domain's DNS must be on this server or on Cloudflare.",
+    "confirmOn": "Issue a wildcard certificate for {domain} and *.{domain}? A TXT record is added to the domain's DNS while the CA checks it. This can take a few minutes.",
+    "confirmOff": "Stop covering *.{domain}? {domain} gets a plain certificate, and subdomains without their own certificate lose HTTPS.",
+    "failed": "Wildcard SSL failed."
+}

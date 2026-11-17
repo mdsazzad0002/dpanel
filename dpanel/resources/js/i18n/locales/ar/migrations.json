@@ -1,0 +1,200 @@
+{
+    "index": {
+        "services": {
+            "cyberpanelSsh": {
+                "name": "CyberPanel / HestiaCP / aaPanel / Plesk عبر SSH",
+                "description": "اتصل عبر SSH واكتشف المواقع مع قواعد بياناتها. يُكتشف نوع اللوحة تلقائيًا."
+            },
+            "cpanelFull": {
+                "name": "نسخة cPanel الكاملة",
+                "description": "استعد حساب cpmove كاملًا أو موارد محددة."
+            },
+            "dpanelFull": {
+                "name": "من DPanel إلى DPanel",
+                "description": "رحّل حزمة نسخة DPanel احتياطية كاملة إلى هذا الخادم."
+            },
+            "cpanelPartial": {
+                "name": "نسخة cPanel الجزئية",
+                "description": "استورد نسخ الدليل الرئيسي وMySQL التي نُزّلت بشكل منفصل من cPanel."
+            },
+            "directadmin": {
+                "name": "نسخة DirectAdmin",
+                "description": "رحّل مستخدم DirectAdmin مع كل النطاقات وقواعد البيانات أو المحدد منها."
+            },
+            "plesk": {
+                "name": "أرشيف نسخة Plesk",
+                "description": "استورد من ملف نسخة Plesk احتياطية بصيغة .tar مرفوع. لخادم Plesk مباشر، استخدم CyberPanel / HestiaCP / aaPanel / Plesk عبر SSH أعلاه بدلًا من ذلك."
+            },
+            "wordpress": {
+                "name": "ترحيل WordPress",
+                "description": "انقل موقع WordPress (الملفات + قاعدة البيانات) إلى موقع هنا؛ يُحدَّث عنوانه إلى النطاق الجديد."
+            }
+        },
+        "archives": {
+            "cpanel": {
+                "title": "نسخة cPanel الكاملة",
+                "description": "يدعم cpmove-USER.tar.gz وملف Backup Wizard backup-MM.DD.YYYY_HH-MM-SS_USER.tar.gz. بعد الفحص، استعد الحساب كاملًا أو اختر النطاقات والملفات وقواعد البيانات كلًّا على حدة."
+            },
+            "cpanelPartial": {
+                "title": "نسخة cPanel الجزئية",
+                "description": "ارفع نسخة الدليل الرئيسي وأي نسخ لقواعد بيانات MySQL من cPanel ← Backup. لا تسجّل النسخ الجزئية الحساب، لذا أدخل مستخدم النظام (والنطاق الرئيسي) الذي يجب استعادتها إليه."
+            },
+            "directadmin": {
+                "title": "نسخة DirectAdmin",
+                "description": "ارفع نسخة مستخدم أُنشئت في DirectAdmin (user.RESELLER.USER.tar.gz أو .tar.zst). تُستعاد النطاقات إلى /home/USER/domains/DOMAIN/public_html كما في DirectAdmin."
+            },
+            "plesk": {
+                "title": "أرشيف نسخة Plesk",
+                "description": "ارفع نسخة احتياطية نُزّلت من مدير النسخ في Plesk دون حماية بكلمة مرور. يُستعاد كل نطاق إلى /home/USER/domains/DOMAIN مع الموقع في httpdocs."
+            }
+        },
+        "title": {
+            "dpanel": "ترحيل من DPanel إلى DPanel",
+            "cyberpanelSsh": "ترحيل CyberPanel / HestiaCP / aaPanel / Plesk عبر SSH",
+            "wordpress": "ترحيل WordPress",
+            "default": "استيراد الترحيل"
+        },
+        "chunkProgress": "جارٍ رفع حزمة DPanel… أُرسل {done} / {total} من الأجزاء.",
+        "uploadComplete": "اكتمل الرفع. جارٍ التحقق من حزمة DPanel.",
+        "packageUploadFailed": "فشل رفع حزمة DPanel.",
+        "uploadFailed": "فشل الرفع.",
+        "restoreNotStarted": "تعذّر بدء استعادة DPanel.",
+        "restoreFailed": "فشلت الاستعادة.",
+        "removeConfirm": "إزالة {name}؟",
+        "chooseService": "اختر خدمة الترحيل",
+        "chooseServiceHelp": "اختر مصدر النسخة الاحتياطية ونوع الحزمة التي لديك.",
+        "comingSoon": "قريبًا",
+        "allServices": "كل خدمات الترحيل",
+        "wp": {
+            "intro": "أنشئ الموقع أولًا، ثم استورد إليه. تحتاج إلى ملفات WordPress (ملف .zip أو .tar.gz للمجلد الذي يحتوي {config}) وتصدير لقاعدة البيانات (.sql، مثلًا من phpMyAdmin أو {cmd}).",
+            "step1": "تحل الملفات محل ملفات الموقع؛ وتُحفظ الملفات الحالية في سلة مهملاته أولًا.",
+            "step2": "تُستورد قاعدة البيانات، ويُوجَّه {config} إليها.",
+            "step3": "ينتقل عنوان الموقع ({a}، {b}) والروابط في المقالات إلى النطاق الجديد.",
+            "target": "اختر الموقع الهدف",
+            "importHere": "استيراد WordPress هنا",
+            "noWebsite": "لا يوجد موقع بعد. {link} للنطاق أولًا.",
+            "createWebsite": "أنشئ الموقع"
+        },
+        "dpanel": {
+            "title": "ترحيل DPanel الكامل",
+            "description": "ارفع حزمة نسخة احتياطية كاملة أنشأها DPanel. يُتحقق من الحزمة قبل الاستعادة.",
+            "warningTitle": "تحذير استعادة اللوحة كاملة:",
+            "warning": "تستبدل الاستعادة {env} وبيانات {storage} وقاعدة بيانات اللوحة المهيأة على الخادم الهدف بالنسخة المصدر. هذا ليس ترحيلًا للمواقع فقط. أنشئ نسخة احتياطية منفصلة للهدف أولًا ولا تتابع إلا على الخادم الهدف المقصود."
+        },
+        "partial": {
+            "user": "مستخدم النظام",
+            "domain": "النطاق الرئيسي",
+            "domainHelp": "(يُقدَّم من public_html)"
+        },
+        "inspecting": "جارٍ الفحص…",
+        "uploadInspect": "رفع وفحص",
+        "uploading": "جارٍ الرفع…",
+        "uploaded": "الترحيلات المرفوعة",
+        "uploadedHelp": "تابع استعادة كاملة أو جزئية من أي أرشيف محفوظ.",
+        "fullBackup": "نسخة DPanel كاملة",
+        "account": "الحساب: {account}",
+        "status": {
+            "uploading": "جارٍ الرفع",
+            "inspecting": "جارٍ الفحص",
+            "ready": "جاهز",
+            "restoring": "جارٍ الاستعادة",
+            "completed": "مكتمل",
+            "failed": "فشل",
+            "restore_failed": "فشلت الاستعادة",
+            "prepared": "مُجهّز",
+            "expired": "منتهي",
+            "downloading": "جارٍ التنزيل",
+            "downloaded": "تم التنزيل",
+            "download_failed": "فشل التنزيل"
+        },
+        "remove": "إزالة",
+        "connected": "{site} ({framework}) متصل بقاعدة البيانات {database} ببيانات دخول جديدة.",
+        "validationDone": "اكتمل التحقق من الحزمة.",
+        "typeRestore": "اكتب {word} لتأكيد استبدال خادم DPanel هذا",
+        "startingRestore": "جارٍ بدء الاستعادة الكاملة…",
+        "restoreFull": "استعادة نسخة DPanel الكاملة",
+        "fullAccount": "استعادة الحساب كاملًا",
+        "fullAccountHelp": "كل النطاقات وملفات الدليل الرئيسي وقواعد البيانات",
+        "type": {
+            "domains": "النطاقات",
+            "files": "الملفات",
+            "databases": "قواعد البيانات"
+        },
+        "clearAll": "مسح الكل",
+        "selectAll": "تحديد الكل",
+        "noneFound": "لم يُعثر على شيء",
+        "restoring": "جارٍ الاستعادة…",
+        "restoreSelected": "استعادة العناصر المحددة",
+        "empty": "لم يُرفع أي أرشيف ترحيل بعد."
+    },
+    "ssh": {
+        "loaded": "تم تحميل {name}.",
+        "loadFailed": "تعذّر تحميل اتصال SSH المحفوظ.",
+        "deleteConfirm": "حذف اتصال SSH المحفوظ هذا؟",
+        "deleted": "حُذف اتصال SSH المحفوظ.",
+        "deleteFailed": "تعذّر حذف اتصال SSH المحفوظ.",
+        "connected": "تم الاتصال بـ {host}. عُثر على {count} موقع.",
+        "inspectFailed": "تعذّر فحص خادم CyberPanel.",
+        "stepFailed": "فشلت خطوة الترحيل. أعد المحاولة بعد إصلاح المشكلة المُبلغ عنها.",
+        "creatingArchive": "جارٍ إنشاء أرشيف الملفات البعيدة…",
+        "creatingDump": "جارٍ إنشاء تفريغ قاعدة البيانات البعيدة…",
+        "downloadStarted": "بدأ تنزيل {file}.",
+        "downloadFailed": "تعذّر تنزيل المصدر المحدد.",
+        "connectTitle": "الاتصال عبر SSH",
+        "connectHelp": "تُكتشف CyberPanel وHestiaCP وaaPanel وPlesk تلقائيًا. تُستخدم بيانات الاعتماد للطلب الحالي ولا تُخزّن إلا عند تفعيل «حفظ وصول SSH».",
+        "selectSaved": "اختر لوحة محفوظة",
+        "useConnection": "استخدام الاتصال",
+        "delete": "حذف",
+        "host": "المضيف",
+        "port": "منفذ SSH",
+        "username": "اسم المستخدم",
+        "auth": "المصادقة",
+        "password": "كلمة المرور",
+        "privateKey": "المفتاح الخاص",
+        "passphrase": "عبارة مرور المفتاح",
+        "optional": "(اختياري)",
+        "saveAccess": "حفظ وصول SSH",
+        "saveAccessHelp": "غير موصى به إلا عند الضرورة. ستُشفّر كلمة المرور/المفتاح الخاص في قاعدة بيانات DPanel. لا تفعّل هذا أبدًا على تثبيت لوحة غير موثوق.",
+        "connectionName": "اسم الاتصال",
+        "connectionNamePlaceholder": "CyberPanel الإنتاج",
+        "connecting": "جارٍ الاتصال…",
+        "connect": "اتصال واكتشاف",
+        "sourceTitle": "اختر مصدر ترحيل واحدًا",
+        "directories": "{count} أدلة",
+        "databases": "{count} قواعد بيانات",
+        "domain": "النطاق",
+        "optionalHelper": "(مساعد اختياري)",
+        "customSelection": "اختيار مخصص",
+        "sourceDatabase": "قاعدة البيانات المصدر",
+        "noDatabase": "بلا قاعدة بيانات",
+        "sourcePath": "موقع الملفات المصدر",
+        "sourcePathHelp": "اكتب أي موقع صالح أو اختر دليلًا مكتشفًا.",
+        "phpVersion": "إصدار PHP",
+        "asSubdomain": "إنشاء كنطاق فرعي",
+        "parentDomain": "النطاق الأب",
+        "parentHelp": "اختر نطاقًا أبًا موجودًا أو اكتب نطاقًا جديدًا. سيُنشأ النطاق الأب المفقود تلقائيًا.",
+        "subdomainName": "اسم النطاق الفرعي",
+        "willCreate": "سيُنشأ: {domain}",
+        "newDomain": "نطاق DPanel الجديد",
+        "onlyThis": "لن يُعالج إلا موقع الملفات هذا وقاعدة البيانات هذه. لن تُضمَّن المواقع وقواعد البيانات الأخرى.",
+        "preparingFiles": "جارٍ تجهيز الملفات…",
+        "downloadFiles": "تنزيل الملفات المحددة",
+        "preparingDatabase": "جارٍ تجهيز قاعدة البيانات…",
+        "downloadDatabase": "تنزيل قاعدة البيانات المحددة",
+        "step": {
+            "prepare": "تجهيز التخزين المؤقت",
+            "download": "تنزيل المصدر المحدد",
+            "website": "إنشاء حساب الموقع",
+            "restore": "نقل الملفات واستيراد قاعدة البيانات",
+            "verify": "التحقق من أن الموقع يعمل"
+        },
+        "stepStatus": {
+            "waiting": "في الانتظار",
+            "running": "قيد التشغيل",
+            "completed": "مكتمل",
+            "failed": "فشل"
+        },
+        "runningStep": "جارٍ تشغيل الخطوة الحالية…",
+        "migrate": "إنشاء وترحيل خطوة بخطوة"
+    }
+}

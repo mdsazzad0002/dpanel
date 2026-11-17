@@ -4,6 +4,9 @@ import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
 import { Head, usePage } from '@inertiajs/vue3';
 import axios from 'axios';
 import { isClosedRoute } from '@/navigation/panelMenu';
+import { useI18n } from 'vue-i18n';
+
+const { t } = useI18n();
 
 const props = defineProps({
     rules: { type: Array, default: () => [] },
@@ -48,10 +51,10 @@ const uploadScanSaving = ref(false);
 const uploadScanError = ref(null);
 const daemon = computed(() => uploadScan.value.daemon || {});
 const daemonLabel = computed(() => {
-    if (daemon.value.error) return 'Status unavailable';
-    if (!daemon.value.daemon_installed) return 'ClamAV daemon not installed';
-    if (daemon.value.daemon_active && daemon.value.socket_ready) return 'ClamAV daemon running';
-    return 'ClamAV daemon stopped';
+    if (daemon.value.error) return t('security.rules.daemon.unavailable');
+    if (!daemon.value.daemon_installed) return t('security.rules.daemon.notInstalled');
+    if (daemon.value.daemon_active && daemon.value.socket_ready) return t('security.rules.daemon.running');
+    return t('security.rules.daemon.stopped');
 });
 
 // Scanning on with no daemon behind it means every upload is being refused.
@@ -65,7 +68,7 @@ const toggleUploadScan = async () => {
         uploadScan.value = data.uploadScan;
         uploadScanError.value = data.warning || null;
     } catch (e) {
-        uploadScanError.value = e.response?.data?.message || 'Could not change upload scanning.';
+        uploadScanError.value = e.response?.data?.message || t('security.rules.uploadFailed');
         if (e.response?.data?.uploadScan) uploadScan.value = e.response.data.uploadScan;
     } finally {
         uploadScanSaving.value = false;
@@ -79,7 +82,7 @@ const toggleRule = async (rule) => {
         const { data } = await axios.post(panelRoute('security.center.rules.toggle', { rule: rule.rule_id }), { enabled: !rule.enabled });
         rule.enabled = data.rule.enabled;
     } catch (e) {
-        message.value = e.response?.data?.message || 'Could not update the rule.';
+        message.value = e.response?.data?.message || t('security.rules.updateFailed');
     } finally {
         toggling.value = null;
     }
@@ -87,13 +90,13 @@ const toggleRule = async (rule) => {
 </script>
 
 <template>
-    <Head title="Detection Rules" />
+    <Head :title="t('security.rules.title')" />
 
     <AuthenticatedLayout>
         <template #header>
             <div>
-                <h1 class="text-lg font-semibold">Detection Rules</h1>
-                <p class="text-sm text-slate-500 dark:text-slate-400">{{ enabledCount }} of {{ rules.length }} rules enabled. Disabled rules are skipped when scan results are saved.</p>
+                <h1 class="text-lg font-semibold">{{ t('security.rules.title') }}</h1>
+                <p class="text-sm text-slate-500 dark:text-slate-400">{{ t('security.rules.subtitle', { count: enabledCount, total: rules.length }) }}</p>
             </div>
         </template>
 
@@ -107,19 +110,19 @@ const toggleRule = async (rule) => {
                     <div class="min-w-0 max-w-2xl">
                         <h2 class="flex items-center gap-2 text-sm font-semibold">
                             <i class="bi bi-shield-check"></i>
-                            Scan uploads for viruses
+                            {{ t('security.rules.uploadTitle') }}
                         </h2>
                         <p class="mt-1 text-sm text-slate-500 dark:text-slate-400">
-                            Checks every file uploaded through File Manager, Website Import, cPanel import and App Installer with ClamAV before it is saved. PHP files are also checked for webshells and obfuscated code. Infected files are rejected.
+                            {{ t('security.rules.uploadHelp') }}
                         </p>
                         <p class="mt-1 text-xs text-slate-500 dark:text-slate-400">
-                            Runs the ClamAV daemon, which keeps about 1–1.5 GB of RAM in use while this is on. Turning it on takes up to a minute while signatures load.
+                            {{ t('security.rules.uploadRam') }}
                         </p>
                         <p class="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs">
                             <span :class="daemon.daemon_active && daemon.socket_ready ? 'text-emerald-600 dark:text-emerald-400' : 'text-slate-500'">
                                 <i class="bi bi-circle-fill mr-1 text-[8px]"></i>{{ daemonLabel }}
                             </span>
-                            <span v-if="daemon.signature_age_hours != null" class="text-slate-500">Signatures updated {{ daemon.signature_age_hours }}h ago</span>
+                            <span v-if="daemon.signature_age_hours != null" class="text-slate-500">{{ t('security.rules.signatures', { hours: daemon.signature_age_hours }) }}</span>
                         </p>
                     </div>
                     <button
@@ -131,15 +134,15 @@ const toggleRule = async (rule) => {
                         :class="uploadScan.enabled ? 'bg-emerald-500' : 'bg-slate-300 dark:bg-slate-700'"
                         @click="toggleUploadScan"
                     >
-                        <span class="sr-only">Scan uploads for viruses</span>
+                        <span class="sr-only">{{ t('security.rules.uploadTitle') }}</span>
                         <span class="inline-block h-5 w-5 transform rounded-full bg-white shadow transition-transform" :class="uploadScan.enabled ? 'translate-x-5' : 'translate-x-0.5'"></span>
                     </button>
                 </div>
                 <div v-if="uploadsBlocked && !uploadScanSaving" class="mt-3 flex flex-wrap items-center justify-between gap-2 rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-800 dark:border-amber-800 dark:bg-amber-950 dark:text-amber-200">
-                    <span>ClamAV is not running, so every upload is being refused. Turn scanning off to let uploads through.</span>
-                    <button type="button" class="rounded-md bg-amber-600 px-3 py-1 text-xs font-semibold text-white hover:bg-amber-700" @click="toggleUploadScan">Turn off now</button>
+                    <span>{{ t('security.rules.blocked') }}</span>
+                    <button type="button" class="rounded-md bg-amber-600 px-3 py-1 text-xs font-semibold text-white hover:bg-amber-700" @click="toggleUploadScan">{{ t('security.rules.turnOff') }}</button>
                 </div>
-                <p v-if="uploadScanSaving" class="mt-3 text-xs text-slate-500">{{ uploadScan.enabled ? 'Stopping ClamAV…' : 'Starting ClamAV and loading signatures…' }}</p>
+                <p v-if="uploadScanSaving" class="mt-3 text-xs text-slate-500">{{ uploadScan.enabled ? t('security.rules.stopping') : t('security.rules.startingClam') }}</p>
                 <div v-if="uploadScanError" class="mt-3 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700 dark:border-red-900 dark:bg-red-950 dark:text-red-200">
                     {{ uploadScanError }}
                 </div>
@@ -148,21 +151,21 @@ const toggleRule = async (rule) => {
             <section class="rounded-xl border border-slate-200 bg-white p-6 dark:border-slate-800 dark:bg-slate-900">
                 <div class="flex flex-wrap gap-2">
                     <select v-model="category" class="rounded-md border border-slate-300 px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-800">
-                        <option value="">All categories</option>
+                        <option value="">{{ t('security.rules.allCategories') }}</option>
                         <option v-for="name in categories" :key="name" :value="name" class="capitalize">{{ name }}</option>
                     </select>
-                    <input v-model="search" type="search" placeholder="Find a rule" class="min-w-0 flex-1 rounded-md border border-slate-300 px-3 py-2 text-sm sm:max-w-xs dark:border-slate-700 dark:bg-slate-800">
+                    <input v-model="search" type="search" :placeholder="t('security.rules.search')" class="min-w-0 flex-1 rounded-md border border-slate-300 px-3 py-2 text-sm sm:max-w-xs dark:border-slate-700 dark:bg-slate-800">
                 </div>
 
                 <div class="mt-3 overflow-x-auto">
                     <table class="min-w-full text-left text-sm">
                         <thead class="bg-slate-50 dark:bg-slate-800">
                             <tr>
-                                <th class="px-3 py-2">Rule</th>
-                                <th class="px-3 py-2">Name</th>
-                                <th class="px-3 py-2">Category</th>
-                                <th class="px-3 py-2">Severity</th>
-                                <th class="px-3 py-2 text-right">Status</th>
+                                <th class="px-3 py-2">{{ t('security.rules.rule') }}</th>
+                                <th class="px-3 py-2">{{ t('security.rules.name') }}</th>
+                                <th class="px-3 py-2">{{ t('security.rules.category') }}</th>
+                                <th class="px-3 py-2">{{ t('security.rules.severity') }}</th>
+                                <th class="px-3 py-2 text-right">{{ t('security.rules.status') }}</th>
                             </tr>
                         </thead>
                         <tbody>
@@ -171,23 +174,23 @@ const toggleRule = async (rule) => {
                                     <td class="whitespace-nowrap px-3 py-2 font-mono text-xs">{{ rule.rule_id }}</td>
                                     <td class="px-3 py-2">{{ rule.name }}</td>
                                     <td class="px-3 py-2 capitalize">{{ rule.category }}</td>
-                                    <td class="px-3 py-2"><span class="rounded-full px-2 py-0.5 text-xs capitalize" :class="severityStyles[rule.severity]">{{ rule.severity }}</span></td>
+                                    <td class="px-3 py-2"><span class="rounded-full px-2 py-0.5 text-xs capitalize" :class="severityStyles[rule.severity]">{{ t(`security.common.severity.${rule.severity}`) }}</span></td>
                                     <td class="px-3 py-2 text-right" @click.stop>
                                         <button type="button" :disabled="toggling === rule.rule_id" class="rounded-md border px-2 py-1 text-xs disabled:opacity-50" :class="rule.enabled ? 'border-emerald-300 text-emerald-700 dark:border-emerald-700 dark:text-emerald-300' : 'border-slate-300 text-slate-500 dark:border-slate-700'" @click="toggleRule(rule)">
-                                            {{ rule.enabled ? 'Enabled' : 'Disabled' }}
+                                            {{ rule.enabled ? t('security.rules.enabled') : t('security.rules.disabled') }}
                                         </button>
                                     </td>
                                 </tr>
                                 <tr v-if="expanded === rule.rule_id" class="bg-slate-50 dark:bg-slate-800/40">
                                     <td colspan="5" class="px-3 py-3 text-sm">
                                         <p v-if="rule.description">{{ rule.description }}</p>
-                                        <p v-if="rule.remediation" class="mt-1"><span class="font-semibold">Fix:</span> {{ rule.remediation }}</p>
-                                        <p class="mt-1 text-xs text-slate-500">Detection: {{ rule.detection_type }}</p>
+                                        <p v-if="rule.remediation" class="mt-1"><span class="font-semibold">{{ t('security.rules.fix') }}</span> {{ rule.remediation }}</p>
+                                        <p class="mt-1 text-xs text-slate-500">{{ t('security.rules.detection', { type: rule.detection_type }) }}</p>
                                     </td>
                                 </tr>
                             </template>
                             <tr v-if="rows.length === 0">
-                                <td colspan="5" class="px-3 py-4 text-center text-slate-500">No rule matches.</td>
+                                <td colspan="5" class="px-3 py-4 text-center text-slate-500">{{ t('security.rules.empty') }}</td>
                             </tr>
                         </tbody>
                     </table>

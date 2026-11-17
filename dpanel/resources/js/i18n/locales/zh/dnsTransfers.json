@@ -1,0 +1,23 @@
+{
+    "title": "区域传送",
+    "subtitle": "复制本服务器 DNS 区域的辅助域名服务器",
+    "secondariesTitle": "辅助域名服务器",
+    "secondariesHelp": "此处列出的每台服务器都可以复制（AXFR）本服务器作为主服务器的全部 {count} 个区域，并在任一区域变更时收到 NOTIFY。",
+    "none": "没有辅助服务器。只有本服务器为其区域应答。",
+    "address": "IP 地址",
+    "label": "名称（可选）",
+    "add": "添加",
+    "remove": "删除",
+    "removeConfirm": "禁止 {address} 从本服务器复制区域？",
+    "stepsTitle": "在辅助服务器上",
+    "step1": "在那里将每个区域添加为辅助区域，并以本服务器的 IP 作为主服务器。在另一台 dPanel 服务器上：DNS Zones → Add domains，类型选 slave。",
+    "step2": "为辅助服务器指定一个域名服务器名称，并与本服务器的（{nameservers}）一起写入 DNS_OUR_NAMESERVERS，使每个区域都带有它的 NS 记录。",
+    "step3": "在每个域名的注册商处，将辅助服务器的名称添加到本服务器名称旁边。",
+    "copiedTitle": "本服务器复制的区域",
+    "copiedHelp": "辅助区域：PowerDNS 从其主服务器复制并保持更新。其记录需在主服务器上修改。",
+    "zone": "区域",
+    "primaries": "主服务器",
+    "lastCheck": "上次检查",
+    "notYet": "尚未",
+    "noCopied": "无。可在 DNS Zones 中以 slave 类型添加。"
+}

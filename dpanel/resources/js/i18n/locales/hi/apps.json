@@ -1,0 +1,42 @@
+{
+    "fields": {
+        "heading": "साइट और एडमिनिस्ट्रेटर",
+        "site_name": "साइट का नाम",
+        "admin_name": "एडमिन का पूरा नाम",
+        "admin_username": "एडमिन यूज़रनेम",
+        "admin_email": "एडमिन ईमेल",
+        "admin_password": "एडमिन पासवर्ड",
+        "passwordHint": "(कम से कम 12 अक्षर — इसे अभी सहेजें, पैनल इसे संग्रहीत नहीं करता)",
+        "show": "दिखाएँ",
+        "hide": "छिपाएँ",
+        "generate": "बनाएँ"
+    },
+    "nextcloud": {
+        "installer": "Nextcloud इंस्टॉलर",
+        "card": "एडमिन अकाउंट और cron के साथ फ़ाइल सिंक और शेयरिंग",
+        "downloading": "Nextcloud डाउनलोड हो रहा है और उसका SHA-256 जाँचा जा रहा है…",
+        "configuring": "occ maintenance:install चल रहा है…",
+        "note": "फ़ाइलें प्रोजेक्ट रूट के बगल के फ़ोल्डर (…-nextcloud-data) में, वेब रूट के बाहर रखी जाती हैं। cron.php के लिए 5 मिनट का cron जोड़ा जाता है।"
+    },
+    "prestashop": {
+        "installer": "PrestaShop इंस्टॉलर",
+        "card": "बैक-ऑफ़िस अकाउंट के साथ ऑनलाइन स्टोर",
+        "downloading": "PrestaShop डाउनलोड और एक्सट्रैक्ट हो रहा है…",
+        "configuring": "PrestaShop इंस्टॉलर चल रहा है…",
+        "note": "install/ फ़ोल्डर हटा दिया जाता है और admin/ का नाम एक रैंडम नाम में बदल दिया जाता है; इंस्टॉल के बाद का संदेश बैक-ऑफ़िस का पता दिखाता है। एडमिन ईमेल से लॉग इन करें।"
+    },
+    "opencart": {
+        "installer": "OpenCart इंस्टॉलर",
+        "card": "एडमिन अकाउंट के साथ OpenCart 4 स्टोर",
+        "downloading": "OpenCart डाउनलोड और एक्सट्रैक्ट हो रहा है…",
+        "configuring": "OpenCart इंस्टॉलर चल रहा है…",
+        "note": "install/ फ़ोल्डर हटा दिया जाता है और system/storage प्रोजेक्ट रूट के बगल में (…-opencart-storage) चला जाता है। एडमिन क्षेत्र: /admin।"
+    },
+    "mediawiki": {
+        "installer": "MediaWiki इंस्टॉलर",
+        "card": "एडमिन अकाउंट के साथ विकी इंजन",
+        "downloading": "MediaWiki डाउनलोड हो रहा है और उसका GPG सिग्नेचर जाँचा जा रहा है…",
+        "configuring": "maintenance/install.php चल रहा है…",
+        "note": "डाउनलोड को MediaWiki रिलीज़ कुंजियों से सत्यापित किया जाता है (सर्वर पर gpg चाहिए)। सेटिंग्स LocalSettings.php में लिखी जाती हैं।"
+    }
+}

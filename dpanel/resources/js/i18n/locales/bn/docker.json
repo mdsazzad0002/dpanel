@@ -1,0 +1,677 @@
+{
+    "images": {
+        "title": "Docker image",
+        "description": "Image pull করুন, সেগুলো থেকে container চালান এবং যেগুলো আর লাগে না সেগুলো সরিয়ে ফেলুন।"
+    },
+    "nav": {
+        "label": "Docker বিভাগ",
+        "shortcut": "Shortcut: g তারপর {key}",
+        "sections": {
+            "o": "সারসংক্ষেপ",
+            "c": "Container",
+            "s": "Stack",
+            "t": "App template",
+            "i": "Image",
+            "n": "Network",
+            "v": "Volume"
+        }
+    },
+    "shortcuts": {
+        "show": "এই তালিকা দেখান",
+        "refresh": "Refresh করুন",
+        "search": "এই পাতায় খুঁজুন",
+        "overview": "সারসংক্ষেপে যান",
+        "containers": "Container-এ যান",
+        "stacks": "Stack-এ যান",
+        "templates": "App template-এ যান",
+        "images": "Image-এ যান",
+        "networks": "Network-এ যান",
+        "volumes": "Volume-এ যান",
+        "close": "Dialog বন্ধ করুন",
+        "title": "Keyboard shortcut",
+        "help": "Docker-এর যেকোনো পাতায় এগুলো কাজ করে, শুধু কোনো field-এ লেখার সময় নয়।"
+    },
+    "pull": {
+        "title": "Image pull করুন",
+        "help": "Docker Hub ({hub}) বা অন্য কোনো registry ({other}) থেকে। বড় image আনতে কয়েক মিনিট লাগতে পারে।",
+        "pullImage": "Image pull করুন",
+        "popular": "জনপ্রিয়:",
+        "pruneUntagged": "Untagged layer সরান",
+        "pruneAll": "অব্যবহৃত সব image সরান"
+    },
+    "shared": {
+        "pulling": "Pull হচ্ছে…",
+        "cleaning": "পরিষ্কার হচ্ছে…",
+        "remove": "সরান",
+        "checking": "যাচাই হচ্ছে…",
+        "hide": "লুকান",
+        "show": "দেখান",
+        "refreshing": "Refresh হচ্ছে…",
+        "dismiss": "বন্ধ করুন",
+        "copied": "Copy হয়েছে",
+        "copy": "Copy",
+        "shortcutN": "Shortcut: n",
+        "name": "নাম",
+        "creating": "তৈরি হচ্ছে…",
+        "start": "চালু করুন",
+        "stop": "বন্ধ করুন",
+        "restart": "Restart করুন",
+        "logs": "Log",
+        "console": "Console",
+        "details": "বিস্তারিত",
+        "deploying": "Deploy হচ্ছে…",
+        "updating": "Update হচ্ছে…",
+        "delete": "মুছুন"
+    },
+    "networkCard": {
+        "internal": "internal: internet নেই",
+        "builtIn": "built-in",
+        "stack": "stack {name}",
+        "removeFirst": "আগে এর container-গুলো এখান থেকে সরান",
+        "remove": "Network সরান",
+        "leave": "ছেড়ে দিন",
+        "empty": "এতে কোনো container নেই।",
+        "byName": "এখানকার container-গুলো নাম দিয়ে একে অপরের কাছে পৌঁছায়, যেমন {url}।",
+        "bridge": "Default network। এখানকার container-গুলো শুধু IP দিয়ে একে অপরের কাছে পৌঁছাতে পারে, নাম দিয়ে নয়; সেজন্য নিজের network তৈরি করুন।",
+        "toAdd": "যোগ করার container",
+        "addPlaceholder": "একটি container যোগ করুন…",
+        "extraName": "অতিরিক্ত নাম",
+        "extraNames": "অতিরিক্ত নাম",
+        "add": "যোগ করুন"
+    },
+    "imageList": {
+        "filters": {
+            "all": "সব",
+            "used": "ব্যবহৃত",
+            "unused": "অব্যবহৃত",
+            "dangling": "Untagged"
+        },
+        "search": "Image খুঁজুন  ( / )",
+        "notUsed": "ব্যবহৃত নয়",
+        "runTitle": "এই image থেকে একটি container চালান",
+        "run": "চালান",
+        "pullTitle": "এই tag-এর নতুন build পেতে আবার pull করুন",
+        "pullAgain": "আবার pull করুন",
+        "stillUsed": "এখনও একটি container ব্যবহার করছে",
+        "noMatch": "কোনো image মেলেনি।",
+        "empty": "এখনও কোনো image নেই। উপরে থেকে একটি pull করুন।"
+    },
+    "stackEditor": {
+        "title": "নতুন stack",
+        "help": "একটি docker-compose.yml paste বা upload করুন। এর service-গুলো একসাথে চালু হয় এবং service-এর নাম দিয়ে একে অপরের কাছে পৌঁছায়।",
+        "name": "Stack-এর নাম",
+        "nameHelp": "ছোট হাতের অক্ষর, সংখ্যা, - এবং _। Container-গুলোর নাম এর নামেই হয়।",
+        "variables": "Variable (.env)",
+        "tipVar": "এখানকার মান ব্যবহার করতে file-এ {var} লিখুন।",
+        "tipPorts": "Port private রাখতে {port} এভাবে লিখুন এবং সামনে একটি domain বসান।",
+        "tipVolumes": "Data named volume-এ রাখুন, যাতে redeploy করলেও তা থাকে।",
+        "tipKeys": "Tab দিলে indent হয়, Ctrl+S deploy না করে save করে।",
+        "saveOnly": "শুধু save করুন",
+        "deploying": "Deploy হচ্ছে… (image pull করতে কয়েক মিনিট লাগতে পারে)",
+        "saveDeploy": "Save করে deploy করুন"
+    },
+    "codeArea": {
+        "lines": "{count} লাইন",
+        "upload": "File upload করুন"
+    },
+    "usageGuide": {
+        "steps": {
+            "create": {
+                "title": "একটি website তৈরি করুন",
+                "body": "অন্য যেকোনো site-এর মতোই Websites-এ domain যোগ করুন। এর folder, SSL এবং File Manager সাথেই আসে।"
+            },
+            "runtime": {
+                "title": "এর runtime Docker-এ বদলান",
+                "body": "Website-এর Manage পাতায় Runtime settings খুলে Docker বেছে নিন। Image (যেমন nginx:alpine), app যে port-এ শোনে সেটি, এবং container-এর ভেতরে site folder কোন path-এ দেখা যাবে তা লিখুন।"
+            },
+            "upload": {
+                "title": "আপনার file upload করুন",
+                "body": "ওই website-এর File Manager ব্যবহার করুন: file বা zip upload করে site folder-এ extract করুন। Container একই folder দেখে, তাই container-এর ভেতরে কখনো upload করতে হয় না।"
+            },
+            "open": {
+                "title": "এটি খুলুন",
+                "body": "Domain সাথে সাথেই কাজ করে; container-এর port 127.0.0.1-এ থাকে। http://server-ip:port-ও চাইলে তবেই Docker Service card-এ \"Open port to the internet\" টিক দিন।"
+            }
+        },
+        "title": "Docker দিয়ে কীভাবে app চালাবেন",
+        "subtitle": "কোন ক্রমে কী করবেন, এবং আপনার file কোথায় যায়।",
+        "siteTitle": "Container থেকে website চালান (প্রস্তাবিত)",
+        "goWebsites": "Websites-এ যান →",
+        "noDomainTitle": "Domain ছাড়া container চালান",
+        "noDomainBody": "যেসব database, worker বা tool-এর website লাগে না, সেগুলোর জন্য এই পাতার উপরে \"Run container\" ব্যবহার করুন। Container যে data লেখে তা একটি named volume-এ রাখুন (যেমন {volume} এর মতো সাধারণ নাম), যা Docker তৈরি করে এবং recreate করলেও রেখে দেয়। এখানকার container, তাদের site এবং stack service সবই উপরের তালিকায় দেখা যায়; কোনো site-এর container-এর নাম {site}, সেটি বরং তার website থেকে manage করুন।",
+        "permNote": "কোনো app তার site folder-এ লিখতে না পারলে বুঝবেন সেটি site-এর থেকে ভিন্ন user হিসেবে চলছে। ওই data একটি named volume-এ রাখুন, অথবা app-কে শুধু folder পড়তে দিন।"
+    },
+    "shell": {
+        "shortcuts": "Keyboard shortcut (?)",
+        "refresh": "Refresh (r)"
+    },
+    "setup": {
+        "costs": {
+            "ram": "নিষ্ক্রিয় অবস্থায় RAM",
+            "cpu": "নিষ্ক্রিয় অবস্থায় CPU",
+            "cpuNote": "যতক্ষণ না কোনো container চলে",
+            "disk": "Disk",
+            "diskNote": "সাথে আপনার pull করা প্রতিটি image",
+            "logs": "Log",
+            "logsNote": "প্রতি container-এ (3 × 10 MB)",
+            "logsValue": "সর্বোচ্চ 30 MB"
+        },
+        "checks": {
+            "ram": "কমপক্ষে 1 GB RAM (2 GB প্রস্তাবিত) এবং 3 GB খালি disk",
+            "os": "সমর্থিত OS: Ubuntu, Debian, Rocky বা AlmaLinux",
+            "hub": "Docker Hub-এ পৌঁছানো যায়, এবং drust service চলছে"
+        },
+        "stoppedTitle": "Docker install করা আছে কিন্তু চলছে না",
+        "stoppedBody": "Docker service আবার চালু না হওয়া পর্যন্ত container চালু বা manage করা যাবে না। Server-এ চালান:",
+        "checkAgain": "আবার যাচাই করুন",
+        "badge": "ঐচ্ছিক add-on · বন্ধ",
+        "missingTitle": "এই server-এ Docker install করা নেই",
+        "missingBody": "Docker দিয়ে admin-রা আপনার website-এর পাশাপাশি container হিসেবে app (Redis, n8n, Uptime Kuma, আপনার নিজের image) চালাতে পারেন। dPanel এটি default-ভাবে install করে না, তাই যেসব server কখনো container ব্যবহার করে না সেগুলোকে এর খরচ বইতে হয় না।",
+        "readGuide": "Docker guide পড়ুন ↗",
+        "installTitle": "Install করুন",
+        "step1": "1. SSH দিয়ে server-এ যুক্ত হয়ে চালান:",
+        "step2": "2. এটি server যাচাই করে, খরচ দেখায় এবং কিছু install করার আগে জিজ্ঞেস করে।",
+        "step3": "3. এখানে ফিরে এসে {button} চাপুন। তারপর Docker menu-তে দেখা যাবে।",
+        "checksTitle": "Installer যা যাচাই করে",
+        "safeTitle": "নিরাপদ default",
+        "safe1": "শুধু admin-রা Docker manage করতে পারেন, এবং প্রতিটি কাজ log করা হয়।",
+        "safe2": "Public চিহ্নিত না করলে container port 127.0.0.1-এ শোনে।",
+        "safe3": "যেকোনো সময় সরাতে পারেন: {cmd} (আপনার data থেকে যায়)।"
+    },
+    "logs": {
+        "loadFailed": "Log আনা যায়নি।",
+        "lines": "লাইন",
+        "last": "শেষ {count} লাইন",
+        "filter": "লাইন filter করুন",
+        "match": "{count}টি মিল",
+        "matches": "{count}টি মিল",
+        "live": "Live",
+        "noWrap": "Wrap বন্ধ",
+        "wrap": "Wrap",
+        "reload": "আবার আনুন",
+        "noMatch": "কোনো লাইন মেলেনি।",
+        "empty": "কোনো log output নেই।"
+    },
+    "console": {
+        "quick": {
+            "files": "File",
+            "variables": "Variable",
+            "processes": "Process",
+            "disk": "Disk",
+            "os": "OS",
+            "network": "Network"
+        },
+        "notRunning": "Container-টি এখন {state}। এর ভেতরে command চালাতে এটি চালু করুন।",
+        "quickLabel": "দ্রুত:",
+        "clear": "মুছুন",
+        "help": "নিচে একটি command লিখে Enter চাপুন। যেসব program input-এর অপেক্ষা করে (top, vim, একটি shell) সেগুলো এখানে কাজ করে না; command এক মিনিট পরে থেমে যায়।",
+        "timedOut": "এক মিনিট পরে থামানো হয়েছে।",
+        "exitCode": "exit code {code}",
+        "running": "চলছে…",
+        "runningBtn": "চলছে…",
+        "run": "চালান",
+        "advanced": "অন্য user হিসেবে বা অন্য folder-এ চালান",
+        "user": "user (যেমন www-data)"
+    },
+    "templates": {
+        "title": "App template",
+        "description": "তৈরি app: একটি বেছে নিন, settings দেখে নিন, deploy করুন। Password আপনার জন্য তৈরি করে দেওয়া হয়।",
+        "running": "{name} চলছে",
+        "openIt": "খুলুন →",
+        "saveDetails": "এই তথ্যগুলো এখনই save করে রাখুন; password এখানে আর দেখানো হবে না (সেগুলো container-এর settings-এ থাকে)।",
+        "categories": {
+            "all": "সব",
+            "database": "Database",
+            "search": "Search",
+            "cms": "Website ও CMS",
+            "tools": "Tool",
+            "storage": "Storage ও queue"
+        },
+        "kind": "ধরন",
+        "kindAll": "Container ও stack",
+        "kindContainer": "একক container",
+        "kindStack": "Stack (একাধিক container)",
+        "search": "App খুঁজুন  ( / )",
+        "stack": "stack",
+        "webApp": "web app",
+        "setupStack": "Stack সেট আপ করুন",
+        "setup": "সেট আপ করুন",
+        "noMatch": "কোনো template মেলেনি। Docker Hub-এর যেকোনো কিছু তবুও চলে: {run} অথবা {compose}।",
+        "runAny": "যেকোনো image চালান",
+        "pasteCompose": "একটি compose file paste করুন"
+    },
+    "networks": {
+        "disconnectConfirm": "{container}-কে {name} থেকে সরাবেন? এটি আর সেখানকার container-গুলোর কাছে নাম দিয়ে পৌঁছাতে পারবে না।",
+        "removeConfirm": "Network {name} সরাবেন?",
+        "pruneConfirm": "কোনো container ব্যবহার করে না এমন সব network সরাবেন? Built-in network থেকে যাবে।",
+        "title": "Docker network",
+        "description": "Container-গুলোকে একই network-এ রাখুন যাতে তারা নাম দিয়ে একে অপরের কাছে পৌঁছাতে পারে।",
+        "create": "Network তৈরি করুন",
+        "howTitle": "Network কীভাবে কাজ করে",
+        "how1": "একটি network তৈরি করুন, যেমন {name}।",
+        "how2": "এখানে এতে container যোগ করুন, অথবা container চালানোর সময় \"More options\"-এ এটি বেছে নিন।",
+        "how3": "এখন তারা container-এর নাম দিয়ে একে অপরের কাছে পৌঁছায়: Kibana ব্যবহার করে {url}, কোনো app database host হিসেবে {host} ব্যবহার করে।",
+        "howNote": "কোনো container public port publish না করলে network-এর কিছুই internet-এ খোলা থাকে না। Compose stack নিজে থেকেই নিজস্ব network পায়।",
+        "createTitle": "একটি network তৈরি করুন",
+        "subnet": "Subnet (ঐচ্ছিক)",
+        "subnetPlaceholder": "স্বয়ংক্রিয়, অথবা যেমন 10.20.0.0/24",
+        "internalTitle": "Internal network-এর container-গুলো শুধু একে অপরের কাছে পৌঁছায়, কখনো internet-এ নয়",
+        "internal": "শুধু internal",
+        "empty": "এখনও আপনার নিজের কোনো network নেই। {link}।",
+        "createOne": "একটি তৈরি করুন",
+        "hideBuiltIn": "খালি built-in network লুকান",
+        "showBuiltIn": "খালি {count}টি built-in network দেখান",
+        "prune": "অব্যবহৃত network সরান"
+    },
+    "volumes": {
+        "filters": {
+            "all": "সব",
+            "used": "ব্যবহৃত",
+            "unused": "অব্যবহৃত",
+            "anonymous": "নামহীন"
+        },
+        "removePrompt": "এটি volume {name} এবং এর ভেতরের সব file মুছে ফেলবে। এটি আর ফেরানো যাবে না।\n\nনিশ্চিত করতে volume-এর নাম লিখুন:",
+        "pruneAllPrompt": "কোনো container ব্যবহার করে না এমন সব volume, নামযুক্তগুলোসহ, মুছবেন? এদের data চিরতরে হারিয়ে যাবে।\n\nনিশ্চিত করতে DELETE লিখুন:",
+        "pruneConfirm": "অব্যবহৃত নামহীন volume (container-এর রেখে যাওয়া নামহীনগুলো) সরাবেন? নামযুক্ত volume রেখে দেওয়া হবে।",
+        "title": "Docker volume",
+        "description": "যেখানে container এমন data রাখে যা restart, update বা recreate-এর পরেও থাকতে হবে।",
+        "createTitle": "একটি volume তৈরি করুন",
+        "createHelp": "Container-এর Volumes field-এ নতুন নাম লিখলেও container নিজে থেকে একটি তৈরি করে।",
+        "name": "Volume-এর নাম",
+        "create": "তৈরি করুন",
+        "search": "Volume খুঁজুন  ( / )",
+        "anonymous": "নামহীন",
+        "copyPath": "Server-এর path copy করুন",
+        "inUse": "ব্যবহৃত হচ্ছে: আগে এর container-গুলো সরান",
+        "delete": "Volume ও এর data মুছুন",
+        "noMatch": "কোনো volume মেলেনি।",
+        "empty": "এখনও কোনো volume নেই।",
+        "prune": "অব্যবহৃত নামহীন volume সরান",
+        "pruneAll": "অব্যবহৃত সব volume মুছুন",
+        "note": "Volume-এর file server-এ Docker-এর folder-এ থাকে, যা File Manager খোলে না। App-এর file নিজে edit করতে চাইলে বরং কোনো website-এর home-এর ভেতরের একটি folder mount করুন (যেমন {path})।"
+    },
+    "overview": {
+        "quick": {
+            "run": "একটি container চালান",
+            "runHint": "যেকোনো image বা docker run command",
+            "stack": "একটি stack deploy করুন",
+            "stackHint": "একটি docker-compose.yml paste করুন",
+            "apps": "এক-click-এ app",
+            "appsHint": "Database, search, CMS, tool",
+            "pull": "একটি image pull করুন",
+            "pullHint": "Docker Hub বা যেকোনো registry থেকে",
+            "network": "Container যুক্ত করুন",
+            "networkHint": "একটি network তৈরি করুন",
+            "domain": "Domain-এ চালান",
+            "domainHint": "Docker runtime সহ website"
+        },
+        "description": "এই server-এ container-এ যা কিছু চলছে, এক নজরে।",
+        "running": "চলছে",
+        "stopped": "{count}টি বন্ধ",
+        "composeApps": "compose app",
+        "onDisk": "Disk-এ {size}",
+        "server": "Server",
+        "attention": "একবার দেখা দরকার",
+        "openLogs": "Log খুলুন",
+        "quickTitle": "দ্রুত কাজ",
+        "diskUse": "Disk ব্যবহার",
+        "what": "কী",
+        "count": "সংখ্যা",
+        "size": "আকার",
+        "canFree": "খালি করা যায়",
+        "dataDir": "Docker তার data {dir}-এ রাখে। প্রতিটি container-এর log সর্বোচ্চ 30 MB।",
+        "cleanTitle": "পরিষ্কার করুন",
+        "reclaimable": "চলমান কিছু না ছুঁয়েই এই জায়গা ফেরত পেতে পারেন।",
+        "nothingToClean": "এখন পরিষ্কার করার মতো তেমন কিছু নেই।",
+        "volumesKept": "Volume (আপনার data) এখানে কখনো সরানো হয় না।",
+        "quickConfirm": "বন্ধ container, অব্যবহৃত network, untagged image এবং build cache সরাবেন? চলমান container ও volume ছোঁয়া হবে না।",
+        "quickClean": "দ্রুত পরিষ্কার",
+        "quickCleanHint": "বন্ধ container, অব্যবহৃত network, untagged image, build cache",
+        "deepConfirm": "কোনো container ব্যবহার করে না এমন সব image-ও সরাবেন? দরকার হলে সেগুলো আবার pull করা হবে, যাতে সময় ও bandwidth লাগে।",
+        "deepClean": "গভীর পরিষ্কার",
+        "deepCleanHint": "উপরের সবকিছু, সাথে প্রতিটি অব্যবহৃত image",
+        "cacheConfirm": "Build cache মুছবেন? পরের image build একদম শুরু থেকে হবে।",
+        "clearCache": "Build cache মুছুন",
+        "engine": "Engine",
+        "installed": "install করা আছে",
+        "notInstalled": "install করা নেই",
+        "kernel": "Kernel",
+        "architecture": "Architecture",
+        "storage": "Storage"
+    },
+    "containers": {
+        "renamePrompt": "{name}-এর নতুন নাম",
+        "title": "Docker container",
+        "description": "এই server-এর container চালান, পরীক্ষা করুন এবং নিয়ন্ত্রণ করুন।",
+        "runNew": "নতুন container চালান",
+        "runContainer": "Container চালান",
+        "runHint": "যেকোনো image, অথবা একটি docker run command paste করুন",
+        "pruneStopped": "বন্ধ container সরান",
+        "stoppedCount": "{count}টি বন্ধ; volume রেখে দেওয়া হবে",
+        "noneStopped": "কোনোটি বন্ধ নেই",
+        "emptyHint": "{run} অথবা {templates} থেকে একটি তৈরি app বেছে নিন।",
+        "runOne": "একটি চালান"
+    },
+    "stacks": {
+        "saveFailed": "Stack save করা যায়নি।",
+        "targetService": "{stack}-এর service {service}",
+        "targetStack": "stack {stack}",
+        "stopConfirm": "{target} বন্ধ করবেন?",
+        "downConfirm": "{name} down করবেন? এর container ও network সরানো হবে; volume (data) থেকে যাবে, এবং Deploy করলে আবার ফিরে আসবে।",
+        "deleteConfirm": "Stack {name} মুছবেন? এর container ও compose file সরানো হবে।",
+        "downShellConfirm": "{name} down করবেন? এর container ও network সরানো হবে।",
+        "volumesPrompt": "এর volume-গুলোও, তাদের সব data সহ, মুছবেন? সেগুলোও মুছতে {name} লিখুন, অথবা রেখে দিতে খালি রাখুন।",
+        "runningCount": "{running}/{total} চলছে",
+        "notDeployed": "deploy করা হয়নি",
+        "title": "Docker stack",
+        "description": "একাধিক container দিয়ে তৈরি app, একটি docker-compose file থেকে একসাথে চালানো হয়।",
+        "noCompose": "Docker Compose install করা নেই",
+        "noComposeHelp": "Stack-এর জন্য compose plugin লাগে। Server-এ {apt} (Ubuntu/Debian) অথবা {dnf} চালান, তারপর refresh করুন।",
+        "pasteCompose": "একটি compose file paste করুন",
+        "orUpload": "অথবা docker-compose.yml upload করুন",
+        "readyMade": "তৈরি stack",
+        "allTemplates": "সব app template →",
+        "search": "Stack খুঁজুন  ( / )",
+        "fromShell": "shell থেকে",
+        "noMatch": "কোনো stack মেলেনি।",
+        "empty": "এখনও কোনো stack নেই। একটি compose file paste করুন অথবা উপরের কোনো template থেকে শুরু করুন।"
+    },
+    "containerList": {
+        "filters": {
+            "all": "সব",
+            "running": "চলছে",
+            "stopped": "বন্ধ",
+            "stacks": "Stack-এ",
+            "sites": "Website"
+        },
+        "liveTitle": "CPU ও memory, প্রতি 5 সেকেন্ডে refresh হয়",
+        "live": "Live ব্যবহার",
+        "search": "Container খুঁজুন  ( / )",
+        "selected": "{count}টি নির্বাচিত",
+        "selectAll": "সব নির্বাচন করুন",
+        "image": "Image",
+        "usage": "ব্যবহার",
+        "ports": "Port",
+        "select": "{name} নির্বাচন করুন",
+        "website": "website",
+        "noPorts": "কোনো port নেই",
+        "resume": "আবার চালু করুন",
+        "noMatch": "কোনো container মেলেনি।",
+        "empty": "এখনও কোনো container নেই।"
+    },
+    "stackDetail": {
+        "tabs": {
+            "services": "Service",
+            "logs": "Log",
+            "domain": "Domain-এ বসান",
+            "compose": "Compose file",
+            "composeReadOnly": "Compose file (শুধু পড়া যায়)"
+        },
+        "outside": "panel-এর বাইরে চালু করা",
+        "deployTitle": "Compose file থেকে এর container তৈরি বা update করুন",
+        "deploy": "Deploy করুন",
+        "updateTitle": "নতুন image pull করে যা বদলেছে তা recreate করুন",
+        "updateImages": "Image update করুন",
+        "downTitle": "এর container ও network বন্ধ করে সরান; volume রেখে দেওয়া হবে",
+        "down": "Down",
+        "takeDown": "Down করুন",
+        "sections": "Stack বিভাগ",
+        "notRunning": "এখনও চলছে না।",
+        "deployIt": "Deploy করুন",
+        "toStart": "{services} চালু করতে।",
+        "reachHint": "Stack-এর নিজস্ব network-এ service-গুলো service-এর নাম দিয়ে একে অপরের কাছে পৌঁছায়, যেমন database host হিসেবে {host}।",
+        "service": "Service:",
+        "checkedHint": "Save করা file আগে {cmd} দিয়ে যাচাই করা হয়; ভাঙা file কখনো চালু file-এর জায়গা নেয় না।",
+        "shellNote": "এই stack shell থেকে চালু করা হয়েছে, তাই panel শুধু এর file দেখায়। Start, stop, restart এবং take down কাজ করে।",
+        "unreadable": "Compose file পড়া যায়নি।",
+        "domainIntro": "এর কোনো একটি port-এর সামনে একটি website বসিয়ে এই stack নিজের domain-এ, SSL সহ, খুলুন।",
+        "portsTitle": "যেসব port ব্যবহার করতে পারেন",
+        "portTarget": "→ {service} (container port {port})",
+        "alsoPublic": "server IP-তেও public",
+        "noPorts": "এই stack কোনো port publish করে না। Web service-এ একটি যোগ করুন, যেমন {example}, তারপর deploy করুন।",
+        "step1": "{websites}-এ domain-টির জন্য একটি website তৈরি করুন (অথবা আগের কোনোটি খুলুন)।",
+        "step2": "এর {manage} পাতায় {runtime} খুলুন, {docker} বেছে নিন, তারপর {use}।",
+        "step3": "Stack {stack} এবং port{port} বেছে নিন। Save করুন: এখন domain-এ app খুলবে, এবং অন্য যেকোনো site-এর মতোই SSL কাজ করবে।",
+        "goWebsites": "Websites-এ যান",
+        "unsaved": "Save না করা পরিবর্তন",
+        "discard": "বাতিল করুন"
+    },
+    "form": {
+        "recreateTitle": "{name} edit করে recreate করুন",
+        "duplicateTitle": "Container-এর অনুলিপি",
+        "recreate": "Container recreate করুন",
+        "runCopy": "অনুলিপি চালান",
+        "noImage": "কোনো image পাওয়া যায়নি। পুরো command paste করুন, যেমন: docker run -d -p 8080:80 nginx:alpine",
+        "filledIgnored": "পূরণ করা হয়েছে। এখানে সমর্থিত নয় বলে বাদ দেওয়া হয়েছে: {items}",
+        "filled": "Command থেকে পূরণ করা হয়েছে। মানগুলো দেখে নিন, তারপর চালান।",
+        "publicConfirm": "একটি public port internet-এ খোলা থাকবে। Docker নিজের firewall rule লেখে, তাই server firewall এটি আটকায় না। চালিয়ে যাবেন?",
+        "recreateConfirm": "{name} recreate করবেন? এটি বন্ধ করে বদলে দেওয়া হবে; volume-এর data থেকে যাবে, container-এর ভেতরের বাকি সব হারিয়ে যাবে। নতুনটি চালু না হলে পুরনোটি ফিরে আসবে।",
+        "help": "Server-এ image না থাকলে আগে সেটি pull করা হয়। Public না করলে port শুধু 127.0.0.1-এ শোনে।",
+        "pasteToggle": "{cmd} command আছে? এই form পূরণ করতে সেটি paste করুন",
+        "fill": "Form পূরণ করুন",
+        "nameOptional": "নাম (ঐচ্ছিক)",
+        "restart": "Restart",
+        "restartOptions": {
+            "unlessStopped": "বন্ধ না করা পর্যন্ত (প্রস্তাবিত)",
+            "always": "সবসময়",
+            "onFailure": "ব্যর্থ হলে",
+            "never": "কখনো না"
+        },
+        "portsHint": "server port → container port",
+        "addPort": "Port যোগ করুন",
+        "serverPort": "Server port",
+        "containerPort": "Container port",
+        "protocol": "Protocol",
+        "public": "Public",
+        "removePort": "Port সরান",
+        "env": "Environment variable",
+        "pasteEnv": ".env paste করুন",
+        "addVar": "Variable যোগ করুন",
+        "addVars": "এই variable-গুলো যোগ করুন",
+        "varName": "Variable-এর নাম",
+        "value": "মান",
+        "varValue": "Variable-এর মান",
+        "removeVar": "Variable সরান",
+        "volumesHint": "recreate করলেও data রাখে",
+        "addVolume": "Volume যোগ করুন",
+        "volumesHelp": "সাধারণ নাম ({name}) দিলে Docker-এর manage করা একটি named volume তৈরি হয়। কোনো website-এর home-এর folder ({folder}) ওই website-এর File Manager দিয়ে edit করা যায়।",
+        "volumeSource": "my-data অথবা {dir}/user/folder",
+        "volumeOrFolder": "Volume অথবা host folder",
+        "pathInContainer": "Container-এর ভেতরের path",
+        "readOnly": "শুধু পড়া যায়",
+        "removeVolume": "Volume সরান",
+        "more": "আরও option",
+        "moreHint": "network, limit, command",
+        "network": "Network",
+        "defaultNetwork": "Default (bridge)",
+        "networkHelp": "একই network-এর container-গুলো নাম দিয়ে একে অপরের কাছে পৌঁছায়। Networks-এ গিয়ে একটি তৈরি করুন।",
+        "aliases": "ওই network-এ অতিরিক্ত নাম",
+        "memory": "Memory limit",
+        "memoryPlaceholder": "যেমন 512m বা 2g (খালি: কোনো limit নেই)",
+        "cpu": "CPU limit",
+        "cpuPlaceholder": "যেমন 0.5 বা 2 (খালি: কোনো limit নেই)",
+        "command": "Command (image-এরটির বদলে)",
+        "commandPlaceholder": "যেমন redis-server --appendonly yes",
+        "entrypointPlaceholder": "খালি: image-এর নিজস্বটি",
+        "hostnamePlaceholder": "খালি: container ID",
+        "pull": "সবসময় আগে নতুন image pull করুন",
+        "working": "কাজ চলছে… (pull করতে কয়েক মিনিট লাগতে পারে)"
+    },
+    "details": {
+        "health": "health: {value}",
+        "siteNote": "এই container একটি website-এর। এর settings ওই website-এর Runtime settings থেকে বদলান, নইলে পরের restart-এ সেগুলো বদলে যাবে।",
+        "stackNote": "Stack {stack}-এর অংশ। এর settings stack-এর compose file-এ edit করুন, যাতে redeploy করলেও সেগুলো থাকে।",
+        "pause": "বিরতি দিন",
+        "editRecreate": "Edit করে recreate করুন",
+        "duplicate": "অনুলিপি করুন",
+        "updateTitle": "নতুন image pull করে একই settings দিয়ে recreate করুন",
+        "updateImage": "Image update করুন",
+        "rename": "নাম বদলান",
+        "kill": "Kill করুন",
+        "sections": "Container বিভাগ",
+        "status": "অবস্থা",
+        "started": "চালু হয়েছে",
+        "stoppedAt": "{date} (exit {code})",
+        "oom": "অতিরিক্ত memory ব্যবহারের জন্য এটি বন্ধ করা হয়েছে। এর memory limit বাড়ান বা server-এ আরও RAM দিন।",
+        "restarts": "Restart",
+        "restartPolicy": "{count} · policy {policy}",
+        "created": "তৈরি হয়েছে",
+        "limits": "Limit",
+        "noRam": "কোনো RAM limit নেই",
+        "noCpu": "কোনো CPU limit নেই",
+        "public": "public",
+        "open": "খুলুন ↗",
+        "localOnly": "শুধু server থেকে; domain দিয়ে পৌঁছান",
+        "noPorts": "কোনো port publish করা নেই। এর network-এর অন্য container-গুলো তবুও এর কাছে পৌঁছাতে পারে।",
+        "command": "Command",
+        "workdir": "{dir}-এ",
+        "user": "{user} হিসেবে",
+        "envNote": "Image-এর নিজস্ব variable-ও এতে আছে। Edit & recreate দিয়ে সেগুলো বদলান।",
+        "hideValues": "মান লুকান",
+        "showValues": "মান দেখান",
+        "copyValue": "মান copy করুন",
+        "noMounts": "কিছুই mount করা নেই: container যা লেখে, recreate বা সরানো হলে সব হারিয়ে যায়। Edit & recreate দিয়ে একটি volume যোগ করুন।",
+        "readOnly": "শুধু পড়া যায়",
+        "volume": "volume {name}",
+        "bindNote": "এই folder যে website-এর, তার File Manager দিয়ে এই file-গুলো edit করুন।",
+        "reachAs": "এতে থাকা অন্য container-গুলো এটির কাছে পৌঁছায় এই নামে:",
+        "join": "Network-এ যোগ দিন",
+        "choose": "বেছে নিন…",
+        "extraNames": "অতিরিক্ত নাম (ঐচ্ছিক)",
+        "joinBtn": "যোগ দিন"
+    },
+    "request": {
+        "failed": "Request সফল হয়নি।"
+    },
+    "actions": {
+        "loadFailed": "Docker status আনা যায়নি।",
+        "confirmRemove": "Container {name} মুছবেন? আগে এটি বন্ধ করা হবে, আর volume-এ রাখা নেই এমন সবকিছু হারিয়ে যাবে।",
+        "confirmStop": "Container {name} বন্ধ করবেন?",
+        "confirmKill": "Container {name} kill করবেন? এটি ঠিকভাবে বন্ধ হওয়ার সুযোগ পাবে না।",
+        "confirmUpdate": "সর্বশেষ {image} pull করে একই settings দিয়ে {name} আবার তৈরি করবেন? Volume-এর data থাকবে; কয়েক সেকেন্ড এটি বন্ধ থাকবে।",
+        "bulkRemove": "{count}টি container মুছবেন? {names}",
+        "bulkStop": "{count}টি container বন্ধ করবেন? {names}",
+        "pruneContainers": "বন্ধ থাকা সব container মুছবেন? তাদের volume থেকে যাবে।",
+        "forceRemoveImage": "Image {image} জোর করে মুছবেন? যেসব container এটি ব্যবহার করছে সেগুলো চলতে থাকবে, কিন্তু এটি থেকে আর তৈরি করা যাবে না।",
+        "removeImage": "Image {image} মুছবেন?",
+        "pruneAllImages": "কোনো container ব্যবহার করে না এমন সব image মুছবেন, tag থাকা গুলোও? দরকার হলে আবার pull করা হবে।",
+        "pruneImages": "কোনো container ব্যবহার করে না এমন সব untagged image layer মুছবেন?"
+    },
+    "catalog": {
+        "connect": "সংযোগ:",
+        "hostPortUserPassword": "host {host}, port {port}, user {user}, password {password}।",
+        "urlApiKey": "{url}, API key {key}।",
+        "redis": {
+            "description": "Laravel, Node ও WordPress object cache-এর জন্য in-memory cache এবং queue।",
+            "note": "host {host}, port {port}, password {password}। Server-এর নিজের Redis port 6379-এই থাকে।"
+        },
+        "postgres": {
+            "description": "Server-এর নিজের database-এর পাশাপাশি যেকোনো version-এর আলাদা PostgreSQL।",
+            "note": "host {host}, port {port}, user ও database {app}, password {password}।"
+        },
+        "mysql": {
+            "description": "Server-এর MySQL-এ হাত না দিয়ে আরেকটি MySQL version।"
+        },
+        "mariadb": {
+            "description": "নিজস্ব container ও version-এ MariaDB।"
+        },
+        "mongo": {
+            "description": "Node ও Python app-এর জন্য document database।"
+        },
+        "elasticsearch": {
+            "description": "Shop ও app-এর জন্য full-text search, একটি node, এক মিনিটে প্রস্তুত।",
+            "connect": "{url} (security বন্ধ, তাই port-টি private রাখুন)।",
+            "note": "প্রায় 1 GB RAM লাগে। \"vm.max_map_count is too low\" বলে বন্ধ হয়ে গেলে server-এ {command} চালান। Kibana-ও চান? Elasticsearch + Kibana stack ব্যবহার করুন।"
+        },
+        "meilisearch": {
+            "description": "দ্রুত, বানান ভুল সামলাতে পারা search, খুব কম resource লাগে। Laravel Scout-এর সাথে কাজ করে।",
+            "note": "{url}, master key {key}।"
+        },
+        "typesense": {
+            "description": "Open-source search engine, Algolia-র বিকল্প।"
+        },
+        "qdrant": {
+            "description": "AI search ও RAG-এর জন্য vector database।"
+        },
+        "minio": {
+            "description": "Upload ও backup-এর জন্য S3-compatible file storage।",
+            "connect": "S3 API {url}, user {user}, password {password}।",
+            "note": "Web console port {port}-এ আছে; browser-এ খুলতে এটিকে একটি website-এর পেছনে রাখুন।"
+        },
+        "rabbitmq": {
+            "description": "Management UI সহ message broker।",
+            "note": "{url}; management UI port {port}-এ।"
+        },
+        "memcached": {
+            "description": "সহজ memory cache।"
+        },
+        "uptimeKuma": {
+            "description": "Alert ও status page সহ uptime monitor।",
+            "note": "SSL সহ domain-এ খুলতে বরং একটি website তৈরি করে তার runtime Docker করুন, image {image} এবং port {port} দিয়ে।"
+        },
+        "n8n": {
+            "description": "Workflow automation, নিজের server-এ চলা Zapier।",
+            "note": "নিজস্ব domain-এ সবচেয়ে ভালো: Docker runtime দিয়ে একটি website তৈরি করুন, image {image}, port {port}। Database-সহ setup-এর জন্য n8n + PostgreSQL stack ব্যবহার করুন।"
+        },
+        "adminer": {
+            "description": "Browser-এ যেকোনো database container দেখুন।",
+            "note": "এটিকে database-এর একই network-এ রাখুন ({more} → {network}) এবং server হিসেবে database container-এর নাম দিয়ে log in করুন।"
+        },
+        "mailpit": {
+            "description": "Test করা app-এর পাঠানো email ধরে রাখে।",
+            "note": "SMTP {address}; inbox UI port {port}-এ।"
+        },
+        "gitea": {
+            "description": "হালকা, নিজের server-এ চলা Git service।",
+            "note": "Docker runtime দিয়ে একটি website তৈরি করে domain-এ খুলুন (image {image}, port {port}), অথবা Gitea + PostgreSQL stack ব্যবহার করুন।"
+        },
+        "metabase": {
+            "description": "আপনার database-এর উপর dashboard ও প্রশ্ন।",
+            "note": "প্রায় 1 GB RAM লাগে। Port 3000-এ Docker-runtime website দিয়ে domain-এ খুলুন।"
+        },
+        "nginx": {
+            "description": "HTML file-এর একটি folder serve করে।",
+            "note": "Volume-টি আপনার folder-এ বদলে দিন। Domain-এ static site-এর জন্য সাধারণ PHP website সহজ; Nginx নিজেই দরকার হলে এটি ব্যবহার করুন।"
+        },
+        "elasticKibana": {
+            "description": "Dashboard সহ search engine, আগে থেকেই একে অপরের সাথে যুক্ত।",
+            "note": "Stack-এর নিজস্ব network-এ Kibana Elasticsearch-কে {internal} হিসেবে পায়। Elasticsearch: {url}। Browser-এ Kibana খুলতে port {port}-এর সামনে একটি website রাখুন (Runtime settings → Docker → \"Use a running stack\")। প্রায় 2 GB RAM লাগে।"
+        },
+        "wordpress": {
+            "description": "নিজস্ব MySQL সহ WordPress, server থেকে আলাদা।",
+            "note": "Deploy করার পর SSL সহ আপনার domain-এ খুলতে port {port}-এর সামনে একটি website রাখুন। Database শুধু WordPress থেকেই পাওয়া যায়।"
+        },
+        "ghost": {
+            "description": "আধুনিক publishing ও newsletter।",
+            "note": "{variable}-এ যে domain ব্যবহার করবেন সেটি দিন, তারপর সেই website-টি port {port}-এর সামনে রাখুন।"
+        },
+        "nextcloud": {
+            "description": "File, calendar ও contact: আপনার নিজের cloud। MariaDB ও Redis সহ।",
+            "note": "{variable} সেট করুন, deploy করুন, তারপর সেই website-টি port {port}-এর সামনে রাখুন এবং browser-এ setup শেষ করুন।"
+        },
+        "giteaPg": {
+            "description": "PostgreSQL-ভিত্তিক Git hosting।",
+            "note": "Web UI port {port}-এ একটি website-এর পেছনে থাকে। SSH দিয়ে Git public port {sshPort} ব্যবহার করে (firewall-এ এটি allow করুন)।"
+        },
+        "n8nPg": {
+            "description": "সঠিক database সহ workflow automation।",
+            "note": "{variable} সেট করুন, deploy করুন, তারপর সেই website-টি port {port}-এর সামনে রাখুন।"
+        },
+        "umami": {
+            "description": "Privacy-বান্ধব website analytics, Google Analytics-এর বিকল্প।",
+            "note": "Port {port}-এর সামনে একটি website রাখুন। প্রথম login: {user} / {password}; সঙ্গে সঙ্গে এটি বদলে নিন।"
+        },
+        "metabasePg": {
+            "description": "Business dashboard, যার settings PostgreSQL-এ রাখা থাকে।",
+            "note": "প্রায় 1.5 GB RAM লাগে। Port {port}-এর সামনে একটি website রাখুন।"
+        },
+        "mongoExpress": {
+            "description": "Web admin সহ MongoDB, নিজস্ব network-এ।",
+            "note": "App-গুলো {url}-এ connect করে। Admin UI (user {user}, password variable-এ আছে) port {port}-এ একটি website-এর পেছনে থাকে।"
+        },
+        "redisInsight": {
+            "description": "ভেতরে দেখার জন্য browser UI সহ Redis।",
+            "note": "RedisInsight-এ host {host}, port {port} এবং variable-এর password দিয়ে database যোগ করুন।"
+        }
+    }
+}

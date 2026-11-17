@@ -7,6 +7,9 @@ import ZoneFileImport from '@/Pages/Dns/components/ZoneFileImport.vue';
 import ZoneSettingsForm from '@/Pages/Dns/components/ZoneSettingsForm.vue';
 import ConnectionBadge from '@/Pages/Dns/components/ConnectionBadge.vue';
 import ZoneDnssec from '@/Pages/Dns/components/ZoneDnssec.vue';
+import { useI18n } from 'vue-i18n';
+
+const { t } = useI18n();
 
 const props = defineProps({
     zone: { type: Object, required: true },
@@ -39,7 +42,7 @@ const copy = async (value) => {
 };
 
 const deleteZone = () => {
-    if (!confirm(`Delete ${props.zone.domain} and all ${props.records.length} of its records?`)) return;
+    if (!confirm(t('dns.zoneDrawer.deleteConfirm', { domain: props.zone.domain, count: props.records.length }))) return;
     router.delete(props.panelRoute('dns.zones.destroy', { id: zoneId.value }), {
         preserveScroll: true,
         preserveState: true,
@@ -57,50 +60,50 @@ const deleteZone = () => {
                     <div class="flex flex-wrap items-center gap-2">
                         <h2 class="truncate text-lg font-semibold">{{ zone.domain }}</h2>
                         <ConnectionBadge :connection="connection" :checking="checking" />
-                        <span v-if="zone.status === 'disabled'" class="rounded-full bg-slate-200 px-2 py-0.5 text-xs text-slate-600 dark:bg-slate-700 dark:text-slate-300">Disabled</span>
-                        <span v-if="zone.website_id" class="rounded-full border border-blue-200 bg-blue-50 px-2 py-0.5 text-xs text-blue-700 dark:border-blue-800 dark:bg-blue-500/10 dark:text-blue-300">Website linked</span>
+                        <span v-if="zone.status === 'disabled'" class="rounded-full bg-slate-200 px-2 py-0.5 text-xs text-slate-600 dark:bg-slate-700 dark:text-slate-300">{{ t('dns.zoneDrawer.disabled') }}</span>
+                        <span v-if="zone.website_id" class="rounded-full border border-blue-200 bg-blue-50 px-2 py-0.5 text-xs text-blue-700 dark:border-blue-800 dark:bg-blue-500/10 dark:text-blue-300">{{ t('dns.zoneDrawer.websiteLinked') }}</span>
                     </div>
-                    <p class="mt-0.5 text-xs text-slate-500">{{ records.length }} records · Owner {{ zone.owner_name }} · Created by {{ zone.creator_name }}</p>
+                    <p class="mt-0.5 text-xs text-slate-500">{{ t('dns.zoneDrawer.meta', { count: records.length, owner: zone.owner_name, creator: zone.creator_name }) }}</p>
                 </div>
                 <div class="flex flex-wrap items-center gap-2">
-                    <button type="button" class="rounded-md bg-blue-600 px-3 py-2 text-xs font-medium text-white hover:bg-blue-700" @click="panel = 'scan'">Scan existing records</button>
-                    <button type="button" class="rounded-md border border-slate-300 px-3 py-2 text-xs hover:bg-slate-100 dark:border-slate-700 dark:hover:bg-slate-800" @click="panel = 'file'">Import zone file</button>
-                    <button type="button" class="rounded-md border border-slate-300 px-3 py-2 text-xs hover:bg-slate-100 dark:border-slate-700 dark:hover:bg-slate-800" @click="emit('find-replace')">Find &amp; replace</button>
-                    <a :href="panelRoute('dns.zones.export', { id: zoneId })" class="rounded-md border border-slate-300 px-3 py-2 text-xs hover:bg-slate-100 dark:border-slate-700 dark:hover:bg-slate-800">Export</a>
-                    <button type="button" class="rounded-md border border-slate-300 px-3 py-2 text-xs hover:bg-slate-100 dark:border-slate-700 dark:hover:bg-slate-800" @click="panel = 'settings'">Settings</button>
-                    <button type="button" class="rounded-md border border-red-300 px-3 py-2 text-xs text-red-700 hover:bg-red-50 dark:border-red-700 dark:text-red-300 dark:hover:bg-red-950" @click="deleteZone">Delete zone</button>
-                    <button type="button" title="Close" class="ml-1 h-9 w-9 rounded-md border border-slate-300 text-lg dark:border-slate-700" @click="emit('close')">×</button>
+                    <button type="button" class="rounded-md bg-blue-600 px-3 py-2 text-xs font-medium text-white hover:bg-blue-700" @click="panel = 'scan'">{{ t('dns.zoneDrawer.scan') }}</button>
+                    <button type="button" class="rounded-md border border-slate-300 px-3 py-2 text-xs hover:bg-slate-100 dark:border-slate-700 dark:hover:bg-slate-800" @click="panel = 'file'">{{ t('dns.zoneDrawer.importFile') }}</button>
+                    <button type="button" class="rounded-md border border-slate-300 px-3 py-2 text-xs hover:bg-slate-100 dark:border-slate-700 dark:hover:bg-slate-800" @click="emit('find-replace')">{{ t('dns.zoneDrawer.findReplace') }}</button>
+                    <a :href="panelRoute('dns.zones.export', { id: zoneId })" class="rounded-md border border-slate-300 px-3 py-2 text-xs hover:bg-slate-100 dark:border-slate-700 dark:hover:bg-slate-800">{{ t('dns.zoneDrawer.export') }}</a>
+                    <button type="button" class="rounded-md border border-slate-300 px-3 py-2 text-xs hover:bg-slate-100 dark:border-slate-700 dark:hover:bg-slate-800" @click="panel = 'settings'">{{ t('dns.zoneDrawer.settings') }}</button>
+                    <button type="button" class="rounded-md border border-red-300 px-3 py-2 text-xs text-red-700 hover:bg-red-50 dark:border-red-700 dark:text-red-300 dark:hover:bg-red-950" @click="deleteZone">{{ t('dns.zoneDrawer.delete') }}</button>
+                    <button type="button" :title="t('common.close')" class="ml-1 h-9 w-9 rounded-md border border-slate-300 text-lg dark:border-slate-700" @click="emit('close')">×</button>
                 </div>
             </div>
         </header>
 
         <div class="flex-1 space-y-5 overflow-y-auto p-6">
             <section v-if="connection?.status !== 'connected'" class="rounded-xl border border-amber-200 bg-amber-50 p-5 dark:border-amber-800 dark:bg-amber-500/10">
-                <h3 class="font-semibold text-amber-900 dark:text-amber-100">Connect {{ zone.domain }}</h3>
+                <h3 class="font-semibold text-amber-900 dark:text-amber-100">{{ t('dns.zoneDrawer.connect', { domain: zone.domain }) }}</h3>
                 <p class="mt-1 text-sm text-amber-800 dark:text-amber-200">
-                    <template v-if="connection?.status === 'unregistered'">This domain has no nameservers in public DNS yet. Is it registered?</template>
-                    <template v-else>At your domain registrar, replace the current nameservers with these. Changes usually show up within a few hours.</template>
+                    <template v-if="connection?.status === 'unregistered'">{{ t('dns.zoneDrawer.unregistered') }}</template>
+                    <template v-else>{{ t('dns.zoneDrawer.replaceNs') }}</template>
                 </p>
                 <div v-if="assigned.length" class="mt-4 grid gap-2 sm:grid-cols-2">
                     <div v-for="ns in assigned" :key="ns" class="flex items-center justify-between gap-2 rounded-lg border border-amber-200 bg-white px-3 py-2 dark:border-amber-800 dark:bg-slate-900">
                         <code class="truncate text-sm">{{ ns }}</code>
-                        <button type="button" class="shrink-0 rounded border border-slate-300 px-2 py-0.5 text-xs dark:border-slate-700" @click="copy(ns)">{{ copied === ns ? 'Copied' : 'Copy' }}</button>
+                        <button type="button" class="shrink-0 rounded border border-slate-300 px-2 py-0.5 text-xs dark:border-slate-700" @click="copy(ns)">{{ copied === ns ? t('dns.zoneDrawer.copied') : t('dns.zoneDrawer.copy') }}</button>
                     </div>
                 </div>
-                <p v-else class="mt-3 text-sm text-amber-800 dark:text-amber-200">This zone has no NS records. Set DNS_OUR_NAMESERVERS, or add nameservers on the Nameservers page.</p>
+                <p v-else class="mt-3 text-sm text-amber-800 dark:text-amber-200"><i18n-t keypath="dns.zoneDrawer.noNs" scope="global"><template #env>DNS_OUR_NAMESERVERS</template></i18n-t></p>
                 <div class="mt-4 flex flex-wrap items-center gap-3 text-xs text-amber-800 dark:text-amber-200">
-                    <span v-if="connection?.current?.length">Now: {{ connection.current.join(', ') }}</span>
-                    <button type="button" :disabled="checking" class="rounded-md border border-amber-300 bg-white px-3 py-1.5 font-medium text-amber-900 disabled:opacity-60 dark:border-amber-700 dark:bg-transparent dark:text-amber-100" @click="emit('recheck')">{{ checking ? 'Checking…' : 'Check again' }}</button>
+                    <span v-if="connection?.current?.length">{{ t('dns.zoneDrawer.now', { list: connection.current.join(', ') }) }}</span>
+                    <button type="button" :disabled="checking" class="rounded-md border border-amber-300 bg-white px-3 py-1.5 font-medium text-amber-900 disabled:opacity-60 dark:border-amber-700 dark:bg-transparent dark:text-amber-100" @click="emit('recheck')">{{ checking ? t('dns.zoneDrawer.checking') : t('dns.zoneDrawer.checkAgain') }}</button>
                 </div>
             </section>
             <section v-else class="rounded-xl border border-emerald-200 bg-emerald-50 px-5 py-3 text-sm text-emerald-800 dark:border-emerald-800 dark:bg-emerald-500/10 dark:text-emerald-200">
-                Connected: {{ zone.domain }} uses {{ connection.current.join(', ') }}, and this server answers for it.
+                {{ t('dns.zoneDrawer.connected', { domain: zone.domain, list: connection.current.join(', ') }) }}
             </section>
 
             <ZoneDnssec :key="`dnssec-${zone.domain}`" :url="panelRoute('dns.zones.dnssec', { id: zoneId })" />
 
             <section class="rounded-xl border border-slate-200 bg-white p-5 dark:border-slate-800 dark:bg-slate-900">
-                <h3 class="mb-4 text-sm font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">DNS records</h3>
+                <h3 class="mb-4 text-sm font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">{{ t('dns.zoneDrawer.records') }}</h3>
                 <ZoneRecordsTable :key="zone.domain" :zone="zone" :records="records" :panel-route="panelRoute" />
             </section>
         </div>

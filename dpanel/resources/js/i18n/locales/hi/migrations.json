@@ -1,0 +1,200 @@
+{
+    "index": {
+        "services": {
+            "cyberpanelSsh": {
+                "name": "SSH से CyberPanel / HestiaCP / aaPanel / Plesk",
+                "description": "SSH से कनेक्ट करें और वेबसाइटों को उनके डेटाबेस के साथ खोजें। पैनल का प्रकार स्वतः पहचाना जाता है।"
+            },
+            "cpanelFull": {
+                "name": "cPanel पूरा बैकअप",
+                "description": "पूरा cpmove अकाउंट या चुने हुए संसाधन बहाल करें।"
+            },
+            "dpanelFull": {
+                "name": "DPanel से DPanel",
+                "description": "पूरा DPanel बैकअप पैकेज इस सर्वर पर माइग्रेट करें।"
+            },
+            "cpanelPartial": {
+                "name": "cPanel आंशिक बैकअप",
+                "description": "cPanel से अलग-अलग डाउनलोड किए गए होम डायरेक्टरी और MySQL बैकअप इम्पोर्ट करें।"
+            },
+            "directadmin": {
+                "name": "DirectAdmin बैकअप",
+                "description": "किसी DirectAdmin उपयोगकर्ता को सभी या चुने हुए डोमेन और डेटाबेस के साथ माइग्रेट करें।"
+            },
+            "plesk": {
+                "name": "Plesk बैकअप आर्काइव",
+                "description": "अपलोड की गई .tar Plesk बैकअप फ़ाइल से इम्पोर्ट करें। लाइव Plesk सर्वर के लिए इसके बजाय ऊपर दिया SSH से CyberPanel / HestiaCP / aaPanel / Plesk उपयोग करें।"
+            },
+            "wordpress": {
+                "name": "WordPress माइग्रेशन",
+                "description": "किसी WordPress साइट (फ़ाइलें + डेटाबेस) को यहाँ की वेबसाइट में ले जाएँ; उसका पता नए डोमेन पर अपडेट हो जाता है।"
+            }
+        },
+        "archives": {
+            "cpanel": {
+                "title": "cPanel पूरा बैकअप",
+                "description": "cpmove-USER.tar.gz और Backup Wizard का backup-MM.DD.YYYY_HH-MM-SS_USER.tar.gz सपोर्ट करता है। जाँच के बाद पूरा अकाउंट बहाल करें या डोमेन, फ़ाइलें और डेटाबेस अलग-अलग चुनें।"
+            },
+            "cpanelPartial": {
+                "title": "cPanel आंशिक बैकअप",
+                "description": "cPanel → Backup से होम डायरेक्टरी बैकअप और कोई भी MySQL डेटाबेस बैकअप अपलोड करें। आंशिक बैकअप में अकाउंट दर्ज नहीं होता, इसलिए वह सिस्टम उपयोगकर्ता (और मुख्य डोमेन) दर्ज करें जिस पर इन्हें बहाल करना है।"
+            },
+            "directadmin": {
+                "title": "DirectAdmin बैकअप",
+                "description": "DirectAdmin में बना उपयोगकर्ता बैकअप (user.RESELLER.USER.tar.gz या .tar.zst) अपलोड करें। डोमेन DirectAdmin की तरह /home/USER/domains/DOMAIN/public_html में बहाल होते हैं।"
+            },
+            "plesk": {
+                "title": "Plesk बैकअप आर्काइव",
+                "description": "Plesk Backup Manager से बिना पासवर्ड सुरक्षा के बनाया गया बैकअप अपलोड करें। हर डोमेन /home/USER/domains/DOMAIN में बहाल होता है, साइट httpdocs में।"
+            }
+        },
+        "title": {
+            "dpanel": "DPanel से DPanel माइग्रेशन",
+            "cyberpanelSsh": "CyberPanel / HestiaCP / aaPanel / Plesk SSH माइग्रेशन",
+            "wordpress": "WordPress माइग्रेशन",
+            "default": "माइग्रेशन इम्पोर्ट"
+        },
+        "chunkProgress": "DPanel पैकेज अपलोड हो रहा है… {total} में से {done} हिस्से भेजे गए।",
+        "uploadComplete": "अपलोड पूरा हुआ। DPanel पैकेज की जाँच चल रही है।",
+        "packageUploadFailed": "DPanel पैकेज अपलोड विफल हुआ।",
+        "uploadFailed": "अपलोड विफल हुआ।",
+        "restoreNotStarted": "DPanel बहाली शुरू नहीं हो सकी।",
+        "restoreFailed": "बहाली विफल हुई।",
+        "removeConfirm": "{name} हटाएँ?",
+        "chooseService": "माइग्रेशन सेवा चुनें",
+        "chooseServiceHelp": "चुनें कि बैकअप कहाँ से आया और आपके पास किस प्रकार का पैकेज है।",
+        "comingSoon": "जल्द आ रहा है",
+        "allServices": "सभी माइग्रेशन सेवाएँ",
+        "wp": {
+            "intro": "पहले वेबसाइट बनाएँ, फिर उसमें इम्पोर्ट करें। आपको WordPress फ़ाइलें ({config} वाले फ़ोल्डर की .zip या .tar.gz) और डेटाबेस एक्सपोर्ट (.sql, जैसे phpMyAdmin या {cmd} से) चाहिए।",
+            "step1": "फ़ाइलें वेबसाइट की फ़ाइलों की जगह ले लेती हैं; मौजूदा फ़ाइलें पहले उसके ट्रैश में रखी जाती हैं।",
+            "step2": "डेटाबेस इम्पोर्ट होता है, और {config} को उसकी ओर सेट किया जाता है।",
+            "step3": "साइट का पता ({a}, {b}) और पोस्ट के लिंक नए डोमेन पर चले जाते हैं।",
+            "target": "लक्ष्य वेबसाइट चुनें",
+            "importHere": "यहाँ WordPress इम्पोर्ट करें",
+            "noWebsite": "अभी कोई वेबसाइट नहीं। पहले डोमेन के लिए {link}।",
+            "createWebsite": "वेबसाइट बनाएँ"
+        },
+        "dpanel": {
+            "title": "DPanel पूरा माइग्रेशन",
+            "description": "DPanel द्वारा बनाया गया पूरा बैकअप पैकेज अपलोड करें। बहाली से पहले पैकेज जाँचा जाता है।",
+            "warningTitle": "पूरे पैनल की बहाली की चेतावनी:",
+            "warning": "बहाली लक्ष्य सर्वर की {env}, {storage} डेटा और कॉन्फ़िगर किए गए पैनल डेटाबेस को स्रोत बैकअप से बदल देती है। यह केवल-वेबसाइट माइग्रेशन नहीं है। पहले लक्ष्य का अलग बैकअप बनाएँ और केवल इच्छित लक्ष्य सर्वर पर ही आगे बढ़ें।"
+        },
+        "partial": {
+            "user": "सिस्टम उपयोगकर्ता",
+            "domain": "मुख्य डोमेन",
+            "domainHelp": "(public_html से सर्व किया जाता है)"
+        },
+        "inspecting": "जाँच हो रही है…",
+        "uploadInspect": "अपलोड करें और जाँचें",
+        "uploading": "अपलोड हो रहा है…",
+        "uploaded": "अपलोड किए गए माइग्रेशन",
+        "uploadedHelp": "किसी भी रखे गए आर्काइव से पूरी या आंशिक बहाली जारी रखें।",
+        "fullBackup": "पूरा DPanel बैकअप",
+        "account": "अकाउंट: {account}",
+        "status": {
+            "uploading": "अपलोड हो रहा है",
+            "inspecting": "जाँच हो रही है",
+            "ready": "तैयार",
+            "restoring": "बहाल हो रहा है",
+            "completed": "पूर्ण",
+            "failed": "विफल",
+            "restore_failed": "बहाली विफल",
+            "prepared": "तैयार किया गया",
+            "expired": "समाप्त",
+            "downloading": "डाउनलोड हो रहा है",
+            "downloaded": "डाउनलोड हुआ",
+            "download_failed": "डाउनलोड विफल"
+        },
+        "remove": "हटाएँ",
+        "connected": "{site} ({framework}) नए लॉगिन के साथ डेटाबेस {database} से कनेक्ट है।",
+        "validationDone": "पैकेज जाँच पूरी हुई।",
+        "typeRestore": "इस DPanel सर्वर को बदलने की पुष्टि के लिए {word} टाइप करें",
+        "startingRestore": "पूरी बहाली शुरू हो रही है…",
+        "restoreFull": "पूरा DPanel बैकअप बहाल करें",
+        "fullAccount": "पूरा अकाउंट बहाल करें",
+        "fullAccountHelp": "सभी डोमेन, होम फ़ाइलें और डेटाबेस",
+        "type": {
+            "domains": "डोमेन",
+            "files": "फ़ाइलें",
+            "databases": "डेटाबेस"
+        },
+        "clearAll": "सभी साफ़ करें",
+        "selectAll": "सभी चुनें",
+        "noneFound": "कुछ नहीं मिला",
+        "restoring": "बहाल हो रहा है…",
+        "restoreSelected": "चुने हुए आइटम बहाल करें",
+        "empty": "अभी कोई माइग्रेशन आर्काइव अपलोड नहीं हुआ।"
+    },
+    "ssh": {
+        "loaded": "{name} लोड हुआ।",
+        "loadFailed": "सहेजा गया SSH कनेक्शन लोड नहीं हो सका।",
+        "deleteConfirm": "यह सहेजा गया SSH कनेक्शन हटाएँ?",
+        "deleted": "सहेजा गया SSH कनेक्शन हटाया गया।",
+        "deleteFailed": "सहेजा गया SSH कनेक्शन हटाया नहीं जा सका।",
+        "connected": "{host} से कनेक्ट हुआ। {count} वेबसाइटें मिलीं।",
+        "inspectFailed": "CyberPanel सर्वर की जाँच नहीं हो सकी।",
+        "stepFailed": "माइग्रेशन चरण विफल हुआ। बताई गई समस्या ठीक करने के बाद फिर से कोशिश करें।",
+        "creatingArchive": "रिमोट फ़ाइलों का आर्काइव बन रहा है…",
+        "creatingDump": "रिमोट डेटाबेस डंप बन रहा है…",
+        "downloadStarted": "{file} डाउनलोड शुरू हुआ।",
+        "downloadFailed": "चुना गया स्रोत डाउनलोड नहीं हो सका।",
+        "connectTitle": "SSH से कनेक्ट करें",
+        "connectHelp": "CyberPanel, HestiaCP, aaPanel और Plesk स्वतः पहचाने जाते हैं। क्रेडेंशियल वर्तमान अनुरोध के लिए उपयोग होते हैं और केवल तभी संग्रहीत होते हैं जब आप SSH पहुँच सहेजें सक्षम करते हैं।",
+        "selectSaved": "सहेजा गया पैनल चुनें",
+        "useConnection": "कनेक्शन उपयोग करें",
+        "delete": "हटाएँ",
+        "host": "होस्ट",
+        "port": "SSH पोर्ट",
+        "username": "यूज़रनेम",
+        "auth": "प्रमाणीकरण",
+        "password": "पासवर्ड",
+        "privateKey": "प्राइवेट कुंजी",
+        "passphrase": "कुंजी पासफ़्रेज़",
+        "optional": "(वैकल्पिक)",
+        "saveAccess": "SSH पहुँच सहेजें",
+        "saveAccessHelp": "ज़रूरी न हो तो अनुशंसित नहीं। पासवर्ड/प्राइवेट कुंजी DPanel के डेटाबेस में एन्क्रिप्ट की जाएगी। किसी अविश्वसनीय पैनल इंस्टॉलेशन पर इसे कभी सक्षम न करें।",
+        "connectionName": "कनेक्शन का नाम",
+        "connectionNamePlaceholder": "प्रोडक्शन CyberPanel",
+        "connecting": "कनेक्ट हो रहा है…",
+        "connect": "कनेक्ट करें और खोजें",
+        "sourceTitle": "एक माइग्रेशन स्रोत चुनें",
+        "directories": "{count} डायरेक्टरी",
+        "databases": "{count} डेटाबेस",
+        "domain": "डोमेन",
+        "optionalHelper": "(वैकल्पिक सहायक)",
+        "customSelection": "कस्टम चयन",
+        "sourceDatabase": "स्रोत डेटाबेस",
+        "noDatabase": "कोई डेटाबेस नहीं",
+        "sourcePath": "स्रोत फ़ाइल स्थान",
+        "sourcePathHelp": "कोई भी मान्य स्थान टाइप करें या खोजी गई डायरेक्टरी चुनें।",
+        "phpVersion": "PHP वर्ज़न",
+        "asSubdomain": "सबडोमेन के रूप में बनाएँ",
+        "parentDomain": "पैरेंट डोमेन",
+        "parentHelp": "मौजूदा पैरेंट चुनें या नया टाइप करें। गायब पैरेंट स्वचालित रूप से बनाया जाएगा।",
+        "subdomainName": "सबडोमेन का नाम",
+        "willCreate": "बनाया जाएगा: {domain}",
+        "newDomain": "नया DPanel डोमेन",
+        "onlyThis": "केवल यह फ़ाइल स्थान और यह डेटाबेस संभाला जाएगा। दूसरी वेबसाइटें और डेटाबेस शामिल नहीं होंगे।",
+        "preparingFiles": "फ़ाइलें तैयार हो रही हैं…",
+        "downloadFiles": "चुनी गई फ़ाइलें डाउनलोड करें",
+        "preparingDatabase": "डेटाबेस तैयार हो रहा है…",
+        "downloadDatabase": "चुना गया डेटाबेस डाउनलोड करें",
+        "step": {
+            "prepare": "अस्थायी स्टोरेज तैयार करें",
+            "download": "चुना गया स्रोत डाउनलोड करें",
+            "website": "वेबसाइट अकाउंट बनाएँ",
+            "restore": "फ़ाइलें ले जाएँ और डेटाबेस इम्पोर्ट करें",
+            "verify": "वेबसाइट लाइव है, सत्यापित करें"
+        },
+        "stepStatus": {
+            "waiting": "इंतज़ार",
+            "running": "चल रहा है",
+            "completed": "पूर्ण",
+            "failed": "विफल"
+        },
+        "runningStep": "वर्तमान चरण चल रहा है…",
+        "migrate": "बनाएँ और चरण-दर-चरण माइग्रेट करें"
+    }
+}

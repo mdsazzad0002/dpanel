@@ -3,6 +3,9 @@ import { computed, ref, watch } from 'vue';
 import SideDrawer from './SideDrawer.vue';
 import { FORMAT_GROUPS, FORMATS, typeOf, valueFor } from '../../helpers/sqliteFormats';
 import { cellText } from '../../helpers/sqliteCells';
+import { useI18n } from 'vue-i18n';
+
+const { t } = useI18n();
 
 // Edit one row (rowid set) or add a new one (rowid null) in a drawer.
 const props = defineProps({
@@ -25,9 +28,9 @@ const error = ref('');
 const isInsert = computed(() => props.rowid === null);
 
 function affinity(declared) {
-    const t = String(declared || '').toUpperCase();
-    if (t.includes('INT')) return 'integer';
-    if (/REAL|FLOA|DOUB|NUMERIC|DECIMAL/.test(t)) return 'real';
+    const decl = String(declared || '').toUpperCase();
+    if (decl.includes('INT')) return 'integer';
+    if (/REAL|FLOA|DOUB|NUMERIC|DECIMAL/.test(decl)) return 'real';
     return 'text';
 }
 
@@ -109,8 +112,8 @@ const typeBadge = { text: 'TEXT', integer: 'INT', real: 'REAL', null: 'NULL' };
 <template>
     <SideDrawer
         :open="open"
-        :title="isInsert ? `Add row to ${table.name}` : `Edit row ${rowid}`"
-        :subtitle="isInsert ? 'Empty fields use the column default' : table.name"
+        :title="isInsert ? t('fileManager.sqlite.row.addTitle', { table: table.name }) : t('fileManager.sqlite.row.editTitle', { rowid })"
+        :subtitle="isInsert ? t('fileManager.sqlite.row.emptyDefault') : table.name"
         :icon="isInsert ? 'bi-plus-square' : 'bi-pencil-square'"
         @close="emit('close')"
     >
@@ -130,29 +133,29 @@ const typeBadge = { text: 'TEXT', integer: 'INT', real: 'REAL', null: 'NULL' };
                         :class="f.type === 'null' ? 'bg-slate-100 text-slate-500 dark:bg-slate-800' : 'bg-sky-100 text-sky-700 dark:bg-sky-900/40 dark:text-sky-300'">
                         {{ typeBadge[f.type] }}
                     </span>
-                    <button v-if="!f.locked && changed(f)" type="button" class="text-slate-400 hover:text-slate-700 dark:hover:text-slate-200" title="Undo changes to this field" @click="reset(f)">
+                    <button v-if="!f.locked && changed(f)" type="button" class="text-slate-400 hover:text-slate-700 dark:hover:text-slate-200" :title="t('fileManager.sqlite.row.undo')" @click="reset(f)">
                         <i class="bi bi-arrow-counterclockwise"></i>
                     </button>
                 </div>
 
                 <p v-if="f.locked" class="rounded bg-slate-50 px-2 py-1.5 text-xs italic text-violet-600 dark:bg-slate-900">
-                    {{ cellText(f.value) }} — not loaded in full; change it with SQL.
+                    {{ cellText(f.value) }} — {{ t('fileManager.sqlite.row.locked') }}
                 </p>
                 <div v-else class="flex items-start gap-1.5">
                     <textarea v-if="multiline(f)" v-model="f.text" rows="4" :disabled="f.type === 'null' || f.busy" spellcheck="false"
                         class="min-w-0 flex-1 rounded-md border border-slate-300 px-2 py-1 font-mono text-xs disabled:bg-slate-50 disabled:text-slate-400 dark:border-slate-700 dark:bg-slate-900 dark:disabled:bg-slate-900/50"
                         @input="f.touched = true"></textarea>
                     <input v-else v-model="f.text" :disabled="f.type === 'null' || f.busy"
-                        :placeholder="f.type === 'null' ? 'NULL' : (isInsert && f.col.pk ? 'auto' : (isInsert && f.col.default !== null ? `default: ${f.col.default}` : ''))"
+                        :placeholder="f.type === 'null' ? 'NULL' : (isInsert && f.col.pk ? t('fileManager.sqlite.row.auto') : (isInsert && f.col.default !== null ? t('fileManager.sqlite.row.defaultPlaceholder', { value: f.col.default }) : ''))"
                         class="min-w-0 flex-1 rounded-md border border-slate-300 px-2 py-1 font-mono text-xs disabled:bg-slate-50 disabled:text-slate-400 dark:border-slate-700 dark:bg-slate-900 dark:disabled:bg-slate-900/50"
                         @input="f.touched = true" />
                     <select
                         :disabled="f.busy"
-                        title="Convert / change format"
+                        :title="t('fileManager.sqlite.row.convert')"
                         class="w-28 shrink-0 rounded-md border border-slate-300 px-1 py-1 text-xs dark:border-slate-700 dark:bg-slate-900"
                         @change="applyFormat(f, $event.target.value, $event.target)"
                     >
-                        <option value="">{{ f.busy ? 'Working…' : 'Format…' }}</option>
+                        <option value="">{{ f.busy ? t('fileManager.sqlite.row.working') : t('fileManager.sqlite.row.format') }}</option>
                         <optgroup v-for="g in FORMAT_GROUPS" :key="g.label" :label="g.label">
                             <option v-for="o in g.items" :key="o.id" :value="o.id">{{ o.label }}</option>
                         </optgroup>
@@ -166,13 +169,13 @@ const typeBadge = { text: 'TEXT', integer: 'INT', real: 'REAL', null: 'NULL' };
 
         <template #footer>
             <button v-if="!isInsert" type="button" class="rounded-md border border-red-300 px-3 py-1.5 text-xs text-red-600 hover:bg-red-50 dark:border-red-800 dark:hover:bg-red-950" @click="emit('delete')">
-                <i class="bi bi-trash"></i> Delete row
+                <i class="bi bi-trash"></i> {{ t('fileManager.sqlite.grid.deleteRow') }}
             </button>
-            <span class="ml-auto text-xs text-slate-500">{{ changedCount }} field(s) changed</span>
-            <button type="button" class="rounded-md border border-slate-300 px-3 py-1.5 text-xs dark:border-slate-700" @click="emit('close')">Cancel</button>
+            <span class="ml-auto text-xs text-slate-500">{{ t('fileManager.sqlite.row.changed', { count: changedCount }) }}</span>
+            <button type="button" class="rounded-md border border-slate-300 px-3 py-1.5 text-xs dark:border-slate-700" @click="emit('close')">{{ t('common.cancel') }}</button>
             <button type="button" :disabled="saving || (!isInsert && !changedCount)" class="rounded-md bg-blue-600 px-3 py-1.5 text-xs text-white hover:bg-blue-700 disabled:opacity-50" @click="save">
                 <i v-if="saving" class="bi bi-arrow-repeat inline-block animate-spin"></i>
-                {{ isInsert ? 'Insert row' : 'Save changes' }}
+                {{ isInsert ? t('fileManager.sqlite.row.insert') : t('fileManager.sqlite.row.save') }}
             </button>
         </template>
     </SideDrawer>

@@ -5,6 +5,9 @@ import SearchableSelect from '@/Components/SearchableSelect.vue';
 import { Head, Link, useForm, usePage } from '@inertiajs/vue3';
 import { computed } from 'vue';
 import { isClosedRoute } from '@/navigation/panelMenu';
+import { useI18n } from 'vue-i18n';
+
+const { t } = useI18n();
 
 const props = defineProps({
     websiteDomains: {
@@ -49,17 +52,17 @@ const isMongodb = computed(() => form.engine === 'mongodb');
 const isLocalOnly = computed(() => isPostgresql.value || isMongodb.value);
 const localHost = computed(() => (isMongodb.value ? '127.0.0.1:27017' : '127.0.0.1:5432'));
 const engineOptions = computed(() => [
-    { value: 'mariadb', label: 'MariaDB / MySQL', hint: 'Opens in phpMyAdmin', disabled: false },
+    { value: 'mariadb', label: 'MariaDB / MySQL', hint: t('databases.create.opensIn', { tool: 'phpMyAdmin' }), disabled: false },
     {
         value: 'postgresql',
         label: 'PostgreSQL',
-        hint: !props.postgresql.installed ? 'Not installed on this server' : 'Opens in pgAdmin',
+        hint: !props.postgresql.installed ? t('databases.create.notInstalled') : t('databases.create.opensIn', { tool: 'pgAdmin' }),
         disabled: !props.postgresql.installed,
     },
     {
         value: 'mongodb',
         label: 'MongoDB',
-        hint: !props.mongodb.installed ? 'Not installed on this server' : 'Opens in Mongo Admin',
+        hint: !props.mongodb.installed ? t('databases.create.notInstalled') : t('databases.create.opensIn', { tool: 'Mongo Admin' }),
         disabled: !props.mongodb.installed,
     },
 ].filter((option) => !isClosedRoute(`databases.${option.value}`, page.props.platform?.closedRoutes ?? [])));
@@ -137,26 +140,26 @@ watch(
 </script>
 
 <template>
-    <Head title="Create Database" />
+    <Head :title="t('databases.create.title')" />
 
     <AuthenticatedLayout>
         <template #header>
             <div>
-                <h1 class="text-lg font-semibold">Create Database</h1>
-                <p class="text-sm text-slate-500 dark:text-slate-400">Create a new MariaDB, PostgreSQL or MongoDB database and user. Leave the password blank to auto-generate it on save.</p>
+                <h1 class="text-lg font-semibold">{{ t('databases.create.title') }}</h1>
+                <p class="text-sm text-slate-500 dark:text-slate-400">{{ t('databases.create.subtitle') }}</p>
             </div>
         </template>
 
         <div class="space-y-4">
             <div class="flex justify-end">
                 <Link :href="panelRoute('databases.list')" class="rounded-md border border-slate-300 px-3 py-2 text-sm hover:bg-slate-100 dark:border-slate-700 dark:hover:bg-slate-800">
-                    List Databases
+                    {{ t('databases.create.list') }}
                 </Link>
             </div>
 
             <form class="grid gap-4 rounded-xl border border-slate-200 bg-white p-6 md:grid-cols-2 dark:border-slate-800 dark:bg-slate-900" @submit.prevent="submit">
                 <fieldset class="md:col-span-2">
-                    <legend class="mb-1 block text-sm">Database Engine</legend>
+                    <legend class="mb-1 block text-sm">{{ t('databases.create.engine') }}</legend>
                     <div class="grid gap-2 sm:grid-cols-3">
                         <label
                             v-for="option in engineOptions"
@@ -177,50 +180,50 @@ watch(
                         </label>
                     </div>
                     <p v-if="isPostgresql && !postgresql.active" class="mt-1 text-xs text-amber-600 dark:text-amber-400">
-                        PostgreSQL is turned off. Turn it on under Database Management &rarr; PostgreSQL first, or the database will be saved as failed.
+                        {{ t('databases.create.engineOff', { engine: 'PostgreSQL' }) }}
                     </p>
                     <p v-if="isMongodb && !mongodb.active" class="mt-1 text-xs text-amber-600 dark:text-amber-400">
-                        MongoDB is turned off. Turn it on under Database Management &rarr; MongoDB first, or the database will be saved as failed.
+                        {{ t('databases.create.engineOff', { engine: 'MongoDB' }) }}
                     </p>
                     <p v-if="form.errors.engine" class="mt-1 text-xs text-red-600">{{ form.errors.engine }}</p>
                 </fieldset>
                 <div class="md:col-span-2">
-                    <label class="mb-1 block text-sm">Website Domain</label>
+                    <label class="mb-1 block text-sm">{{ t('databases.form.websiteDomain') }}</label>
                     <SearchableSelect
                         v-model="form.domain"
                         :options="websiteDomainOptions"
-                        placeholder="Select domain"
-                        search-placeholder="Search domains…"
+                        :placeholder="t('databases.form.selectDomain')"
+                        :search-placeholder="t('databases.create.searchDomains')"
                     />
                     <p v-if="form.errors.domain" class="mt-1 text-xs text-red-600">{{ form.errors.domain }}</p>
                     <p v-if="websiteDomains.length === 0" class="mt-1 text-xs text-amber-600">
-                        No website domains found. Create website first, or type domain manually below.
+                        {{ t('databases.create.noDomains') }}
                     </p>
                 </div>
                 <div class="md:col-span-2">
-                    <label class="mb-1 block text-sm">Domain (Manual Input)</label>
+                    <label class="mb-1 block text-sm">{{ t('databases.form.manualDomain') }}</label>
                     <input v-model="form.domain" type="text" placeholder="example.com" class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-800" />
                 </div>
                 <div>
-                    <label class="mb-1 block text-sm">Database Name</label>
+                    <label class="mb-1 block text-sm">{{ t('databases.form.name') }}</label>
                     <div class="flex rounded-md border border-slate-300 bg-white focus-within:border-blue-500 dark:border-slate-700 dark:bg-slate-800"><span class="flex items-center border-r border-slate-300 bg-slate-50 px-3 font-mono text-sm text-slate-500 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-400">{{ selectedOwnerPrefix ? `${selectedOwnerPrefix}_` : 'owner_' }}</span><input v-model="form.database_name" maxlength="31" required type="text" placeholder="domain_db" class="min-w-0 flex-1 border-0 bg-transparent px-3 py-2 text-sm focus:ring-0" /></div>
-                    <p class="mt-1 text-xs text-slate-500 dark:text-slate-400">Website owner prefix is fixed; the remaining part is editable.</p>
+                    <p class="mt-1 text-xs text-slate-500 dark:text-slate-400">{{ t('databases.create.prefixHelp') }}</p>
                     <p v-if="form.errors.database_name" class="mt-1 text-xs text-red-600">{{ form.errors.database_name }}</p>
                 </div>
                 <div>
-                    <label class="mb-1 block text-sm">Database User</label>
+                    <label class="mb-1 block text-sm">{{ t('databases.form.user') }}</label>
                     <div class="flex rounded-md border border-slate-300 bg-white focus-within:border-blue-500 dark:border-slate-700 dark:bg-slate-800"><span class="flex items-center border-r border-slate-300 bg-slate-50 px-3 font-mono text-sm text-slate-500 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-400">{{ selectedOwnerPrefix ? `${selectedOwnerPrefix}_` : 'owner_' }}</span><input v-model="form.database_user" maxlength="31" required type="text" placeholder="domain_user" class="min-w-0 flex-1 border-0 bg-transparent px-3 py-2 text-sm focus:ring-0" /></div>
-                    <p class="mt-1 text-xs text-slate-500 dark:text-slate-400">Website owner prefix is fixed; the remaining part is editable.</p>
-                    <div v-if="form.domain" class="mt-2 flex flex-wrap items-center gap-1.5 text-xs"><span class="text-slate-500 dark:text-slate-400">Suggestions:</span><button v-for="suggestion in databaseUserSuggestions" :key="suggestion" type="button" class="rounded-full border border-slate-200 bg-slate-50 px-2 py-1 font-mono text-slate-600 hover:border-blue-300 hover:text-blue-600 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300" @click="form.database_user = suggestion">{{ suggestion }}</button></div>
+                    <p class="mt-1 text-xs text-slate-500 dark:text-slate-400">{{ t('databases.create.prefixHelp') }}</p>
+                    <div v-if="form.domain" class="mt-2 flex flex-wrap items-center gap-1.5 text-xs"><span class="text-slate-500 dark:text-slate-400">{{ t('databases.create.suggestions') }}</span><button v-for="suggestion in databaseUserSuggestions" :key="suggestion" type="button" class="rounded-full border border-slate-200 bg-slate-50 px-2 py-1 font-mono text-slate-600 hover:border-blue-300 hover:text-blue-600 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300" @click="form.database_user = suggestion">{{ suggestion }}</button></div>
                     <p v-if="form.errors.database_user" class="mt-1 text-xs text-red-600">{{ form.errors.database_user }}</p>
                 </div>
                 <div>
-                    <label class="mb-1 block text-sm">Database Password</label>
+                    <label class="mb-1 block text-sm">{{ t('databases.form.password') }}</label>
                     <div class="flex items-center gap-2">
                         <input
                             v-model="form.database_password"
                             :type="showPassword ? 'text' : 'password'"
-                            placeholder="Auto-generated if blank"
+                            :placeholder="t('databases.form.autoGenerated')"
                             class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-800"
                         />
                         <button
@@ -228,46 +231,46 @@ watch(
                             class="rounded-md border border-slate-300 px-3 py-2 text-xs hover:bg-slate-100 dark:border-slate-700 dark:hover:bg-slate-800"
                             @click="showPassword = !showPassword"
                         >
-                            {{ showPassword ? 'Hide' : 'Show' }}
+                            {{ showPassword ? t('databases.form.hide') : t('databases.form.show') }}
                         </button>
                         <button
                             type="button"
                             class="rounded-md border border-blue-300 px-3 py-2 text-xs text-blue-700 hover:bg-blue-50 dark:border-blue-700 dark:text-blue-400 dark:hover:bg-blue-900/20"
                             @click="generatePassword"
                         >
-                            Generate
+                            {{ t('databases.form.generate') }}
                         </button>
                     </div>
-                    <p class="mt-1 text-xs text-slate-500 dark:text-slate-400">If left empty, the server will generate a strong password and save it with the request.</p>
+                    <p class="mt-1 text-xs text-slate-500 dark:text-slate-400">{{ t('databases.form.passwordHelp') }}</p>
                     <p v-if="form.errors.database_password" class="mt-1 text-xs text-red-600">{{ form.errors.database_password }}</p>
                 </div>
                 <div v-if="!isLocalOnly">
                     <div class="mb-1 flex items-center justify-between">
-                        <label class="block text-sm">Host</label>
+                        <label class="block text-sm">{{ t('databases.form.host') }}</label>
                         <label class="flex items-center gap-1.5 text-xs text-slate-500 dark:text-slate-400">
                             <input type="checkbox" :checked="useRemoteHost" @change="toggleRemoteHost" />
-                            Use remote database host
+                            {{ t('databases.form.useRemote') }}
                         </label>
                     </div>
                     <input
                         v-model="form.database_host"
                         type="text"
                         :disabled="!useRemoteHost"
-                        placeholder="203.0.113.10 or db.example.com"
+                        :placeholder="t('databases.form.hostPlaceholder')"
                         class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm disabled:bg-slate-100 disabled:text-slate-500 dark:border-slate-700 dark:bg-slate-800 dark:disabled:bg-slate-900 dark:disabled:text-slate-500"
                     />
                     <p v-if="useRemoteHost" class="mt-1 text-xs text-amber-600 dark:text-amber-400">
-                        The remote server must accept connections from this panel's IP, and a database API (dPanel_DATABASE_API_URL) must be configured to actually create the database there.
+                        <i18n-t keypath="databases.form.remoteHelp" scope="global"><template #env>dPanel_DATABASE_API_URL</template></i18n-t>
                     </p>
                     <p v-if="form.errors.database_host" class="mt-1 text-xs text-red-600">{{ form.errors.database_host }}</p>
                 </div>
                 <div v-if="isLocalOnly">
-                    <label class="mb-1 block text-sm">Host</label>
+                    <label class="mb-1 block text-sm">{{ t('databases.form.host') }}</label>
                     <input :value="localHost" type="text" disabled class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm disabled:bg-slate-100 disabled:text-slate-500 dark:border-slate-700 dark:bg-slate-800 dark:disabled:bg-slate-900" />
-                    <p class="mt-1 text-xs text-slate-500 dark:text-slate-400">{{ isMongodb ? 'Created on this server. The user owns only this database; MongoDB shows the database once it holds data.' : 'Created on this server with UTF8 encoding.' }}</p>
+                    <p class="mt-1 text-xs text-slate-500 dark:text-slate-400">{{ isMongodb ? t('databases.create.mongoLocal') : t('databases.create.pgLocal') }}</p>
                 </div>
                 <div v-if="!isLocalOnly">
-                    <label class="mb-1 block text-sm">Charset</label>
+                    <label class="mb-1 block text-sm">{{ t('databases.form.charset') }}</label>
                     <select v-model="form.charset" class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-800">
                         <option value="utf8mb4">utf8mb4</option>
                         <option value="utf8">utf8</option>
@@ -276,7 +279,7 @@ watch(
                     <p v-if="form.errors.charset" class="mt-1 text-xs text-red-600">{{ form.errors.charset }}</p>
                 </div>
                 <div v-if="!isLocalOnly">
-                    <label class="mb-1 block text-sm">Collation</label>
+                    <label class="mb-1 block text-sm">{{ t('databases.form.collation') }}</label>
                     <select v-model="form.collation" class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-800">
                         <option value="utf8mb4_unicode_ci">utf8mb4_unicode_ci</option>
                         <option value="utf8mb4_general_ci">utf8mb4_general_ci</option>
@@ -287,7 +290,7 @@ watch(
                 </div>
                 <div class="md:col-span-2">
                     <button type="submit" :disabled="form.processing" class="rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-60">
-                        Create Database
+                        {{ t('databases.create.title') }}
                     </button>
                 </div>
             </form>

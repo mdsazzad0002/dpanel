@@ -1,5 +1,8 @@
 <script setup>
 import { computed } from 'vue';
+import { useI18n } from 'vue-i18n';
+
+const { t } = useI18n();
 
 // Every file in the set, grouped, with its size, where it goes and who uses it.
 const props = defineProps({
@@ -23,13 +26,13 @@ const rows = computed(() => Object.keys(props.groupLabels).map((group) => ({
             ...image,
             file: props.files.find((f) => f.name === image.name) || null,
         })),
-        ...props.textFiles.filter((t) => t.group === group).map((t) => ({ ...t, text: true, file: { blob: new Blob([t.content]) } })),
+        ...props.textFiles.filter((tf) => tf.group === group).map((tf) => ({ ...tf, text: true, file: { blob: new Blob([tf.content]) } })),
     ],
 })));
 const dims = (item) => {
-    if (item.text) return 'text';
+    if (item.text) return t('seo.icons.dimText');
     if (item.sizes) return item.sizes.map((s) => `${s}×${s}`).join(', ');
-    if (item.vectorOnly) return 'vector';
+    if (item.vectorOnly) return t('seo.icons.dimVector');
     return `${item.width}×${item.height}`;
 };
 const kb = (bytes) => (bytes < 1024 ? `${bytes} B` : `${(bytes / 1024).toFixed(bytes < 10240 ? 1 : 0)} KB`);
@@ -39,7 +42,7 @@ const box = (item) => (item.width && item.width <= 64 ? `${item.width}px` : null
 
 <template>
     <section class="rounded-xl border border-slate-200 bg-white dark:border-slate-700 dark:bg-slate-800">
-        <h2 class="border-b border-slate-100 px-4 py-3 text-sm font-semibold dark:border-slate-700">Size map</h2>
+        <h2 class="border-b border-slate-100 px-4 py-3 text-sm font-semibold dark:border-slate-700">{{ t('seo.icons.sizeMap') }}</h2>
         <div v-for="row in rows" :key="row.group" class="border-b border-slate-100 last:border-0 dark:border-slate-700">
             <label class="flex cursor-pointer items-center gap-2 bg-slate-50 px-4 py-2 text-xs font-semibold uppercase tracking-wide text-slate-500 dark:bg-slate-900/50 dark:text-slate-400">
                 <input type="checkbox" :checked="row.enabled" @change="$emit('toggle', row.group)" class="rounded border-slate-300" />{{ row.label }}

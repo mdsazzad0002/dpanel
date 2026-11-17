@@ -1,0 +1,11 @@
+{
+    "title": "IP ঠিকানা",
+    "help": "এই website যে ঠিকানায় চলে। সংরক্ষণ করলে এই server-এর DNS zone-এ এর A/AAAA record সেই ঠিকানায় যায়।",
+    "followsParent": "{parent}-এর ঠিকানা {address}-এ চলে।",
+    "main": "main",
+    "dedicated": "dedicated",
+    "save": "IP বদলান",
+    "saving": "বদলানো হচ্ছে…",
+    "loadFailed": "IP ঠিকানা আনা যায়নি।",
+    "saveFailed": "IP ঠিকানা বদলানো যায়নি।"
+}

@@ -3,6 +3,9 @@ import { computed } from 'vue';
 import GuestLayout from '@/Layouts/GuestLayout.vue';
 import PrimaryButton from '@/Components/PrimaryButton.vue';
 import { Head, Link, useForm } from '@inertiajs/vue3';
+import { useI18n } from 'vue-i18n';
+
+const { t } = useI18n();
 
 const props = defineProps({
     status: {
@@ -23,23 +26,23 @@ const verificationLinkSent = computed(
 
 <template>
     <GuestLayout>
-        <Head title="Email Verification" />
+        <Head :title="t('auth.verify.headTitle')" />
 
         <div class="space-y-6">
             <div class="space-y-2">
                 <p class="font-mono text-xs uppercase tracking-[0.32em] text-emerald-300/80">
-                    Email verification
+                    {{ t('auth.verify.eyebrow') }}
                 </p>
                 <h2 class="text-2xl font-semibold tracking-tight text-slate-50">
-                    Verify your account
+                    {{ t('auth.verify.title') }}
                 </h2>
                 <p class="text-sm leading-6 text-slate-300">
-                    Before getting started, verify your email address with the link we sent.
+                    {{ t('auth.verify.subtitle') }}
                 </p>
             </div>
 
             <div class="text-sm leading-6 text-slate-300">
-                Thanks for signing up. If you did not receive the email, we can send another one.
+                {{ t('auth.verify.intro') }}
             </div>
         </div>
 
@@ -47,8 +50,7 @@ const verificationLinkSent = computed(
             class="mt-4 rounded-xl border border-emerald-400/30 bg-emerald-400/10 px-4 py-3 text-sm font-medium text-emerald-100"
             v-if="verificationLinkSent"
         >
-            A new verification link has been sent to the email address you
-            provided during registration.
+                        {{ t('auth.verify.sent') }}
         </div>
 
         <form class="mt-6" @submit.prevent="submit">
@@ -58,7 +60,7 @@ const verificationLinkSent = computed(
                     :class="{ 'opacity-25': form.processing }"
                     :disabled="form.processing"
                 >
-                    Resend Verification Email
+                    {{ t('auth.verify.resend') }}
                 </PrimaryButton>
 
                 <Link
@@ -66,7 +68,7 @@ const verificationLinkSent = computed(
                     method="post"
                     as="button"
                     class="rounded-md text-sm text-slate-300 underline decoration-white/30 underline-offset-4 transition hover:text-slate-100 hover:decoration-emerald-300 focus:outline-none focus:ring-2 focus:ring-emerald-400 focus:ring-offset-2 focus:ring-offset-[#07111d]"
-                    >Log Out</Link
+                    >{{ t('auth.verify.logout') }}</Link
                 >
             </div>
         </form>

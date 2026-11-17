@@ -8,6 +8,9 @@ import InlineReplyBox from './InlineReplyBox.vue';
 import ThreadMessageCard from './ThreadMessageCard.vue';
 import MessageActions from './MessageActions.vue';
 import { mailDocument } from './mailFrame';
+import { useI18n } from 'vue-i18n';
+
+const { t } = useI18n();
 
 const props = defineProps({
     activeFolder: {
@@ -127,15 +130,15 @@ const startReply = async (mode, target = null) => {
 };
 // The open message's "more" menu: view modes, source, read state, delete.
 const mainMenuItems = computed(() => [
-    ...(bodyView.value !== 'text' ? [{ id: 'text', label: 'Show plain text', icon: 'bi-text-left' }] : []),
-    ...(bodyView.value !== 'html' && htmlDocument.value ? [{ id: 'html', label: 'Show formatted', icon: 'bi-filetype-html' }] : []),
+    ...(bodyView.value !== 'text' ? [{ id: 'text', label: t('email.mailbox.thread.showText'), icon: 'bi-text-left' }] : []),
+    ...(bodyView.value !== 'html' && htmlDocument.value ? [{ id: 'html', label: t('email.mailbox.thread.showHtml'), icon: 'bi-filetype-html' }] : []),
     ...(props.rawEndpoint ? [
-        { id: 'analysis', label: 'Security analysis', icon: 'bi-shield-check' },
-        { id: 'raw', label: 'Show original', icon: 'bi-code-slash' },
+        { id: 'analysis', label: t('email.mailbox.thread.securityAnalysis'), icon: 'bi-shield-check' },
+        { id: 'raw', label: t('email.mailbox.details.showOriginal'), icon: 'bi-code-slash' },
     ] : []),
-    ...(downloadHref.value ? [{ id: 'download', label: 'Download message', icon: 'bi-download', href: downloadHref.value }] : []),
-    { id: 'toggle-read', label: props.currentMessage?.seen ? 'Mark as unread' : 'Mark as read', icon: props.currentMessage?.seen ? 'bi-envelope' : 'bi-envelope-open' },
-    { id: 'delete', label: 'Delete', icon: 'bi-trash3', danger: true },
+    ...(downloadHref.value ? [{ id: 'download', label: t('email.mailbox.message.download'), icon: 'bi-download', href: downloadHref.value }] : []),
+    { id: 'toggle-read', label: props.currentMessage?.seen ? t('email.mailbox.thread.markUnread') : t('email.mailbox.thread.markRead'), icon: props.currentMessage?.seen ? 'bi-envelope' : 'bi-envelope-open' },
+    { id: 'delete', label: t('email.mailbox.thread.delete'), icon: 'bi-trash3', danger: true },
 ]);
 const onMainAction = (id) => {
     if (['reply', 'reply-all', 'forward'].includes(id)) startReply(id);
@@ -301,10 +304,10 @@ const formatFullDate = (value) => {
 };
 
 const senderName = (from) => {
-    if (!from) return 'Unknown';
+    if (!from) return t('email.mailbox.thread.unknown');
     const match = from.match(/^"?(.+?)"?\s*</);
 
-    return match ? match[1].trim() : from.replace(/<.*>/, '').trim() || 'Unknown';
+    return match ? match[1].trim() : from.replace(/<.*>/, '').trim() || t('email.mailbox.thread.unknown');
 };
 
 const senderEmail = (from) => {
@@ -332,7 +335,7 @@ const counterpartLabel = (item) => {
     if (!showsRecipient(item)) return senderName(item.from);
     const names = recipientList(item.to).map(senderName);
 
-    return `To: ${names.length ? names.join(', ') : '(no recipient)'}`;
+    return t('email.mailbox.thread.toList', { names: names.length ? names.join(', ') : t('email.mailbox.details.noRecipient') });
 };
 
 const counterpartAddress = (item) => (showsRecipient(item) ? recipientList(item.to)[0] || '' : item.from);
@@ -433,11 +436,11 @@ const showsBody = computed(() => bodyView.value === 'html' || bodyView.value ===
 const plainText = computed(() => props.currentMessage?.text || props.currentMessage?.raw_body || '');
 
 const bodyTabs = computed(() => [
-    ...(htmlDocument.value ? [{ id: 'html', label: 'Message', icon: 'bi-envelope-paper' }] : []),
-    { id: 'text', label: 'Plain text', icon: 'bi-text-left' },
+    ...(htmlDocument.value ? [{ id: 'html', label: t('email.mailbox.thread.tab.message'), icon: 'bi-envelope-paper' }] : []),
+    { id: 'text', label: t('email.mailbox.thread.tab.text'), icon: 'bi-text-left' },
     ...(props.rawEndpoint ? [
-        { id: 'analysis', label: 'Analysis', icon: 'bi-shield-check' },
-        { id: 'raw', label: 'Original', icon: 'bi-code-slash' },
+        { id: 'analysis', label: t('email.mailbox.thread.tab.analysis'), icon: 'bi-shield-check' },
+        { id: 'raw', label: t('email.mailbox.thread.tab.raw'), icon: 'bi-code-slash' },
     ] : []),
 ]);
 const activeTab = computed(() => (bodyView.value === 'html' && !htmlDocument.value ? 'text' : bodyView.value));
@@ -463,11 +466,11 @@ const loadSource = async () => {
             params: { folder: props.currentMessage.folder || props.activeFolder, uid: props.currentMessage.uid },
             headers: { Accept: 'application/json' },
         });
-        if (!data?.success) throw new Error(data?.message || 'Message source could not be loaded.');
+        if (!data?.success) throw new Error(data?.message || t('email.mailbox.thread.sourceFailed'));
         sourceCache.set(key, data);
         if (messageKey.value === key) source.value = data;
     } catch (error) {
-        if (messageKey.value === key) sourceError.value = error?.response?.data?.message || error?.message || 'Message source could not be loaded.';
+        if (messageKey.value === key) sourceError.value = error?.response?.data?.message || error?.message || t('email.mailbox.thread.sourceFailed');
     } finally {
         sourceLoading.value = false;
     }
@@ -510,22 +513,22 @@ const analysis = computed(() => source.value?.analysis || null);
 const spamCheck = computed(() => analysis.value?.spam_check || null);
 const spamStyle = computed(() => ({
     spam: {
-        title: 'Likely spam or phishing',
-        hint: 'Do not open links or attachments, and never reply with passwords or payment details.',
+        title: t('email.mailbox.thread.spam.spamTitle'),
+        hint: t('email.mailbox.thread.spam.spamHint'),
         icon: 'bi-shield-exclamation',
         box: 'border-rose-200 bg-rose-50 text-rose-900 dark:border-rose-900/50 dark:bg-rose-950/30 dark:text-rose-100',
         bar: 'bg-rose-500',
     },
     suspicious: {
-        title: 'Suspicious',
-        hint: 'Some spam signs. Check the sender before trusting links or attachments.',
+        title: t('email.mailbox.thread.spam.suspTitle'),
+        hint: t('email.mailbox.thread.spam.suspHint'),
         icon: 'bi-shield-fill-exclamation',
         box: 'border-amber-200 bg-amber-50 text-amber-900 dark:border-amber-900/50 dark:bg-amber-950/30 dark:text-amber-100',
         bar: 'bg-amber-500',
     },
     clean: {
-        title: 'Looks clean',
-        hint: 'No strong spam or phishing signs in this message.',
+        title: t('email.mailbox.thread.spam.cleanTitle'),
+        hint: t('email.mailbox.thread.spam.cleanHint'),
         icon: 'bi-shield-check',
         box: 'border-emerald-200 bg-emerald-50 text-emerald-900 dark:border-emerald-900/50 dark:bg-emerald-950/30 dark:text-emerald-100',
         bar: 'bg-emerald-500',
@@ -542,8 +545,8 @@ const verdictClass = (result) => {
 };
 const verdictLabel = (result) => {
     const value = String(result || '').toLowerCase();
-    if (value === 'none' || value === '') return 'Not checked';
-    if (value === 'unverified') return 'Signed, not verified';
+    if (value === 'none' || value === '') return t('email.mailbox.thread.notChecked');
+    if (value === 'unverified') return t('email.mailbox.thread.unverified');
 
     return value.toUpperCase();
 };
@@ -589,54 +592,54 @@ onBeforeUnmount(() => {
         <!-- List toolbar -->
         <div :class="[ui.toolbar, 'flex h-11 shrink-0 items-center justify-between gap-3 border-b px-3 md:px-4']">
             <div class="flex min-w-0 items-center gap-1">
-                <label :class="[ui.iconButton, 'flex h-8 w-8 cursor-pointer items-center justify-center rounded-md']" :title="allSelected ? 'Deselect all' : 'Select all'">
+                <label :class="[ui.iconButton, 'flex h-8 w-8 cursor-pointer items-center justify-center rounded-md']" :title="allSelected ? t('email.mailbox.thread.deselectAll') : t('email.mailbox.thread.selectAll')">
                     <input
                         type="checkbox"
                         :class="[ui.checkbox, 'h-4 w-4 cursor-pointer rounded']"
                         :checked="allSelected"
                         :indeterminate="someSelected"
                         :disabled="filteredMessages.length === 0"
-                        aria-label="Select all messages on this page"
+                        :aria-label="t('email.mailbox.thread.selectPage')"
                         @change="emit('select-all', !allSelected)"
                     >
                 </label>
 
                 <template v-if="selectionMode">
-                    <span :class="[ui.strong, 'ml-1 mr-2 whitespace-nowrap text-sm font-medium tabular-nums']">{{ selectedCount }} selected</span>
+                    <span :class="[ui.strong, 'ml-1 mr-2 whitespace-nowrap text-sm font-medium tabular-nums']">{{ t('email.mailbox.thread.selected', { count: selectedCount }) }}</span>
                     <button
                         v-if="selectedHaveUnread"
                         type="button"
                         :class="[ui.iconButton, 'flex h-8 items-center gap-1.5 rounded-md px-2 text-sm transition disabled:opacity-50']"
                         :disabled="bulkWorking"
-                        title="Mark as read"
+                        :title="t('email.mailbox.thread.markRead')"
                         @click="emit('bulk-action', 'read')"
                     >
-                        <i class="bi bi-envelope-open text-[15px]"></i><span class="hidden md:inline">Mark read</span>
+                        <i class="bi bi-envelope-open text-[15px]"></i><span class="hidden md:inline">{{ t('email.mailbox.thread.markReadShort') }}</span>
                     </button>
                     <button
                         v-if="selectedHaveRead"
                         type="button"
                         :class="[ui.iconButton, 'flex h-8 items-center gap-1.5 rounded-md px-2 text-sm transition disabled:opacity-50']"
                         :disabled="bulkWorking"
-                        title="Mark as unread"
+                        :title="t('email.mailbox.thread.markUnread')"
                         @click="emit('bulk-action', 'unread')"
                     >
-                        <i class="bi bi-envelope text-[15px]"></i><span class="hidden md:inline">Mark unread</span>
+                        <i class="bi bi-envelope text-[15px]"></i><span class="hidden md:inline">{{ t('email.mailbox.thread.markUnreadShort') }}</span>
                     </button>
                     <button
                         type="button"
                         :class="[ui.iconButton, 'flex h-8 items-center gap-1.5 rounded-md px-2 text-sm transition hover:!text-rose-600 disabled:opacity-50']"
                         :disabled="bulkWorking"
-                        title="Delete"
+                        :title="t('email.mailbox.thread.delete')"
                         @click="emit('bulk-action', 'delete')"
                     >
-                        <i :class="['bi text-[15px]', bulkWorking ? 'bi-arrow-repeat animate-spin' : 'bi-trash3']"></i><span class="hidden md:inline">Delete</span>
+                        <i :class="['bi text-[15px]', bulkWorking ? 'bi-arrow-repeat animate-spin' : 'bi-trash3']"></i><span class="hidden md:inline">{{ t('email.mailbox.thread.delete') }}</span>
                     </button>
                     <button
                         type="button"
                         :class="[ui.iconButton, 'ml-1 flex h-8 w-8 items-center justify-center rounded-md transition']"
-                        title="Clear selection"
-                        aria-label="Clear selection"
+                        :title="t('email.mailbox.thread.clearSelection')"
+                        :aria-label="t('email.mailbox.thread.clearSelection')"
                         @click="emit('select-all', false)"
                     >
                         <i class="bi bi-x-lg text-xs"></i>
@@ -644,20 +647,20 @@ onBeforeUnmount(() => {
                 </template>
                 <template v-else>
                     <span :class="[ui.strong, 'ml-1 truncate text-sm font-medium sm:hidden']">{{ folderLabel(activeFolder) }}</span>
-                    <span v-if="hasSearchQuery" :class="[ui.chip, 'ml-1 rounded px-1.5 py-0.5 text-[11px] font-medium']">Search results</span>
+                    <span v-if="hasSearchQuery" :class="[ui.chip, 'ml-1 rounded px-1.5 py-0.5 text-[11px] font-medium']">{{ t('email.mailbox.thread.searchResults') }}</span>
                 </template>
             </div>
 
             <div class="flex items-center gap-1">
                 <span :class="[ui.muted, 'mr-1 text-xs tabular-nums', selectionMode ? 'hidden sm:inline' : '']">
-                    {{ rangeStart }}–{{ rangeEnd }} of {{ totalCount }}
+                    {{ t('email.mailbox.thread.range', { start: rangeStart, end: rangeEnd, total: totalCount }) }}
                 </span>
                 <button
                     type="button"
                     :class="[ui.iconButton, 'flex h-8 w-8 items-center justify-center rounded-md transition disabled:pointer-events-none disabled:opacity-30']"
                     :disabled="page <= 1"
-                    aria-label="Newer"
-                    title="Newer"
+                    :aria-label="t('email.mailbox.thread.newer')"
+                    :title="t('email.mailbox.thread.newer')"
                     @click="emit('change-page', page - 1)"
                 >
                     <i class="bi bi-chevron-left text-sm"></i>
@@ -666,8 +669,8 @@ onBeforeUnmount(() => {
                     type="button"
                     :class="[ui.iconButton, 'flex h-8 w-8 items-center justify-center rounded-md transition disabled:pointer-events-none disabled:opacity-30']"
                     :disabled="page >= totalPages"
-                    aria-label="Older"
-                    title="Older"
+                    :aria-label="t('email.mailbox.thread.older')"
+                    :title="t('email.mailbox.thread.older')"
                     @click="emit('change-page', page + 1)"
                 >
                     <i class="bi bi-chevron-right text-sm"></i>
@@ -692,10 +695,10 @@ onBeforeUnmount(() => {
             <div v-else-if="filteredMessages.length === 0" class="flex h-full flex-col items-center justify-center px-6 py-16 text-center">
                 <i :class="[ui.muted, 'bi text-4xl', hasSearchQuery ? 'bi-search' : 'bi-inbox']"></i>
                 <p :class="[ui.strong, 'mt-3 text-sm font-medium']">
-                    {{ hasSearchQuery ? 'No messages match your search' : `${folderLabel(activeFolder)} is empty` }}
+                    {{ hasSearchQuery ? t('email.mailbox.thread.noMatch') : t('email.mailbox.thread.emptyFolder', { folder: folderLabel(activeFolder) }) }}
                 </p>
                 <p :class="[ui.muted, 'mt-1 text-xs']">
-                    {{ hasSearchQuery ? 'Try a different keyword or clear the filter.' : 'New messages will show up here.' }}
+                    {{ hasSearchQuery ? t('email.mailbox.thread.noMatchHint') : t('email.mailbox.thread.emptyHint') }}
                 </p>
             </div>
 
@@ -734,7 +737,7 @@ onBeforeUnmount(() => {
                                 selectionMode || selectedSet.has(item.uid) ? 'opacity-100' : 'opacity-0 group-hover:opacity-100 focus:opacity-100',
                             ]"
                             :checked="selectedSet.has(item.uid)"
-                            :aria-label="`Select message: ${counterpartLabel(item)}`"
+                            :aria-label="t('email.mailbox.thread.selectMessage', { name: counterpartLabel(item) })"
                             @click.stop
                             @change="emit('toggle-select', item.uid)"
                         >
@@ -767,8 +770,8 @@ onBeforeUnmount(() => {
                             <button
                                 type="button"
                                 :class="[ui.iconButton, 'flex h-8 w-8 items-center justify-center rounded-md']"
-                                :title="item.seen ? 'Mark as unread' : 'Mark as read'"
-                                :aria-label="item.seen ? 'Mark as unread' : 'Mark as read'"
+                                :title="item.seen ? t('email.mailbox.thread.markUnread') : t('email.mailbox.thread.markRead')"
+                                :aria-label="item.seen ? t('email.mailbox.thread.markUnread') : t('email.mailbox.thread.markRead')"
                                 @click.stop="emit('toggle-read', item)"
                             >
                                 <i :class="['bi text-[15px]', item.seen ? 'bi-envelope' : 'bi-envelope-open']"></i>
@@ -776,8 +779,8 @@ onBeforeUnmount(() => {
                             <button
                                 type="button"
                                 :class="[ui.iconButton, 'flex h-8 w-8 items-center justify-center rounded-md hover:!text-rose-600']"
-                                title="Delete"
-                                aria-label="Delete"
+                                :title="t('email.mailbox.thread.delete')"
+                                :aria-label="t('email.mailbox.thread.delete')"
                                 :disabled="deletingUid === item.uid"
                                 @click.stop="emit('delete-message', item.uid)"
                             >
@@ -814,7 +817,7 @@ onBeforeUnmount(() => {
                 v-if="currentMessage"
                 role="dialog"
                 aria-modal="true"
-                :aria-label="currentMessage.subject || 'Message'"
+                :aria-label="currentMessage.subject || t('email.mailbox.thread.tab.message')"
                 :aria-busy="messageLoading"
                 :class="[ui.panel, 'fixed inset-y-0 right-0 z-50 flex w-full flex-col border-l shadow-2xl md:w-[85%] lg:w-[70%]']"
             >
@@ -823,8 +826,8 @@ onBeforeUnmount(() => {
                     <button
                         type="button"
                         :class="[ui.iconButton, 'flex h-9 w-9 items-center justify-center rounded-md transition']"
-                        title="Close (Esc)"
-                        aria-label="Close"
+                        :title="t('email.mailbox.thread.closeEsc')"
+                        :aria-label="t('common.close')"
                         @click="emit('close-preview')"
                     >
                         <i class="bi bi-arrow-left text-lg"></i>
@@ -832,14 +835,14 @@ onBeforeUnmount(() => {
 
                     <span :class="[ui.divider, 'mx-1 h-6 border-l']"></span>
 
-                    <button type="button" :class="[ui.iconButton, 'flex h-9 items-center gap-2 rounded-md px-2.5 text-sm transition']" title="Reply" @click="startReply('reply')">
-                        <i class="bi bi-reply text-base"></i><span class="hidden sm:inline">Reply</span>
+                    <button type="button" :class="[ui.iconButton, 'flex h-9 items-center gap-2 rounded-md px-2.5 text-sm transition']" :title="t('email.mailbox.actions.reply')" @click="startReply('reply')">
+                        <i class="bi bi-reply text-base"></i><span class="hidden sm:inline">{{ t('email.mailbox.actions.reply') }}</span>
                     </button>
-                    <button type="button" :class="[ui.iconButton, 'flex h-9 items-center gap-2 rounded-md px-2.5 text-sm transition']" title="Reply all" @click="startReply('reply-all')">
-                        <i class="bi bi-reply-all text-base"></i><span class="hidden md:inline">Reply all</span>
+                    <button type="button" :class="[ui.iconButton, 'flex h-9 items-center gap-2 rounded-md px-2.5 text-sm transition']" :title="t('email.mailbox.actions.replyAll')" @click="startReply('reply-all')">
+                        <i class="bi bi-reply-all text-base"></i><span class="hidden md:inline">{{ t('email.mailbox.actions.replyAll') }}</span>
                     </button>
-                    <button type="button" :class="[ui.iconButton, 'flex h-9 items-center gap-2 rounded-md px-2.5 text-sm transition']" title="Forward" @click="startReply('forward')">
-                        <i class="bi bi-forward text-base"></i><span class="hidden md:inline">Forward</span>
+                    <button type="button" :class="[ui.iconButton, 'flex h-9 items-center gap-2 rounded-md px-2.5 text-sm transition']" :title="t('email.mailbox.actions.forward')" @click="startReply('forward')">
+                        <i class="bi bi-forward text-base"></i><span class="hidden md:inline">{{ t('email.mailbox.actions.forward') }}</span>
                     </button>
 
                     <span :class="[ui.divider, 'mx-1 h-6 border-l']"></span>
@@ -847,8 +850,8 @@ onBeforeUnmount(() => {
                     <button
                         type="button"
                         :class="[ui.iconButton, 'flex h-9 w-9 items-center justify-center rounded-md transition']"
-                        :title="currentMessage.seen ? 'Mark as unread' : 'Mark as read'"
-                        :aria-label="currentMessage.seen ? 'Mark as unread' : 'Mark as read'"
+                        :title="currentMessage.seen ? t('email.mailbox.thread.markUnread') : t('email.mailbox.thread.markRead')"
+                        :aria-label="currentMessage.seen ? t('email.mailbox.thread.markUnread') : t('email.mailbox.thread.markRead')"
                         @click="emit('toggle-read', currentMessage)"
                     >
                         <i :class="['bi text-base', currentMessage.seen ? 'bi-envelope' : 'bi-envelope-open']"></i>
@@ -856,8 +859,8 @@ onBeforeUnmount(() => {
                     <button
                         type="button"
                         :class="[ui.iconButton, 'flex h-9 w-9 items-center justify-center rounded-md transition hover:!text-rose-600 disabled:opacity-50']"
-                        title="Delete"
-                        aria-label="Delete"
+                        :title="t('email.mailbox.thread.delete')"
+                        :aria-label="t('email.mailbox.thread.delete')"
                         :disabled="deletingUid === currentMessage.uid"
                         @click="emit('delete-message', currentMessage.uid)"
                     >
@@ -866,14 +869,14 @@ onBeforeUnmount(() => {
 
                     <div class="ml-auto flex items-center gap-1">
                         <span v-if="currentIndex >= 0" :class="[ui.muted, 'mr-1 hidden text-xs tabular-nums sm:inline']">
-                            {{ currentIndex + 1 }} of {{ filteredMessages.length }}
+                            {{ t('email.mailbox.thread.position', { current: currentIndex + 1, total: filteredMessages.length }) }}
                         </span>
                         <button
                             type="button"
                             :class="[ui.iconButton, 'flex h-9 w-9 items-center justify-center rounded-md transition disabled:pointer-events-none disabled:opacity-30']"
                             :disabled="!previousMessage"
-                            title="Newer (k)"
-                            aria-label="Newer message"
+                            :title="t('email.mailbox.thread.newerKey')"
+                            :aria-label="t('email.mailbox.thread.newerMessage')"
                             @click="previousMessage && emit('open-message', previousMessage.uid)"
                         >
                             <i class="bi bi-chevron-up text-sm"></i>
@@ -882,8 +885,8 @@ onBeforeUnmount(() => {
                             type="button"
                             :class="[ui.iconButton, 'flex h-9 w-9 items-center justify-center rounded-md transition disabled:pointer-events-none disabled:opacity-30']"
                             :disabled="!nextMessage"
-                            title="Older (j)"
-                            aria-label="Older message"
+                            :title="t('email.mailbox.thread.olderKey')"
+                            :aria-label="t('email.mailbox.thread.olderMessage')"
                             @click="nextMessage && emit('open-message', nextMessage.uid)"
                         >
                             <i class="bi bi-chevron-down text-sm"></i>
@@ -904,12 +907,12 @@ onBeforeUnmount(() => {
                                 <span :class="[ui.chip, 'inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-[11px] font-medium']">
                                     <i class="bi bi-folder2"></i>{{ folderLabel(currentMessage.folder || activeFolder) }}
                                 </span>
-                                <span v-if="thread.length > 1" :class="[ui.chip, 'inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-[11px] font-medium']" title="Messages in this conversation">
-                                    <i class="bi bi-chat-left-text"></i>{{ thread.length }} messages
+                                <span v-if="thread.length > 1" :class="[ui.chip, 'inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-[11px] font-medium']" :title="t('email.mailbox.thread.inConversation')">
+                                    <i class="bi bi-chat-left-text"></i>{{ t('email.mailbox.thread.messageCount', { count: thread.length }) }}
                                 </span>
                             </div>
                             <h2 :class="[ui.strong, 'text-xl font-semibold leading-snug tracking-tight md:text-[26px]']">
-                                {{ currentMessage.subject || '(no subject)' }}
+                                {{ currentMessage.subject || t('email.mailbox.details.noSubject') }}
                             </h2>
                         </div>
 
@@ -931,7 +934,7 @@ onBeforeUnmount(() => {
                                     v-if="i === 0 && foldedCount"
                                     type="button"
                                     class="relative flex h-10 w-full items-center"
-                                    :title="`Show ${foldedCount} older messages`"
+                                    :title="t('email.mailbox.thread.showOlder', { count: foldedCount })"
                                     @click="showOlder = true"
                                 >
                                     <span :class="[ui.line, 'absolute inset-x-0 top-1/2 border-t']"></span>
@@ -959,7 +962,7 @@ onBeforeUnmount(() => {
                                             <ContactCard :address="currentMessage.from" :is-dark="isDark" :avatar-endpoint="avatarEndpoint" :verified="Boolean(currentMessage.sender_verified)" @compose="emit('compose-to', $event)">
                                                 <p class="min-w-0 truncate text-[15px]">
                                                     <span :class="[ui.strong, 'cursor-pointer font-semibold hover:underline']">{{ senderName(currentMessage.from) }}</span>
-                                                    <i v-if="currentMessage.sender_verified" class="bi bi-patch-check-fill ml-0.5 align-[-1px] text-sm text-blue-600" title="Sender verified: DMARC or DKIM passed for this domain"></i>
+                                                    <i v-if="currentMessage.sender_verified" class="bi bi-patch-check-fill ml-0.5 align-[-1px] text-sm text-blue-600" :title="t('email.mailbox.thread.verified')"></i>
                                                     <span v-if="senderEmail(currentMessage.from) && senderEmail(currentMessage.from) !== senderName(currentMessage.from)" :class="[ui.muted, 'ml-1 text-xs']">&lt;{{ senderEmail(currentMessage.from) }}&gt;</span>
                                                 </p>
                                             </ContactCard>
@@ -987,7 +990,7 @@ onBeforeUnmount(() => {
                             </header>
 
                             <!-- Message views: the formatted mail, plain text, security analysis and source. -->
-                            <div class="flex flex-wrap items-center gap-1 pb-2 pl-[60px] pr-4 md:pl-[68px] md:pr-6" role="tablist" aria-label="Message view">
+                            <div class="flex flex-wrap items-center gap-1 pb-2 pl-[60px] pr-4 md:pl-[68px] md:pr-6" role="tablist" :aria-label="t('email.mailbox.thread.view')">
                                 <button
                                     v-for="tab in bodyTabs"
                                     :key="tab.id"
@@ -1009,31 +1012,31 @@ onBeforeUnmount(() => {
                                         :srcdoc="htmlDocument"
                                         sandbox="allow-same-origin allow-popups allow-popups-to-escape-sandbox"
                                         referrerpolicy="no-referrer"
-                                        title="Message body"
+                                        :title="t('email.mailbox.message.body')"
                                         :class="['block w-full rounded-lg border-0 bg-white transition-opacity duration-150', htmlFrameReady ? 'opacity-100' : 'opacity-0']"
                                         :style="{ height: `${htmlFrameHeight}px` }"
                                         @load="onHtmlFrameLoad"
                                     ></iframe>
                                 </div>
-                                <div v-else :class="[ui.body, 'whitespace-pre-wrap break-words py-4 pl-[68px] pr-4 font-sans text-[15px] leading-7 md:pl-[76px] md:pr-6']">{{ plainText || 'No body available.' }}</div>
+                                <div v-else :class="[ui.body, 'whitespace-pre-wrap break-words py-4 pl-[68px] pr-4 font-sans text-[15px] leading-7 md:pl-[76px] md:pr-6']">{{ plainText || t('email.mailbox.message.noBody') }}</div>
                             </template>
 
                             <!-- Source loading / error -->
                             <div v-else-if="sourceLoading && !source" :class="[ui.muted, 'px-4 py-10 text-center text-sm md:px-6']">
-                                <i class="bi bi-arrow-repeat mr-1 inline-block animate-spin"></i> Loading message source…
+                                <i class="bi bi-arrow-repeat mr-1 inline-block animate-spin"></i> {{ t('email.mailbox.thread.loadingSource') }}
                             </div>
                             <div v-else-if="sourceError" class="px-4 py-6 text-sm text-rose-600 md:px-6">
                                 {{ sourceError }}
-                                <button type="button" class="ml-2 underline" @click="loadSource">Retry</button>
+                                <button type="button" class="ml-2 underline" @click="loadSource">{{ t('email.mailbox.message.retry') }}</button>
                             </div>
 
                             <!-- Analysis -->
                             <div v-else-if="activeTab === 'analysis' && analysis" :class="[ui.body, 'space-y-6 px-4 py-5 text-sm md:px-6']">
                                 <div v-if="analysis.sandbox" class="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-amber-800 dark:border-amber-900/50 dark:bg-amber-950/30 dark:text-amber-200">
-                                    <i class="bi bi-cone-striped mr-1"></i> Sent in sandbox mode: {{ analysis.sandbox }}
+                                    <i class="bi bi-cone-striped mr-1"></i> {{ t('email.mailbox.thread.sandboxSent', { detail: analysis.sandbox }) }}
                                 </div>
 
-                                <section v-if="spamCheck" :class="[spamStyle.box, 'rounded-xl border p-4']" aria-label="Spam check">
+                                <section v-if="spamCheck" :class="[spamStyle.box, 'rounded-xl border p-4']" :aria-label="t('email.mailbox.thread.spamCheck')">
                                     <div class="flex flex-wrap items-center gap-3">
                                         <i :class="['bi text-2xl', spamStyle.icon]"></i>
                                         <div class="min-w-0 flex-1">
@@ -1042,10 +1045,10 @@ onBeforeUnmount(() => {
                                         </div>
                                         <div class="text-right">
                                             <p class="text-2xl font-semibold tabular-nums">{{ spamCheck.score.toFixed(1) }}</p>
-                                            <p class="text-[11px] opacity-80">spam score · 5.0 = spam</p>
+                                            <p class="text-[11px] opacity-80">{{ t('email.mailbox.thread.spamScoreHint') }}</p>
                                         </div>
                                     </div>
-                                    <div class="mt-3 h-1.5 w-full overflow-hidden rounded-full bg-black/10 dark:bg-white/10" role="meter" :aria-valuenow="spamCheck.score" aria-valuemin="0" aria-valuemax="10" aria-label="Spam score">
+                                    <div class="mt-3 h-1.5 w-full overflow-hidden rounded-full bg-black/10 dark:bg-white/10" role="meter" :aria-valuenow="spamCheck.score" aria-valuemin="0" aria-valuemax="10" :aria-label="t('email.mailbox.thread.spamScore')">
                                         <div :class="[spamStyle.bar, 'h-full rounded-full']" :style="{ width: `${Math.min(100, spamCheck.score * 10)}%` }"></div>
                                     </div>
 
@@ -1055,11 +1058,11 @@ onBeforeUnmount(() => {
                                             <span class="min-w-0 break-words"><span class="font-mono text-[11px] opacity-70">{{ rule.name }}</span> {{ rule.description }}</span>
                                         </li>
                                     </ul>
-                                    <p v-else class="mt-3 text-xs">No spam signs found.</p>
+                                    <p v-else class="mt-3 text-xs">{{ t('email.mailbox.thread.noSpamSigns') }}</p>
 
                                     <p v-if="spamCheck.links.count" class="mt-3 break-words text-xs opacity-80">
                                         <i class="bi bi-link-45deg"></i>
-                                        {{ spamCheck.links.count }} {{ spamCheck.links.count === 1 ? 'link' : 'links' }} to {{ spamCheck.links.domains.join(', ') || 'unknown hosts' }}
+                                        {{ spamCheck.links.count === 1 ? t('email.mailbox.thread.linkOne', { hosts: spamCheck.links.domains.join(', ') || t('email.mailbox.thread.unknownHosts') }) : t('email.mailbox.thread.linkMany', { count: spamCheck.links.count, hosts: spamCheck.links.domains.join(', ') || t('email.mailbox.thread.unknownHosts') }) }}
                                     </p>
                                     <p v-if="spamCheck.attachments.length" class="mt-1 break-words text-xs">
                                         <i class="bi bi-paperclip"></i>
@@ -1077,12 +1080,12 @@ onBeforeUnmount(() => {
                                     <dt :class="[ui.muted, 'font-medium']">DKIM</dt>
                                     <dd class="min-w-0 space-y-1 break-words">
                                         <p v-if="!analysis.auth.dkim.length">
-                                            <span :class="[verdictClass('fail'), 'rounded px-1.5 py-0.5 text-xs font-semibold']">NOT SIGNED</span>
+                                            <span :class="[verdictClass('fail'), 'rounded px-1.5 py-0.5 text-xs font-semibold']">{{ t('email.mailbox.thread.notSigned') }}</span>
                                         </p>
                                         <p v-for="(sig, i) in analysis.auth.dkim" :key="i">
                                             <span :class="[verdictClass(sig.result), 'mr-2 rounded px-1.5 py-0.5 text-xs font-semibold']">{{ verdictLabel(sig.result) }}</span>
-                                            <span>with domain {{ sig.domain || 'unknown' }}</span>
-                                            <span v-if="sig.selector" :class="ui.muted"> (selector {{ sig.selector }})</span>
+                                            <span>{{ t('email.mailbox.thread.withDomain', { domain: sig.domain || t('email.mailbox.thread.unknownLower') }) }}</span>
+                                            <span v-if="sig.selector" :class="ui.muted"> {{ t('email.mailbox.thread.selector', { selector: sig.selector }) }}</span>
                                         </p>
                                     </dd>
 
@@ -1092,55 +1095,55 @@ onBeforeUnmount(() => {
                                         <span :class="ui.muted">{{ analysis.auth.dmarc.detail }}</span>
                                     </dd>
 
-                                    <dt :class="[ui.muted, 'font-medium']">Alignment</dt>
+                                    <dt :class="[ui.muted, 'font-medium']">{{ t('email.mailbox.thread.alignment') }}</dt>
                                     <dd class="min-w-0 break-words">
                                         SPF <i :class="['bi', analysis.alignment.spf ? 'bi-check-circle-fill text-emerald-600' : 'bi-x-circle text-slate-400']"></i>
                                         <span class="ml-3">DKIM</span> <i :class="['bi', analysis.alignment.dkim ? 'bi-check-circle-fill text-emerald-600' : 'bi-x-circle text-slate-400']"></i>
-                                        <span :class="[ui.muted, 'ml-2 text-xs']">with the From domain</span>
+                                        <span :class="[ui.muted, 'ml-2 text-xs']">{{ t('email.mailbox.thread.withFrom') }}</span>
                                     </dd>
 
                                     <template v-if="analysis.spam.flag || analysis.spam.score">
-                                        <dt :class="[ui.muted, 'font-medium']">Spam check</dt>
+                                        <dt :class="[ui.muted, 'font-medium']">{{ t('email.mailbox.thread.spamCheck') }}</dt>
                                         <dd class="min-w-0 break-words">
-                                            <span :class="[verdictClass(analysis.spam.flag === 'yes' ? 'fail' : 'pass'), 'mr-2 rounded px-1.5 py-0.5 text-xs font-semibold']">{{ analysis.spam.flag === 'yes' ? 'SPAM' : 'CLEAN' }}</span>
-                                            <span v-if="analysis.spam.score" :class="ui.muted">score {{ analysis.spam.score }}</span>
+                                            <span :class="[verdictClass(analysis.spam.flag === 'yes' ? 'fail' : 'pass'), 'mr-2 rounded px-1.5 py-0.5 text-xs font-semibold']">{{ analysis.spam.flag === 'yes' ? t('email.mailbox.thread.spamFlag') : t('email.mailbox.thread.cleanFlag') }}</span>
+                                            <span v-if="analysis.spam.score" :class="ui.muted">{{ t('email.mailbox.thread.scoreValue', { score: analysis.spam.score }) }}</span>
                                         </dd>
                                     </template>
 
                                     <template v-if="analysis.bulk.list_unsubscribe">
-                                        <dt :class="[ui.muted, 'font-medium']">Unsubscribe</dt>
+                                        <dt :class="[ui.muted, 'font-medium']">{{ t('email.mailbox.thread.unsubscribe') }}</dt>
                                         <dd class="min-w-0 break-words">
-                                            {{ analysis.bulk.one_click ? 'One-click (RFC 8058)' : 'Link only' }}
+                                            {{ analysis.bulk.one_click ? t('email.mailbox.thread.oneClick') : t('email.mailbox.thread.linkOnly') }}
                                         </dd>
                                     </template>
                                 </dl>
 
                                 <div>
-                                    <h3 :class="[ui.strong, 'mb-2 font-semibold']">Findings</h3>
+                                    <h3 :class="[ui.strong, 'mb-2 font-semibold']">{{ t('email.mailbox.thread.findings') }}</h3>
                                     <ul v-if="analysis.warnings.length" class="space-y-1.5">
                                         <li v-for="(warning, i) in analysis.warnings" :key="i" class="flex gap-2 text-amber-700 dark:text-amber-300">
                                             <i class="bi bi-exclamation-triangle mt-0.5 shrink-0"></i><span>{{ warning }}</span>
                                         </li>
                                     </ul>
-                                    <p v-else class="text-emerald-700 dark:text-emerald-400"><i class="bi bi-check-circle mr-1"></i> No problems found in the headers.</p>
+                                    <p v-else class="text-emerald-700 dark:text-emerald-400"><i class="bi bi-check-circle mr-1"></i> {{ t('email.mailbox.thread.noProblems') }}</p>
                                 </div>
 
                                 <div v-if="analysis.hops.length">
                                     <h3 :class="[ui.strong, 'mb-2 font-semibold']">
-                                        Delivery path
+                                        {{ t('email.mailbox.thread.path') }}
                                         <span :class="[ui.muted, 'ml-1 text-xs font-normal']">
-                                            {{ analysis.hops.length }} {{ analysis.hops.length === 1 ? 'hop' : 'hops' }}<template v-if="analysis.total_delay !== null">, {{ formatDelay(analysis.total_delay) }} total</template>
+                                            {{ analysis.hops.length === 1 ? t('email.mailbox.thread.hopOne') : t('email.mailbox.thread.hopMany', { count: analysis.hops.length }) }}<template v-if="analysis.total_delay !== null">, {{ t('email.mailbox.thread.totalDelay', { delay: formatDelay(analysis.total_delay) }) }}</template>
                                         </span>
                                     </h3>
                                     <ol class="space-y-2">
                                         <li v-for="(hop, i) in analysis.hops" :key="i" :class="[ui.cardDivider, 'flex gap-3 rounded-lg border px-3 py-2']">
                                             <span :class="[ui.chip, 'flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-xs font-semibold']">{{ i + 1 }}</span>
                                             <div class="min-w-0 flex-1">
-                                                <p class="break-words text-xs"><span :class="ui.muted">from</span> {{ hop.from || '—' }}</p>
-                                                <p class="break-words text-xs"><span :class="ui.muted">by</span> {{ hop.by || '—' }}</p>
+                                                <p class="break-words text-xs"><span :class="ui.muted">{{ t('email.mailbox.thread.hopFrom') }}</span> {{ hop.from || '—' }}</p>
+                                                <p class="break-words text-xs"><span :class="ui.muted">{{ t('email.mailbox.thread.hopBy') }}</span> {{ hop.by || '—' }}</p>
                                                 <p :class="[ui.muted, 'mt-0.5 text-[11px]']">
-                                                    <i :class="['bi mr-0.5', hop.tls ? 'bi-lock-fill text-emerald-600' : 'bi-unlock text-amber-600']" :title="hop.tls ? 'Encrypted (TLS)' : 'Not encrypted'"></i>
-                                                    {{ hop.with || 'unknown protocol' }} · {{ hop.date }}
+                                                    <i :class="['bi mr-0.5', hop.tls ? 'bi-lock-fill text-emerald-600' : 'bi-unlock text-amber-600']" :title="hop.tls ? t('email.mailbox.thread.encrypted') : t('email.mailbox.thread.notEncrypted')"></i>
+                                                    {{ hop.with || t('email.mailbox.thread.unknownProtocol') }} · {{ hop.date }}
                                                 </p>
                                             </div>
                                             <span v-if="hop.delay !== null" :class="['shrink-0 text-xs tabular-nums', hop.delay > 300 ? 'font-semibold text-amber-600' : ui.muted]">+{{ formatDelay(hop.delay) }}</span>
@@ -1154,13 +1157,13 @@ onBeforeUnmount(() => {
                             <div v-else-if="activeTab === 'raw' && source" class="px-4 py-4 md:px-6">
                                 <div class="mb-3 flex flex-wrap items-center gap-2">
                                     <span :class="[ui.muted, 'text-xs']">{{ formatBytes(source.size) }}</span>
-                                    <span v-if="source.truncated" class="text-xs text-amber-600">Showing the first {{ formatBytes(source.raw.length) }}; download for the full message.</span>
+                                    <span v-if="source.truncated" class="text-xs text-amber-600">{{ t('email.mailbox.thread.truncated', { size: formatBytes(source.raw.length) }) }}</span>
                                     <div class="ml-auto flex gap-2">
                                         <button type="button" :class="[ui.pill, 'inline-flex h-8 items-center gap-1.5 rounded-full border px-3 text-xs font-medium transition']" @click="copySource">
-                                            <i :class="['bi', copied ? 'bi-check2' : 'bi-clipboard']"></i> {{ copied ? 'Copied' : 'Copy' }}
+                                            <i :class="['bi', copied ? 'bi-check2' : 'bi-clipboard']"></i> {{ copied ? t('email.mailbox.thread.copied') : t('email.mailbox.thread.copy') }}
                                         </button>
                                         <a v-if="downloadHref" :href="downloadHref" :class="[ui.pill, 'inline-flex h-8 items-center gap-1.5 rounded-full border px-3 text-xs font-medium transition']">
-                                            <i class="bi bi-download"></i> Download .eml
+                                            <i class="bi bi-download"></i> {{ t('email.mailbox.thread.downloadEml') }}
                                         </a>
                                     </div>
                                 </div>
@@ -1188,13 +1191,13 @@ onBeforeUnmount(() => {
 
                         <div v-if="!replyMode" class="mt-5 flex flex-wrap gap-2 px-1 pb-24">
                             <button type="button" :class="[ui.pill, 'inline-flex h-9 items-center gap-2 rounded-full border px-4 text-sm font-medium transition']" @click="startReply('reply')">
-                                <i class="bi bi-reply"></i> Reply
+                                <i class="bi bi-reply"></i> {{ t('email.mailbox.actions.reply') }}
                             </button>
                             <button type="button" :class="[ui.pill, 'inline-flex h-9 items-center gap-2 rounded-full border px-4 text-sm font-medium transition']" @click="startReply('reply-all')">
-                                <i class="bi bi-reply-all"></i> Reply all
+                                <i class="bi bi-reply-all"></i> {{ t('email.mailbox.actions.replyAll') }}
                             </button>
                             <button type="button" :class="[ui.pill, 'inline-flex h-9 items-center gap-2 rounded-full border px-4 text-sm font-medium transition']" @click="startReply('forward')">
-                                <i class="bi bi-forward"></i> Forward
+                                <i class="bi bi-forward"></i> {{ t('email.mailbox.actions.forward') }}
                             </button>
                         </div>
 

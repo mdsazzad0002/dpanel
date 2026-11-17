@@ -1,0 +1,36 @@
+{
+    "cols": {
+        "disk": "Disk",
+        "bandwidth": "Bandwidth (month)",
+        "memory": "Memory",
+        "cpu": "CPU"
+    },
+    "title": "Usage & Limits",
+    "subtitle": "use against the package, newest reading",
+    "unassignedOne": "1 website has no owner, so its use is not counted here. Give it an owner from the website's Manage page.",
+    "unassignedMany": "{count} websites have no owner, so their use is not counted here. Give them an owner from the website's Manage page.",
+    "websites": "Websites",
+    "search": "Search account or package…",
+    "onlyAlerts": "Only at 80% or more ({count})",
+    "account": "Account",
+    "alertSent": "{percent}% alert sent",
+    "sevenDays": "7 days",
+    "noMatch": "No account matches.",
+    "empty": "No account has a website or a package yet.",
+    "footnote": "Disk is measured hourly and bandwidth every 15 minutes for every account with a website; CPU and memory every five minutes, only when the package limits them. A notice goes to the account at 80% and at 100% of a limit, once until use falls back.",
+    "history": {
+        "charts": {
+            "disk": "Disk (MB)",
+            "bandwidth": "Bandwidth this month (MB)",
+            "memory": "Memory (MB)",
+            "cpu": "CPU (%)"
+        },
+        "failed": "History could not be loaded.",
+        "loading": "Loading the last seven days…",
+        "noReadings": "No readings in the last seven days.",
+        "note": "Hourly averages over seven days. The dashed line is the package limit."
+    },
+    "meter": {
+        "noLimit": "no limit"
+    }
+}

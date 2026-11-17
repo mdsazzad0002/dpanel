@@ -1,5 +1,8 @@
 <script setup>
 import { computed, ref, watch } from 'vue';
+import { useI18n } from 'vue-i18n';
+
+const { t } = useI18n();
 
 const props = defineProps({
     events: { type: Array, default: () => [] },
@@ -29,9 +32,9 @@ const kindOf = (event) => {
 };
 
 const KINDS = {
-    success: { label: 'Success', badge: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300' },
-    failed: { label: 'Failed', badge: 'bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300' },
-    invalid: { label: 'Invalid user', badge: 'bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300' },
+    success: { get label() { return t('security.fail2ban.history.kinds.success'); }, badge: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300' },
+    failed: { get label() { return t('security.fail2ban.history.kinds.failed'); }, badge: 'bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300' },
+    invalid: { get label() { return t('security.fail2ban.history.kinds.invalid'); }, badge: 'bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300' },
 };
 
 const matches = (event, name) => {
@@ -41,11 +44,11 @@ const matches = (event, name) => {
 };
 
 const filters = computed(() => [
-    { name: 'all', label: 'All' },
-    { name: 'success', label: 'Success' },
-    { name: 'failed', label: 'Failed' },
-    { name: 'invalid', label: 'Invalid user' },
-    { name: 'blocked', label: 'Blocked' },
+    { name: 'all', label: t('security.fail2ban.history.filters.all') },
+    { name: 'success', label: t('security.fail2ban.history.kinds.success') },
+    { name: 'failed', label: t('security.fail2ban.history.kinds.failed') },
+    { name: 'invalid', label: t('security.fail2ban.history.kinds.invalid') },
+    { name: 'blocked', label: t('security.fail2ban.history.blocked') },
 ].map((item) => ({ ...item, count: props.events.filter((event) => matches(event, item.name)).length })));
 
 const failedBy = computed(() => {
@@ -101,22 +104,22 @@ const formatTime = (seconds) => new Date(seconds * 1000).toLocaleString();
     <section class="rounded-xl border border-slate-200 bg-white p-6 dark:border-slate-800 dark:bg-slate-900">
         <div class="flex flex-wrap items-center justify-between gap-3">
             <div>
-                <h2 class="text-base font-semibold">SSH login history</h2>
+                <h2 class="text-base font-semibold">{{ t('security.fail2ban.history.title') }}</h2>
                 <p class="text-xs text-slate-500 dark:text-slate-400">
-                    The latest {{ events.length }} SSH logins from the system journal, newest first.
+                    {{ t('security.fail2ban.history.latest', { count: events.length }) }}
                     <template v-if="hidden">
-                        {{ hidden }} deleted {{ hidden === 1 ? 'row is' : 'rows are' }} hidden.
-                        <button type="button" :disabled="working" class="text-blue-600 hover:underline disabled:opacity-60 dark:text-blue-400" @click="emit('restore')">Show again</button>
+                        {{ hidden === 1 ? t('security.fail2ban.history.hiddenOne') : t('security.fail2ban.history.hiddenMany', { count: hidden }) }}
+                        <button type="button" :disabled="working" class="text-blue-600 hover:underline disabled:opacity-60 dark:text-blue-400" @click="emit('restore')">{{ t('security.fail2ban.history.showAgain') }}</button>
                     </template>
                 </p>
             </div>
             <div class="flex w-full flex-wrap gap-2 sm:w-auto">
-                <input v-model="search" type="search" placeholder="Find an IP or user" class="min-w-0 flex-1 rounded-md border border-slate-300 px-3 py-2 text-sm sm:w-56 dark:border-slate-700 dark:bg-slate-800" />
+                <input v-model="search" type="search" :placeholder="t('security.fail2ban.history.search')" class="min-w-0 flex-1 rounded-md border border-slate-300 px-3 py-2 text-sm sm:w-56 dark:border-slate-700 dark:bg-slate-800" />
                 <button type="button" :disabled="loading" class="rounded-md border border-slate-300 px-3 py-2 text-xs hover:bg-slate-100 disabled:opacity-60 dark:border-slate-700 dark:hover:bg-slate-800" @click="emit('refresh')">
-                    {{ loading ? 'Loading…' : 'Reload' }}
+                    {{ loading ? t('common.loading') : t('security.fail2ban.history.reload') }}
                 </button>
                 <button type="button" :disabled="loading || working || !events.length" class="rounded-md border border-red-300 px-3 py-2 text-xs text-red-700 hover:bg-red-50 disabled:opacity-60 dark:border-red-800 dark:text-red-300 dark:hover:bg-red-900/20" @click="emit('clear')">
-                    {{ busy === 'history' ? 'Working…' : 'Clear history' }}
+                    {{ busy === 'history' ? t('security.fail2ban.history.working') : t('security.fail2ban.history.clearHistory') }}
                 </button>
             </div>
         </div>
@@ -139,21 +142,21 @@ const formatTime = (seconds) => new Date(seconds * 1000).toLocaleString();
         </div>
 
         <div v-if="selected.size" class="mt-3 flex flex-wrap items-center gap-2 rounded-md border border-blue-200 bg-blue-50 px-3 py-2 text-sm dark:border-blue-900 dark:bg-blue-950/40">
-            <span class="mr-auto">{{ selected.size }} IP{{ selected.size === 1 ? '' : 's' }} selected</span>
+            <span class="mr-auto">{{ selected.size === 1 ? t('security.fail2ban.history.selectedOne') : t('security.fail2ban.history.selectedMany', { count: selected.size }) }}</span>
             <button v-if="toBlock.length" type="button" :disabled="working" class="rounded-md bg-red-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-red-700 disabled:opacity-60" @click="emit('bulk', 'ban', toBlock)">
-                {{ busy === 'bulk' ? 'Working…' : `Block ${toBlock.length}` }}
+                {{ busy === 'bulk' ? t('security.fail2ban.history.working') : t('security.fail2ban.history.blockN', { count: toBlock.length }) }}
             </button>
             <button v-if="toUnblock.length" type="button" :disabled="working" class="rounded-md border border-blue-300 px-3 py-1.5 text-xs text-blue-700 hover:bg-blue-100 disabled:opacity-60 dark:border-blue-700 dark:text-blue-300 dark:hover:bg-blue-900/30" @click="emit('bulk', 'unban', toUnblock)">
-                {{ busy === 'bulk' ? 'Working…' : `Unblock ${toUnblock.length}` }}
+                {{ busy === 'bulk' ? t('security.fail2ban.history.working') : t('security.fail2ban.history.unblockN', { count: toUnblock.length }) }}
             </button>
             <button v-if="toWhitelist.length" type="button" :disabled="working" class="rounded-md border border-emerald-300 px-3 py-1.5 text-xs text-emerald-700 hover:bg-emerald-100 disabled:opacity-60 dark:border-emerald-700 dark:text-emerald-300 dark:hover:bg-emerald-900/30" @click="emit('bulk', 'whitelist_add', toWhitelist)">
-                {{ busy === 'bulk' ? 'Working…' : `Whitelist ${toWhitelist.length}` }}
+                {{ busy === 'bulk' ? t('security.fail2ban.history.working') : t('security.fail2ban.history.whitelistN', { count: toWhitelist.length }) }}
             </button>
             <button type="button" :disabled="working" class="rounded-md border border-slate-300 px-3 py-1.5 text-xs text-slate-700 hover:bg-slate-100 disabled:opacity-60 dark:border-slate-600 dark:text-slate-200 dark:hover:bg-slate-800" @click="emit('delete', [...selected])">
-                {{ busy === 'history' ? 'Working…' : `Delete history (${selected.size})` }}
+                {{ busy === 'history' ? t('security.fail2ban.history.working') : t('security.fail2ban.history.deleteHistoryN', { count: selected.size }) }}
             </button>
             <button type="button" class="rounded-md px-3 py-1.5 text-xs text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800" @click="clearSelection">
-                Clear
+                {{ t('security.fail2ban.history.clear') }}
             </button>
         </div>
 
@@ -162,13 +165,13 @@ const formatTime = (seconds) => new Date(seconds * 1000).toLocaleString();
                 <thead class="sticky top-0 bg-slate-50 dark:bg-slate-800">
                     <tr>
                         <th class="w-8 px-3 py-2">
-                            <input type="checkbox" :checked="allSelected" :disabled="!visibleIps.length" title="Select all IPs shown" class="rounded border-slate-300 dark:border-slate-600" @change="toggleAll" />
+                            <input type="checkbox" :checked="allSelected" :disabled="!visibleIps.length" :title="t('security.fail2ban.history.selectAll')" class="rounded border-slate-300 dark:border-slate-600" @change="toggleAll" />
                         </th>
-                        <th class="px-3 py-2">Time</th>
-                        <th class="px-3 py-2">Status</th>
-                        <th class="px-3 py-2">User</th>
+                        <th class="px-3 py-2">{{ t('security.fail2ban.history.time') }}</th>
+                        <th class="px-3 py-2">{{ t('security.fail2ban.history.status') }}</th>
+                        <th class="px-3 py-2">{{ t('security.fail2ban.history.user') }}</th>
                         <th class="px-3 py-2">IP</th>
-                        <th class="px-3 py-2">Method</th>
+                        <th class="px-3 py-2">{{ t('security.fail2ban.history.method') }}</th>
                         <th class="px-3 py-2"></th>
                     </tr>
                 </thead>
@@ -180,30 +183,30 @@ const formatTime = (seconds) => new Date(seconds * 1000).toLocaleString();
                         <td class="whitespace-nowrap px-3 py-2 text-xs">{{ formatTime(row.time) }}</td>
                         <td class="whitespace-nowrap px-3 py-2">
                             <span :class="KINDS[kindOf(row)].badge" class="rounded px-1.5 py-0.5 text-[11px] font-semibold">{{ KINDS[kindOf(row)].label }}</span>
-                            <span v-if="blocked.has(row.ip)" class="ml-1 rounded bg-slate-800 px-1.5 py-0.5 text-[11px] font-semibold text-white dark:bg-slate-200 dark:text-slate-900">Blocked</span>
+                            <span v-if="blocked.has(row.ip)" class="ml-1 rounded bg-slate-800 px-1.5 py-0.5 text-[11px] font-semibold text-white dark:bg-slate-200 dark:text-slate-900">{{ t('security.fail2ban.history.blocked') }}</span>
                         </td>
                         <td class="px-3 py-2 font-mono text-xs">{{ row.user || '—' }}</td>
                         <td class="whitespace-nowrap px-3 py-2 font-mono text-xs">
                             {{ row.ip }}
-                            <span v-if="row.ip === clientIp" class="ml-1 rounded bg-blue-100 px-1.5 py-0.5 text-[10px] font-semibold text-blue-700 dark:bg-blue-900/40 dark:text-blue-300">you</span>
-                            <span v-if="whitelisted(row.ip)" class="ml-1 rounded bg-emerald-100 px-1.5 py-0.5 text-[10px] font-semibold text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300">whitelisted</span>
-                            <span v-if="failedBy.get(row.ip)" class="ml-1 text-[10px] text-slate-500">{{ failedBy.get(row.ip) }} failed</span>
+                            <span v-if="row.ip === clientIp" class="ml-1 rounded bg-blue-100 px-1.5 py-0.5 text-[10px] font-semibold text-blue-700 dark:bg-blue-900/40 dark:text-blue-300">{{ t('security.fail2ban.history.you') }}</span>
+                            <span v-if="whitelisted(row.ip)" class="ml-1 rounded bg-emerald-100 px-1.5 py-0.5 text-[10px] font-semibold text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300">{{ t('security.fail2ban.history.whitelisted') }}</span>
+                            <span v-if="failedBy.get(row.ip)" class="ml-1 text-[10px] text-slate-500">{{ t('security.fail2ban.history.failedCount', { count: failedBy.get(row.ip) }) }}</span>
                         </td>
                         <td class="px-3 py-2 text-xs">{{ row.method }}</td>
                         <td class="whitespace-nowrap px-3 py-2 text-right">
                             <button v-if="blocked.has(row.ip)" type="button" :disabled="busy === row.ip" class="rounded border border-blue-300 px-2.5 py-1 text-xs text-blue-700 hover:bg-blue-50 disabled:opacity-60 dark:border-blue-700 dark:text-blue-300 dark:hover:bg-blue-900/20" @click="emit('unban', row.ip)">
-                                {{ busy === row.ip ? 'Working…' : 'Unblock' }}
+                                {{ busy === row.ip ? t('security.fail2ban.history.working') : t('security.fail2ban.history.unblock') }}
                             </button>
                             <button v-else-if="!whitelisted(row.ip)" type="button" :disabled="busy === row.ip" class="rounded border border-red-300 px-2.5 py-1 text-xs text-red-700 hover:bg-red-50 disabled:opacity-60 dark:border-red-800 dark:text-red-300 dark:hover:bg-red-900/20" @click="emit('ban', row.ip)">
-                                {{ busy === row.ip ? 'Working…' : 'Block' }}
+                                {{ busy === row.ip ? t('security.fail2ban.history.working') : t('security.fail2ban.history.block') }}
                             </button>
                         </td>
                     </tr>
                     <tr v-if="!loading && rows.length === 0">
-                        <td colspan="7" class="px-3 py-4 text-center text-slate-500">{{ events.length ? 'No login matches.' : 'No SSH logins recorded.' }}</td>
+                        <td colspan="7" class="px-3 py-4 text-center text-slate-500">{{ events.length ? t('security.fail2ban.history.noMatch') : t('security.fail2ban.history.empty') }}</td>
                     </tr>
                     <tr v-if="loading && events.length === 0">
-                        <td colspan="7" class="px-3 py-4 text-center text-slate-500">Loading…</td>
+                        <td colspan="7" class="px-3 py-4 text-center text-slate-500">{{ t('common.loading') }}</td>
                     </tr>
                 </tbody>
             </table>

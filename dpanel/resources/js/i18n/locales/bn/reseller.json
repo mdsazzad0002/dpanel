@@ -1,0 +1,23 @@
+{
+    "panel": {
+        "title": "Reseller panel",
+        "subtitle": "Customer-দের website, database ও request পরিচালনা করুন।",
+        "websiteRequests": "Website request",
+        "databaseRequests": "Database request",
+        "pending": "অপেক্ষমাণ: {count}",
+        "quick": "দ্রুত কাজ",
+        "createWebsite": "Website তৈরি করুন",
+        "websiteList": "Website তালিকা",
+        "createDatabase": "Database তৈরি করুন",
+        "databaseList": "Database তালিকা",
+        "userPanel": "User panel",
+        "recentWebsite": "সাম্প্রতিক website request",
+        "recentDatabase": "সাম্প্রতিক database request",
+        "domain": "Domain",
+        "status": "অবস্থা",
+        "created": "তৈরি হয়েছে",
+        "database": "Database",
+        "noWebsite": "কোনো website request পাওয়া যায়নি।",
+        "noDatabase": "কোনো database request পাওয়া যায়নি।"
+    }
+}

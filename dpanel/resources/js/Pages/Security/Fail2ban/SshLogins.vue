@@ -4,6 +4,9 @@ import Fail2banShell from './components/Fail2banShell.vue';
 import SshPolicyCard from './components/SshPolicyCard.vue';
 import SshLoginHistory from './components/SshLoginHistory.vue';
 import { useFail2ban } from './useFail2ban';
+import { useI18n } from 'vue-i18n';
+
+const { t } = useI18n();
 
 const props = defineProps({
     clientIp: { type: String, default: '' },
@@ -25,8 +28,8 @@ onMounted(refresh);
 
 <template>
     <Fail2banShell
-        title="SSH Login History"
-        description="Recent SSH logins and failed attempts. Block an IP that keeps trying, or unblock one fail2ban caught."
+        :title="t('security.fail2ban.pages.sshTitle')"
+        :description="t('security.fail2ban.pages.sshDesc')"
         :status="status"
         :loading="loading"
         :load-error="loadError"

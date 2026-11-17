@@ -1,4 +1,7 @@
+import { i18n } from '@/i18n';
 import { freePort, randomSecret } from './useDockerRequest';
+
+const t = (...args) => i18n.global.t(...args);
 
 /*
  * Ready-made apps. Placeholders are filled in when a template is opened:
@@ -10,20 +13,18 @@ import { freePort, randomSecret } from './useDockerRequest';
  */
 
 export const categories = [
-    { key: 'all', label: 'All' },
-    { key: 'database', label: 'Databases' },
-    { key: 'search', label: 'Search' },
-    { key: 'cms', label: 'Websites & CMS' },
-    { key: 'tools', label: 'Tools' },
-    { key: 'storage', label: 'Storage & queues' },
-];
+    'all', 'database', 'search', 'cms', 'tools', 'storage',
+].map((key) => ({ key, get label() { return t(`docker.templates.categories.${key}`); } }));
 
-const connect = (what) => `<strong>Connect:</strong> ${what}`;
+// Notes and descriptions are getters, so they follow the panel language;
+// instantiate() reads them once and fills the placeholders.
+const code = (text) => `<code>${text}</code>`;
+const connect = (what) => `<strong>${t('docker.catalog.connect')}</strong> ${what}`;
 
 export const containerTemplates = [
     {
         key: 'redis', name: 'Redis', category: 'database', icon: 'bi bi-lightning-charge', color: 'text-red-600',
-        description: 'In-memory cache and queue for Laravel, Node and WordPress object cache.',
+        get description() { return t('docker.catalog.redis.description'); },
         spec: {
             image: 'redis:7-alpine', name: 'redis',
             ports: [{ host: '{{port:6380}}', container: 6379 }],
@@ -31,22 +32,22 @@ export const containerTemplates = [
             command: ['redis-server', '--appendonly', 'yes', '--requirepass', '{{secret:REDIS}}'],
             memory: '256m',
         },
-        note: connect('host <code>127.0.0.1</code>, port <code>{{port:6380}}</code>, password <code>{{secret:REDIS}}</code>. The server\'s own Redis keeps port 6379.'),
+        get note() { return connect(t('docker.catalog.redis.note', { host: code('127.0.0.1'), port: code('{{port:6380}}'), password: code('{{secret:REDIS}}') })); },
     },
     {
         key: 'postgres', name: 'PostgreSQL', category: 'database', icon: 'bi bi-database', color: 'text-sky-700',
-        description: 'A separate PostgreSQL in any version, next to the server\'s own databases.',
+        get description() { return t('docker.catalog.postgres.description'); },
         spec: {
             image: 'postgres:16-alpine', name: 'postgres',
             ports: [{ host: '{{port:5433}}', container: 5432 }],
             env: [{ key: 'POSTGRES_USER', value: 'app' }, { key: 'POSTGRES_PASSWORD', value: '{{secret:PG}}' }, { key: 'POSTGRES_DB', value: 'app' }],
             volumes: [{ source: 'postgres-data', target: '/var/lib/postgresql/data' }],
         },
-        note: connect('host <code>127.0.0.1</code>, port <code>{{port:5433}}</code>, user and database <code>app</code>, password <code>{{secret:PG}}</code>.'),
+        get note() { return connect(t('docker.catalog.postgres.note', { host: code('127.0.0.1'), port: code('{{port:5433}}'), app: code('app'), password: code('{{secret:PG}}') })); },
     },
     {
         key: 'mysql', name: 'MySQL 8.4', category: 'database', icon: 'bi bi-database', color: 'text-orange-600',
-        description: 'Another MySQL version without touching the server\'s MySQL.',
+        get description() { return t('docker.catalog.mysql.description'); },
         spec: {
             image: 'mysql:8.4', name: 'mysql84',
             ports: [{ host: '{{port:3307}}', container: 3306 }],
@@ -56,11 +57,11 @@ export const containerTemplates = [
             ],
             volumes: [{ source: 'mysql84-data', target: '/var/lib/mysql' }],
         },
-        note: connect('host <code>127.0.0.1</code>, port <code>{{port:3307}}</code>, user <code>app</code>, password <code>{{secret:MYSQL}}</code>.'),
+        get note() { return connect(t('docker.catalog.hostPortUserPassword', { host: code('127.0.0.1'), port: code('{{port:3307}}'), user: code('app'), password: code('{{secret:MYSQL}}') })); },
     },
     {
         key: 'mariadb', name: 'MariaDB 11', category: 'database', icon: 'bi bi-database', color: 'text-amber-700',
-        description: 'MariaDB in its own container and version.',
+        get description() { return t('docker.catalog.mariadb.description'); },
         spec: {
             image: 'mariadb:11', name: 'mariadb',
             ports: [{ host: '{{port:3308}}', container: 3306 }],
@@ -70,22 +71,22 @@ export const containerTemplates = [
             ],
             volumes: [{ source: 'mariadb-data', target: '/var/lib/mysql' }],
         },
-        note: connect('host <code>127.0.0.1</code>, port <code>{{port:3308}}</code>, user <code>app</code>, password <code>{{secret:MARIA}}</code>.'),
+        get note() { return connect(t('docker.catalog.hostPortUserPassword', { host: code('127.0.0.1'), port: code('{{port:3308}}'), user: code('app'), password: code('{{secret:MARIA}}') })); },
     },
     {
         key: 'mongo', name: 'MongoDB 7', category: 'database', icon: 'bi bi-database', color: 'text-emerald-700',
-        description: 'Document database for Node and Python apps.',
+        get description() { return t('docker.catalog.mongo.description'); },
         spec: {
             image: 'mongo:7', name: 'mongo',
             ports: [{ host: '{{port:27017}}', container: 27017 }],
             env: [{ key: 'MONGO_INITDB_ROOT_USERNAME', value: 'admin' }, { key: 'MONGO_INITDB_ROOT_PASSWORD', value: '{{secret:MONGO}}' }],
             volumes: [{ source: 'mongo-data', target: '/data/db' }],
         },
-        note: connect('<code>mongodb://admin:{{secret:MONGO}}@127.0.0.1:{{port:27017}}</code>'),
+        get note() { return connect(code('mongodb://admin:{{secret:MONGO}}@127.0.0.1:{{port:27017}}')); },
     },
     {
         key: 'elasticsearch', name: 'Elasticsearch 8', category: 'search', icon: 'bi bi-search', color: 'text-teal-600',
-        description: 'Full-text search for shops and apps, one node, ready in a minute.',
+        get description() { return t('docker.catalog.elasticsearch.description'); },
         spec: {
             image: 'docker.elastic.co/elasticsearch/elasticsearch:8.15.3', name: 'elasticsearch',
             ports: [{ host: '{{port:9200}}', container: 9200 }],
@@ -97,44 +98,44 @@ export const containerTemplates = [
             volumes: [{ source: 'elasticsearch-data', target: '/usr/share/elasticsearch/data' }],
             memory: '1g',
         },
-        note: `${connect('<code>http://127.0.0.1:{{port:9200}}</code> (security is off, so keep the port private).')} Needs about 1 GB RAM. If it stops with "vm.max_map_count is too low", run <code>sudo sysctl -w vm.max_map_count=262144</code> on the server. Want Kibana too? Use the Elasticsearch + Kibana stack.`,
+        get note() { return `${connect(t('docker.catalog.elasticsearch.connect', { url: code('http://127.0.0.1:{{port:9200}}') }))} ${t('docker.catalog.elasticsearch.note', { command: code('sudo sysctl -w vm.max_map_count=262144') })}`; },
     },
     {
         key: 'meilisearch', name: 'Meilisearch', category: 'search', icon: 'bi bi-search-heart', color: 'text-pink-600',
-        description: 'Fast, typo-tolerant search with a tiny footprint. Works with Laravel Scout.',
+        get description() { return t('docker.catalog.meilisearch.description'); },
         spec: {
             image: 'getmeili/meilisearch:v1.11', name: 'meilisearch',
             ports: [{ host: '{{port:7700}}', container: 7700 }],
             env: [{ key: 'MEILI_MASTER_KEY', value: '{{secret:MEILI}}' }, { key: 'MEILI_ENV', value: 'production' }],
             volumes: [{ source: 'meili-data', target: '/meili_data' }],
         },
-        note: connect('<code>http://127.0.0.1:{{port:7700}}</code>, master key <code>{{secret:MEILI}}</code>.'),
+        get note() { return connect(t('docker.catalog.meilisearch.note', { url: code('http://127.0.0.1:{{port:7700}}'), key: code('{{secret:MEILI}}') })); },
     },
     {
         key: 'typesense', name: 'Typesense', category: 'search', icon: 'bi bi-search', color: 'text-indigo-600',
-        description: 'Open-source search engine, an Algolia alternative.',
+        get description() { return t('docker.catalog.typesense.description'); },
         spec: {
             image: 'typesense/typesense:27.1', name: 'typesense',
             ports: [{ host: '{{port:8108}}', container: 8108 }],
             volumes: [{ source: 'typesense-data', target: '/data' }],
             command: ['--data-dir', '/data', '--api-key={{secret:TS}}', '--enable-cors'],
         },
-        note: connect('<code>http://127.0.0.1:{{port:8108}}</code>, API key <code>{{secret:TS}}</code>.'),
+        get note() { return connect(t('docker.catalog.urlApiKey', { url: code('http://127.0.0.1:{{port:8108}}'), key: code('{{secret:TS}}') })); },
     },
     {
         key: 'qdrant', name: 'Qdrant', category: 'search', icon: 'bi bi-bounding-box', color: 'text-rose-600',
-        description: 'Vector database for AI search and RAG.',
+        get description() { return t('docker.catalog.qdrant.description'); },
         spec: {
             image: 'qdrant/qdrant:latest', name: 'qdrant',
             ports: [{ host: '{{port:6333}}', container: 6333 }],
             env: [{ key: 'QDRANT__SERVICE__API_KEY', value: '{{secret:QDRANT}}' }],
             volumes: [{ source: 'qdrant-data', target: '/qdrant/storage' }],
         },
-        note: connect('<code>http://127.0.0.1:{{port:6333}}</code>, API key <code>{{secret:QDRANT}}</code>.'),
+        get note() { return connect(t('docker.catalog.urlApiKey', { url: code('http://127.0.0.1:{{port:6333}}'), key: code('{{secret:QDRANT}}') })); },
     },
     {
         key: 'minio', name: 'MinIO', category: 'storage', icon: 'bi bi-bucket', color: 'text-red-700',
-        description: 'S3-compatible file storage for uploads and backups.',
+        get description() { return t('docker.catalog.minio.description'); },
         spec: {
             image: 'minio/minio:latest', name: 'minio',
             ports: [{ host: '{{port:9000}}', container: 9000 }, { host: '{{port:9001}}', container: 9001 }],
@@ -142,83 +143,83 @@ export const containerTemplates = [
             volumes: [{ source: 'minio-data', target: '/data' }],
             command: ['server', '/data', '--console-address', ':9001'],
         },
-        note: `${connect('S3 API <code>http://127.0.0.1:{{port:9000}}</code>, user <code>admin</code>, password <code>{{secret:MINIO}}</code>.')} The web console is on port {{port:9001}}; put it behind a website to open it in a browser.`,
+        get note() { return `${connect(t('docker.catalog.minio.connect', { url: code('http://127.0.0.1:{{port:9000}}'), user: code('admin'), password: code('{{secret:MINIO}}') }))} ${t('docker.catalog.minio.note', { port: '{{port:9001}}' })}`; },
     },
     {
         key: 'rabbitmq', name: 'RabbitMQ', category: 'storage', icon: 'bi bi-envelope-paper', color: 'text-orange-500',
-        description: 'Message broker with its management UI.',
+        get description() { return t('docker.catalog.rabbitmq.description'); },
         spec: {
             image: 'rabbitmq:3-management-alpine', name: 'rabbitmq',
             ports: [{ host: '{{port:5672}}', container: 5672 }, { host: '{{port:15672}}', container: 15672 }],
             env: [{ key: 'RABBITMQ_DEFAULT_USER', value: 'admin' }, { key: 'RABBITMQ_DEFAULT_PASS', value: '{{secret:RABBIT}}' }],
             volumes: [{ source: 'rabbitmq-data', target: '/var/lib/rabbitmq' }],
         },
-        note: connect('<code>amqp://admin:{{secret:RABBIT}}@127.0.0.1:{{port:5672}}</code>; management UI on port {{port:15672}}.'),
+        get note() { return connect(t('docker.catalog.rabbitmq.note', { url: code('amqp://admin:{{secret:RABBIT}}@127.0.0.1:{{port:5672}}'), port: '{{port:15672}}' })); },
     },
     {
         key: 'memcached', name: 'Memcached', category: 'storage', icon: 'bi bi-memory', color: 'text-slate-600',
-        description: 'Simple memory cache.',
+        get description() { return t('docker.catalog.memcached.description'); },
         spec: { image: 'memcached:1.6-alpine', name: 'memcached', ports: [{ host: '{{port:11211}}', container: 11211 }], command: ['memcached', '-m', '128'], memory: '160m' },
-        note: connect('<code>127.0.0.1:{{port:11211}}</code>'),
+        get note() { return connect(code('127.0.0.1:{{port:11211}}')); },
     },
     {
         key: 'uptime-kuma', name: 'Uptime Kuma', category: 'tools', icon: 'bi bi-activity', color: 'text-emerald-600',
-        description: 'Uptime monitor with alerts and status pages.',
+        get description() { return t('docker.catalog.uptimeKuma.description'); },
         spec: { image: 'louislam/uptime-kuma:1', name: 'uptime-kuma', ports: [{ host: '{{port:3001}}', container: 3001 }], volumes: [{ source: 'uptime-kuma-data', target: '/app/data' }] },
-        note: 'To open it on a domain with SSL, create a website and set its runtime to Docker with image <code>louislam/uptime-kuma:1</code> and port <code>3001</code> instead.',
+        get note() { return t('docker.catalog.uptimeKuma.note', { image: code('louislam/uptime-kuma:1'), port: code('3001') }); },
         web: true,
     },
     {
         key: 'n8n', name: 'n8n', category: 'tools', icon: 'bi bi-diagram-2', color: 'text-rose-500',
-        description: 'Workflow automation, a self-hosted Zapier.',
+        get description() { return t('docker.catalog.n8n.description'); },
         spec: {
             image: 'n8nio/n8n:latest', name: 'n8n',
             ports: [{ host: '{{port:5678}}', container: 5678 }],
             env: [{ key: 'GENERIC_TIMEZONE', value: Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC' }],
             volumes: [{ source: 'n8n-data', target: '/home/node/.n8n' }],
         },
-        note: 'Best on its own domain: create a website with the Docker runtime, image <code>n8nio/n8n:latest</code>, port <code>5678</code>. For a database-backed setup use the n8n + PostgreSQL stack.',
+        get note() { return t('docker.catalog.n8n.note', { image: code('n8nio/n8n:latest'), port: code('5678') }); },
         web: true,
     },
     {
         key: 'adminer', name: 'Adminer', category: 'tools', icon: 'bi bi-table', color: 'text-blue-600',
-        description: 'Browse any database container in the browser.',
+        get description() { return t('docker.catalog.adminer.description'); },
         spec: { image: 'adminer:latest', name: 'adminer', ports: [{ host: '{{port:8081}}', container: 8080 }] },
-        note: 'Put it on the same network as the database (More options → Network) and log in with the database container\'s name as the server.',
+        get note() { return t('docker.catalog.adminer.note', { more: t('docker.form.more'), network: t('docker.form.network') }); },
         web: true,
     },
     {
         key: 'mailpit', name: 'Mailpit', category: 'tools', icon: 'bi bi-mailbox', color: 'text-cyan-600',
-        description: 'Catches outgoing email from apps under test.',
+        get description() { return t('docker.catalog.mailpit.description'); },
         spec: { image: 'axllent/mailpit:latest', name: 'mailpit', ports: [{ host: '{{port:1025}}', container: 1025 }, { host: '{{port:8025}}', container: 8025 }] },
-        note: connect('SMTP <code>127.0.0.1:{{port:1025}}</code>; the inbox UI is on port {{port:8025}}.'),
+        get note() { return connect(t('docker.catalog.mailpit.note', { address: code('127.0.0.1:{{port:1025}}'), port: '{{port:8025}}' })); },
     },
     {
         key: 'gitea', name: 'Gitea', category: 'tools', icon: 'bi bi-git', color: 'text-green-700',
-        description: 'Lightweight self-hosted Git service.',
+        get description() { return t('docker.catalog.gitea.description'); },
         spec: { image: 'gitea/gitea:1.22', name: 'gitea', ports: [{ host: '{{port:3000}}', container: 3000 }], volumes: [{ source: 'gitea-data', target: '/data' }] },
-        note: 'Open it on a domain by creating a website with the Docker runtime (image <code>gitea/gitea:1.22</code>, port <code>3000</code>), or use the Gitea + PostgreSQL stack.',
+        get note() { return t('docker.catalog.gitea.note', { image: code('gitea/gitea:1.22'), port: code('3000') }); },
         web: true,
     },
     {
         key: 'metabase', name: 'Metabase', category: 'tools', icon: 'bi bi-bar-chart', color: 'text-blue-500',
-        description: 'Dashboards and questions on top of your databases.',
+        get description() { return t('docker.catalog.metabase.description'); },
         spec: { image: 'metabase/metabase:latest', name: 'metabase', ports: [{ host: '{{port:3002}}', container: 3000 }], volumes: [{ source: 'metabase-data', target: '/metabase-data' }], env: [{ key: 'MB_DB_FILE', value: '/metabase-data/metabase.db' }], memory: '1g' },
-        note: 'Needs about 1 GB RAM. Open it on a domain with a Docker-runtime website on port 3000.',
+        get note() { return t('docker.catalog.metabase.note'); },
         web: true,
     },
     {
         key: 'nginx', name: 'Nginx (static files)', category: 'cms', icon: 'bi bi-filetype-html', color: 'text-green-600',
-        description: 'Serves a folder of HTML files.',
+        get description() { return t('docker.catalog.nginx.description'); },
         spec: { image: 'nginx:alpine', name: 'static-site', ports: [{ host: '{{port:8082}}', container: 80 }], volumes: [{ source: '/home/USER/public_html', target: '/usr/share/nginx/html', read_only: true }] },
-        note: 'Change the volume to your folder. For a static site on a domain, a normal PHP website is simpler; use this when you need Nginx itself.',
+        get note() { return t('docker.catalog.nginx.note'); },
     },
 ];
 
 export const stackTemplates = [
     {
         key: 'elastic-kibana', name: 'Elasticsearch + Kibana', category: 'search', icon: 'bi bi-search', color: 'text-teal-600',
-        description: 'Search engine with its dashboard, already connected to each other.',
+        get description() { return t('docker.catalog.elasticKibana.description'); },
         stackName: 'elastic',
         compose: `services:
   elasticsearch:
@@ -252,11 +253,11 @@ volumes:
   es-data:
 `,
         env: 'ES_VERSION=8.15.3\nES_HEAP=512m\nES_PORT={{port:9200}}\nKIBANA_PORT={{port:5601}}\n',
-        note: 'Kibana reaches Elasticsearch as <code>http://elasticsearch:9200</code> on the stack\'s own network. Elasticsearch: <code>http://127.0.0.1:{{port:9200}}</code>. To open Kibana in a browser, put a website in front of port {{port:5601}} (Runtime settings → Docker → "Use a running stack"). Needs about 2 GB RAM.',
+        get note() { return t('docker.catalog.elasticKibana.note', { internal: code('http://elasticsearch:9200'), url: code('http://127.0.0.1:{{port:9200}}'), port: '{{port:5601}}' }); },
     },
     {
         key: 'wordpress', name: 'WordPress + MySQL', category: 'cms', icon: 'bi bi-wordpress', color: 'text-blue-700',
-        description: 'WordPress with its own MySQL, isolated from the server.',
+        get description() { return t('docker.catalog.wordpress.description'); },
         stackName: 'wordpress',
         compose: `services:
   wordpress:
@@ -290,12 +291,12 @@ volumes:
   db-data:
 `,
         env: 'WP_PORT={{port:8085}}\nDB_PASSWORD={{secret}}\nDB_ROOT_PASSWORD={{secret}}\n',
-        note: 'After deploying, put a website in front of port {{port:8085}} to open it on your domain with SSL. The database is reachable only by WordPress.',
+        get note() { return t('docker.catalog.wordpress.note', { port: '{{port:8085}}' }); },
         web: true,
     },
     {
         key: 'ghost', name: 'Ghost + MySQL', category: 'cms', icon: 'bi bi-journal-richtext', color: 'text-slate-700',
-        description: 'Modern publishing and newsletters.',
+        get description() { return t('docker.catalog.ghost.description'); },
         stackName: 'ghost',
         compose: `services:
   ghost:
@@ -331,12 +332,12 @@ volumes:
   db-data:
 `,
         env: 'GHOST_URL=https://blog.example.com\nGHOST_PORT={{port:2368}}\nDB_PASSWORD={{secret}}\nDB_ROOT_PASSWORD={{secret}}\n',
-        note: 'Set <code>GHOST_URL</code> to the domain you will use, then put that website in front of port {{port:2368}}.',
+        get note() { return t('docker.catalog.ghost.note', { variable: code('GHOST_URL'), port: '{{port:2368}}' }); },
         web: true,
     },
     {
         key: 'nextcloud', name: 'Nextcloud', category: 'storage', icon: 'bi bi-cloud', color: 'text-sky-600',
-        description: 'Files, calendar and contacts: your own cloud. With MariaDB and Redis.',
+        get description() { return t('docker.catalog.nextcloud.description'); },
         stackName: 'nextcloud',
         compose: `services:
   app:
@@ -379,12 +380,12 @@ volumes:
   db-data:
 `,
         env: 'DOMAIN=cloud.example.com\nNC_PORT={{port:8086}}\nDB_PASSWORD={{secret}}\nDB_ROOT_PASSWORD={{secret}}\n',
-        note: 'Set <code>DOMAIN</code>, deploy, then put that website in front of port {{port:8086}} and finish the setup in the browser.',
+        get note() { return t('docker.catalog.nextcloud.note', { variable: code('DOMAIN'), port: '{{port:8086}}' }); },
         web: true,
     },
     {
         key: 'gitea-pg', name: 'Gitea + PostgreSQL', category: 'tools', icon: 'bi bi-git', color: 'text-green-700',
-        description: 'Git hosting backed by PostgreSQL.',
+        get description() { return t('docker.catalog.giteaPg.description'); },
         stackName: 'gitea',
         compose: `services:
   gitea:
@@ -419,12 +420,12 @@ volumes:
   db-data:
 `,
         env: 'GITEA_PORT={{port:3000}}\nSSH_PORT={{port:2222}}\nDB_PASSWORD={{secret}}\n',
-        note: 'The web UI goes behind a website on port {{port:3000}}. Git over SSH uses public port {{port:2222}} (allow it in the firewall).',
+        get note() { return t('docker.catalog.giteaPg.note', { port: '{{port:3000}}', sshPort: '{{port:2222}}' }); },
         web: true,
     },
     {
         key: 'n8n-pg', name: 'n8n + PostgreSQL', category: 'tools', icon: 'bi bi-diagram-2', color: 'text-rose-500',
-        description: 'Workflow automation with a proper database.',
+        get description() { return t('docker.catalog.n8nPg.description'); },
         stackName: 'n8n',
         compose: `services:
   n8n:
@@ -462,12 +463,12 @@ volumes:
   db-data:
 `,
         env: `DOMAIN=n8n.example.com\nN8N_PORT={{port:5678}}\nTZ=${Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC'}\nDB_PASSWORD={{secret}}\n`,
-        note: 'Set <code>DOMAIN</code>, deploy, then put that website in front of port {{port:5678}}.',
+        get note() { return t('docker.catalog.n8nPg.note', { variable: code('DOMAIN'), port: '{{port:5678}}' }); },
         web: true,
     },
     {
         key: 'umami', name: 'Umami analytics', category: 'tools', icon: 'bi bi-graph-up', color: 'text-indigo-600',
-        description: 'Privacy-friendly website analytics, a Google Analytics alternative.',
+        get description() { return t('docker.catalog.umami.description'); },
         stackName: 'umami',
         compose: `services:
   umami:
@@ -495,12 +496,12 @@ volumes:
   db-data:
 `,
         env: 'UMAMI_PORT={{port:3003}}\nDB_PASSWORD={{secret}}\nAPP_SECRET={{secret}}\n',
-        note: 'Put a website in front of port {{port:3003}}. First login: <code>admin</code> / <code>umami</code>; change it right away.',
+        get note() { return t('docker.catalog.umami.note', { port: '{{port:3003}}', user: code('admin'), password: code('umami') }); },
         web: true,
     },
     {
         key: 'metabase-pg', name: 'Metabase + PostgreSQL', category: 'tools', icon: 'bi bi-bar-chart', color: 'text-blue-500',
-        description: 'Business dashboards with their settings kept in PostgreSQL.',
+        get description() { return t('docker.catalog.metabasePg.description'); },
         stackName: 'metabase',
         compose: `services:
   metabase:
@@ -532,12 +533,12 @@ volumes:
   db-data:
 `,
         env: 'MB_PORT={{port:3002}}\nDB_PASSWORD={{secret}}\n',
-        note: 'Needs about 1.5 GB RAM. Put a website in front of port {{port:3002}}.',
+        get note() { return t('docker.catalog.metabasePg.note', { port: '{{port:3002}}' }); },
         web: true,
     },
     {
         key: 'mongo-express', name: 'MongoDB + Mongo Express', category: 'database', icon: 'bi bi-database', color: 'text-emerald-700',
-        description: 'MongoDB with a web admin, on their own network.',
+        get description() { return t('docker.catalog.mongoExpress.description'); },
         stackName: 'mongo',
         compose: `services:
   mongo:
@@ -567,11 +568,11 @@ volumes:
   mongo-data:
 `,
         env: 'MONGO_PORT={{port:27017}}\nUI_PORT={{port:8087}}\nMONGO_PASSWORD={{secret}}\nUI_PASSWORD={{secret}}\n',
-        note: 'Apps connect to <code>mongodb://admin:PASSWORD@127.0.0.1:{{port:27017}}</code>. The admin UI (user <code>admin</code>, password in the variables) goes behind a website on port {{port:8087}}.',
+        get note() { return t('docker.catalog.mongoExpress.note', { url: code('mongodb://admin:PASSWORD@127.0.0.1:{{port:27017}}'), user: code('admin'), port: '{{port:8087}}' }); },
     },
     {
         key: 'redis-insight', name: 'Redis + RedisInsight', category: 'database', icon: 'bi bi-lightning-charge', color: 'text-red-600',
-        description: 'Redis with a browser UI to look inside it.',
+        get description() { return t('docker.catalog.redisInsight.description'); },
         stackName: 'redis',
         compose: `services:
   redis:
@@ -596,7 +597,7 @@ volumes:
   insight-data:
 `,
         env: 'REDIS_PORT={{port:6380}}\nUI_PORT={{port:5540}}\nREDIS_PASSWORD={{secret}}\n',
-        note: 'In RedisInsight add the database with host <code>redis</code>, port <code>6379</code> and the password from the variables.',
+        get note() { return t('docker.catalog.redisInsight.note', { host: code('redis'), port: code('6379') }); },
     },
 ];
 

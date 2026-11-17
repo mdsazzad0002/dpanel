@@ -4,6 +4,9 @@ import NodeAppCard from './components/NodeAppCard.vue';
 import NodeAppFormPanel from './components/NodeAppFormPanel.vue';
 import { Head, usePage } from '@inertiajs/vue3';
 import { ref } from 'vue';
+import { useI18n } from 'vue-i18n';
+
+const { t } = useI18n();
 
 const page = usePage();
 const panelToken = page.props.panel?.token;
@@ -24,17 +27,17 @@ const openEdit = (app) => { editing.value = app; panelOpen.value = true; };
 </script>
 
 <template>
-    <Head title="Node.js Apps" />
+    <Head :title="t('nodeApps.index.title')" />
 
     <AuthenticatedLayout>
         <template #header>
             <div class="flex flex-wrap items-center justify-between gap-3">
                 <div>
-                    <h1 class="text-lg font-semibold">Node.js Apps</h1>
-                    <p class="text-sm text-slate-500 dark:text-slate-400">Next.js, Express, Nest… run from any folder of your home directory.</p>
+                    <h1 class="text-lg font-semibold">{{ t('nodeApps.index.title') }}</h1>
+                    <p class="text-sm text-slate-500 dark:text-slate-400">{{ t('nodeApps.index.subtitle') }}</p>
                 </div>
                 <button @click="openCreate" :disabled="!owners.length" class="rounded-md bg-emerald-600 px-3 py-2 text-sm text-white hover:bg-emerald-700 disabled:opacity-50">
-                    <i class="bi bi-plus-lg mr-1"></i>New Node.js app
+                    <i class="bi bi-plus-lg mr-1"></i>{{ t('nodeApps.index.new') }}
                 </button>
             </div>
         </template>
@@ -45,11 +48,11 @@ const openEdit = (app) => { editing.value = app; panelOpen.value = true; };
 
             <div v-if="!projects.length" class="rounded-xl border border-dashed border-slate-300 bg-white p-10 text-center dark:border-slate-600 dark:bg-slate-800">
                 <i class="bi bi-hexagon text-3xl text-slate-400"></i>
-                <p class="mt-2 text-sm font-medium">{{ owners.length ? 'No Node.js apps yet' : 'No home directory available' }}</p>
+                <p class="mt-2 text-sm font-medium">{{ owners.length ? t('nodeApps.index.empty') : t('nodeApps.index.noHome') }}</p>
                 <p class="mt-1 text-sm text-slate-500 dark:text-slate-400">
-                    {{ owners.length ? 'Create one, then publish it from Rules → Port Share.' : 'Apps run inside a website user\'s home. Create a website first.' }}
+                    {{ owners.length ? t('nodeApps.index.emptyHelp') : t('nodeApps.index.noHomeHelp') }}
                 </p>
-                <button v-if="owners.length" @click="openCreate" class="mt-4 rounded-md bg-emerald-600 px-3 py-2 text-sm text-white hover:bg-emerald-700">New Node.js app</button>
+                <button v-if="owners.length" @click="openCreate" class="mt-4 rounded-md bg-emerald-600 px-3 py-2 text-sm text-white hover:bg-emerald-700">{{ t('nodeApps.index.new') }}</button>
             </div>
 
             <div class="grid gap-4 md:grid-cols-2 xl:grid-cols-3">

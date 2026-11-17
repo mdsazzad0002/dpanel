@@ -1,4 +1,7 @@
 <script setup>
+import { useI18n } from 'vue-i18n';
+
+const { t } = useI18n();
 defineProps({
     fm: {
         type: Object,
@@ -24,7 +27,7 @@ defineProps({
                     type="button"
                     class="shrink-0 rounded-full p-1 text-current/80 hover:bg-white/10 hover:text-white"
                     @click="fm.removeToast(toast.id)"
-                    aria-label="Dismiss"
+                    :aria-label="t('fileManager.toast.dismiss')"
                 >
                     <svg viewBox="0 0 24 24" class="h-4 w-4 fill-current" aria-hidden="true">
                         <path d="M18.3 5.7a1 1 0 00-1.4-1.4L12 9.17 7.1 4.3A1 1 0 105.7 5.7L10.59 10.6 5.7 15.5a1 1 0 101.4 1.4l4.9-4.89 4.9 4.89a1 1 0 001.4-1.4l-4.89-4.9 4.89-4.9z" />

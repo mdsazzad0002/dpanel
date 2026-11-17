@@ -1,0 +1,100 @@
+{
+    "title": "WordPress",
+    "subtitle": "Every WordPress site you manage: updates, staging copies and a security check.",
+    "loadFailed": "Unable to load WordPress details.",
+    "none": "No WordPress site was found among your websites.",
+    "finding": "Looking for WordPress sites…",
+    "selectAll": "Select all",
+    "selected": "{count} sites selected",
+    "bulkConfirm": "Update {count} sites now? Each site is updated in turn.",
+    "updateEverything": "Update core, plugins and themes",
+    "updatePlugins": "Update plugins only",
+    "updateFailed": "The update failed.",
+    "updated": "Updated.",
+    "core": "Core",
+    "coreUpdate": "Version {version} is available.",
+    "upToDate": "Up to date.",
+    "updateCore": "Update WordPress",
+    "plugins": "Plugins",
+    "themes": "Themes",
+    "updateAll": "Update all ({count})",
+    "updateTo": "Update to {version}",
+    "updateHelp": "Updates run with plugins and themes switched off for the command, so a broken plugin cannot stop its own update. Take a staging copy first for a big update.",
+    "tabs": {
+        "updates": "Updates",
+        "staging": "Staging",
+        "security": "Security"
+    },
+    "securityHelp": "Checks core files against wordpress.org, plugin files, admin names, open registration, debug mode and file editing.",
+    "runCheck": "Run check",
+    "checkAgain": "Check again",
+    "checkFailed": "The check could not run.",
+    "fixFailed": "The fix could not be applied.",
+    "score": "{passed} of {total} checks passed",
+    "reinstallConfirm": "Download WordPress core again over the current files? Content, plugins and themes are not touched.",
+    "checks": {
+        "core_files": {
+            "pass": "Core files match wordpress.org",
+            "issue": "Some core files are changed or should not be there"
+        },
+        "plugin_files": {
+            "pass": "Plugin files match wordpress.org",
+            "issue": "Some plugins have changed files"
+        },
+        "admin_names": {
+            "pass": "No administrator has an easily guessed name",
+            "issue": "An administrator has an easily guessed name"
+        },
+        "registration": {
+            "pass": "Anyone-can-register is off",
+            "issue": "Anyone can register an account"
+        },
+        "debug": {
+            "pass": "Debug mode is off",
+            "issue": "Debug mode is on and can show errors to visitors"
+        },
+        "file_edit": {
+            "pass": "The theme and plugin file editor is off",
+            "issue": "Admins can edit PHP files from wp-admin"
+        },
+        "core_update": {
+            "pass": "WordPress is up to date",
+            "issue": "A WordPress update is waiting"
+        },
+        "plugin_updates": {
+            "pass": "All plugins are up to date",
+            "issue": "Some plugins need an update"
+        }
+    },
+    "fixes": {
+        "disallow_file_edit": "Turn the editor off",
+        "disable_debug": "Turn debug off",
+        "close_registration": "Close registration",
+        "reinstall_core": "Restore core files"
+    },
+    "stagingHelp": "Pair this site with another of your sites as its staging copy. Copying replaces the other site's files and database (they go to the trash first) and rewrites the site address.",
+    "stagingSite": "Staging site",
+    "pickSite": "Pick a site…",
+    "noFreeSite": "Create another website to use as staging first",
+    "useAsStaging": "Use as staging",
+    "unlink": "Unpair",
+    "unlinkConfirm": "Unpair these sites? Neither site is changed.",
+    "stagingFailed": "The staging action failed.",
+    "lastCopy": "Last copy to staging",
+    "lastDeploy": "last deploy",
+    "never": "never",
+    "copyToStaging": "Copy to staging",
+    "deploy": "Deploy staging to live",
+    "copyConfirm": "Copy {from} over {to}? {to}'s current files and database go to the trash first.",
+    "deployConfirm": "Deploy {from} over the live site {to}? The live files and database go to the trash first.",
+    "stage": {
+        "queued": "Waiting to start…",
+        "copying": "Copying files and database…",
+        "rewriting": "Rewriting the site address…",
+        "testing": "Updating and testing the staging copy…",
+        "updating": "Staging passed; updating this site…"
+    },
+    "safeUpdate": "Safe update",
+    "safeHelp": "Copy this site over its staging site, update the copy, and update this site only if the copy still loads without errors. Needs a linked staging site.",
+    "safeStarted": "Safe update started. Follow it on the Staging tab."
+}

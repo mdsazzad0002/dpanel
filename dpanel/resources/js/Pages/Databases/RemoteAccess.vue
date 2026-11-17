@@ -3,6 +3,9 @@ import { ref, computed } from 'vue';
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
 import { Head, usePage } from '@inertiajs/vue3';
 import axios from 'axios';
+import { useI18n } from 'vue-i18n';
+
+const { t } = useI18n();
 
 const props = defineProps({
     rules: { type: Array, default: () => [] },
@@ -46,8 +49,8 @@ const addIp = async () => {
     if (!ip.value.trim()) return;
 
     if (!state.value.externalEnabled) {
-        if (!confirm('No remote IPs are currently allowed. Adding this one will enable external MySQL access for this server and briefly restart MySQL for ALL hosted databases. Continue?')) return;
-    } else if (!confirm(`Allow ${ip.value.trim()} to connect to MySQL on port ${props.port}?`)) {
+        if (!confirm(t('databases.remoteAccess.enableConfirm'))) return;
+    } else if (!confirm(t('databases.remoteAccess.allowConfirm', { ip: ip.value.trim(), port: props.port }))) {
         return;
     }
 
@@ -62,42 +65,42 @@ const addIp = async () => {
         if (data.success) {
             ip.value = '';
             note.value = '';
-            message.value = { type: 'success', text: 'IP added.' };
+            message.value = { type: 'success', text: t('databases.remoteAccess.added') };
         } else {
-            message.value = { type: 'error', text: data.message || 'Failed to add IP.' };
+            message.value = { type: 'error', text: data.message || t('databases.remoteAccess.addFailed') };
         }
     } catch (e) {
-        message.value = { type: 'error', text: e.response?.data?.message || 'Request failed.' };
+        message.value = { type: 'error', text: e.response?.data?.message || t('databases.postgresql.requestFailed') };
     } finally {
         adding.value = false;
     }
 };
 
 const removeIp = async (rule) => {
-    if (!confirm(`Remove access for ${rule.ip_address}?`)) return;
+    if (!confirm(t('databases.remoteAccess.removeConfirm', { ip: rule.ip_address }))) return;
     removingId.value = rule.id;
     message.value = null;
     try {
         const { data } = await axios.delete(panelRoute('databases.remote-access.destroy', { id: rule.id }));
         applyState(data);
-        message.value = { type: data.firewall_warning ? 'error' : 'success', text: data.firewall_warning ? `Removed, but firewall cleanup warning: ${data.firewall_warning}` : 'IP removed.' };
+        message.value = { type: data.firewall_warning ? 'error' : 'success', text: data.firewall_warning ? t('databases.remoteAccess.removedWarning', { warning: data.firewall_warning }) : t('databases.remoteAccess.removed') };
     } catch (e) {
-        message.value = { type: 'error', text: e.response?.data?.message || 'Request failed.' };
+        message.value = { type: 'error', text: e.response?.data?.message || t('databases.postgresql.requestFailed') };
     } finally {
         removingId.value = null;
     }
 };
 
 const restrictWildcard = async () => {
-    if (!confirm(`This removes the open "Anywhere" rule for port ${props.port}. Only IPs listed below will be able to connect afterward. Continue?`)) return;
+    if (!confirm(t('databases.remoteAccess.restrictConfirm', { port: props.port }))) return;
     restricting.value = true;
     message.value = null;
     try {
         const { data } = await axios.post(panelRoute('databases.remote-access.restrict-wildcard'));
         applyState(data);
-        message.value = { type: data.success ? 'success' : 'error', text: data.success ? 'Wildcard rule removed.' : (data.message || 'Failed to remove wildcard rule.') };
+        message.value = { type: data.success ? 'success' : 'error', text: data.success ? t('databases.remoteAccess.wildcardRemoved') : (data.message || t('databases.remoteAccess.wildcardFailed')) };
     } catch (e) {
-        message.value = { type: 'error', text: e.response?.data?.message || 'Request failed.' };
+        message.value = { type: 'error', text: e.response?.data?.message || t('databases.postgresql.requestFailed') };
     } finally {
         restricting.value = false;
     }
@@ -115,13 +118,13 @@ const refresh = async () => {
 </script>
 
 <template>
-    <Head title="Remote MySQL Access" />
+    <Head :title="t('databases.remoteAccess.title')" />
 
     <AuthenticatedLayout>
         <template #header>
             <div>
-                <h1 class="text-lg font-semibold">Remote MySQL Access</h1>
-                <p class="text-sm text-slate-500 dark:text-slate-400">Allow specific IP addresses to reach this server's shared MySQL/MariaDB instance on port {{ port }}.</p>
+                <h1 class="text-lg font-semibold">{{ t('databases.remoteAccess.title') }}</h1>
+                <p class="text-sm text-slate-500 dark:text-slate-400">{{ t('databases.remoteAccess.subtitle', { port }) }}</p>
             </div>
         </template>
 
@@ -129,47 +132,47 @@ const refresh = async () => {
             <section class="rounded-xl border border-slate-200 bg-white p-6 dark:border-slate-800 dark:bg-slate-900">
                 <div class="flex flex-wrap items-center justify-between gap-3">
                     <div>
-                        <p class="text-xs font-semibold uppercase tracking-wide text-slate-500">Status</p>
+                        <p class="text-xs font-semibold uppercase tracking-wide text-slate-500">{{ t('databases.remoteAccess.status') }}</p>
                         <p class="mt-1 text-sm">
-                            Listening on <code>{{ state.bindAddress }}</code> &mdash;
-                            <span :class="state.externalEnabled ? 'text-amber-600' : 'text-emerald-600'">{{ state.externalEnabled ? 'external access enabled' : 'local only' }}</span>
+                            <i18n-t keypath="databases.remoteAccess.listening" scope="global"><template #address><code>{{ state.bindAddress }}</code></template></i18n-t> &mdash;
+                            <span :class="state.externalEnabled ? 'text-amber-600' : 'text-emerald-600'">{{ state.externalEnabled ? t('databases.remoteAccess.external') : t('databases.remoteAccess.localOnly') }}</span>
                         </p>
                     </div>
                     <button type="button" :disabled="refreshing" class="rounded-md border border-slate-300 px-3 py-2 text-xs hover:bg-slate-100 disabled:opacity-60 dark:border-slate-700 dark:hover:bg-slate-800" @click="refresh">
-                        {{ refreshing ? 'Refreshing…' : 'Refresh Status' }}
+                        {{ refreshing ? t('databases.postgresql.refreshing') : t('databases.postgresql.refreshStatus') }}
                     </button>
                 </div>
 
                 <div class="mt-4">
-                    <p class="text-xs font-semibold uppercase tracking-wide text-slate-500">Live firewall rules for port {{ port }}</p>
+                    <p class="text-xs font-semibold uppercase tracking-wide text-slate-500">{{ t('databases.remoteAccess.liveRules', { port }) }}</p>
                     <div class="mt-2 rounded-md bg-slate-100 p-3 font-mono text-xs dark:bg-slate-800">
                         <div v-for="(line, index) in state.liveFirewallLines" :key="index">{{ line }}</div>
-                        <div v-if="state.liveFirewallLines.length === 0" class="text-slate-500">No rules found for this port.</div>
+                        <div v-if="state.liveFirewallLines.length === 0" class="text-slate-500">{{ t('databases.remoteAccess.noRules') }}</div>
                     </div>
                 </div>
 
                 <div v-if="wildcardOpen" class="mt-4 rounded-md border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800 dark:border-amber-900 dark:bg-amber-950 dark:text-amber-200">
-                    Port {{ port }} is currently open to <strong>Anywhere</strong>. Add the specific IPs you need below, then restrict access to only those IPs.
+                    <i18n-t keypath="databases.remoteAccess.wildcardOpen" scope="global"><template #port>{{ port }}</template><template #anywhere><strong>Anywhere</strong></template></i18n-t>
                     <button type="button" :disabled="restricting" class="mt-2 block rounded-md border border-amber-400 px-3 py-1.5 text-xs font-medium hover:bg-amber-100 disabled:opacity-60 dark:hover:bg-amber-900/40" @click="restrictWildcard">
-                        {{ restricting ? 'Restricting…' : 'Restrict to listed IPs only' }}
+                        {{ restricting ? t('databases.remoteAccess.restricting') : t('databases.remoteAccess.restrict') }}
                     </button>
                 </div>
             </section>
 
             <section class="rounded-xl border border-slate-200 bg-white p-6 dark:border-slate-800 dark:bg-slate-900">
-                <h2 class="text-base font-semibold">Add an allowed IP</h2>
+                <h2 class="text-base font-semibold">{{ t('databases.remoteAccess.addTitle') }}</h2>
                 <div class="mt-4 grid gap-3 md:grid-cols-[2fr_2fr_auto]">
                     <div>
-                        <label class="mb-1 block text-sm">IP address or CIDR</label>
-                        <input v-model="ip" type="text" placeholder="203.0.113.10 or 203.0.113.0/24" class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-800" />
+                        <label class="mb-1 block text-sm">{{ t('databases.remoteAccess.ipLabel') }}</label>
+                        <input v-model="ip" type="text" :placeholder="t('databases.remoteAccess.ipPlaceholder')" class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-800" />
                     </div>
                     <div>
-                        <label class="mb-1 block text-sm">Note (optional)</label>
-                        <input v-model="note" type="text" placeholder="e.g. app server for katha24" class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-800" />
+                        <label class="mb-1 block text-sm">{{ t('databases.remoteAccess.noteLabel') }}</label>
+                        <input v-model="note" type="text" :placeholder="t('databases.remoteAccess.notePlaceholder')" class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-800" />
                     </div>
                     <div class="flex items-end">
                         <button type="button" :disabled="adding || !ip.trim()" class="w-full rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-40" @click="addIp">
-                            {{ adding ? 'Adding…' : 'Add' }}
+                            {{ adding ? t('databases.remoteAccess.adding') : t('databases.remoteAccess.add') }}
                         </button>
                     </div>
                 </div>
@@ -179,19 +182,19 @@ const refresh = async () => {
                 </div>
 
                 <p class="mt-4 text-xs text-slate-500 dark:text-slate-400">
-                    This only controls network access. MySQL user privileges (<code>GRANT ... TO 'user'@'host'</code>) must still be configured separately, e.g. via phpMyAdmin.
+                    <i18n-t keypath="databases.remoteAccess.grantHelp" scope="global"><template #grant><code>GRANT ... TO 'user'@'host'</code></template></i18n-t>
                 </p>
             </section>
 
             <section class="rounded-xl border border-slate-200 bg-white p-6 dark:border-slate-800 dark:bg-slate-900">
-                <h2 class="text-base font-semibold">Allowed IPs</h2>
+                <h2 class="text-base font-semibold">{{ t('databases.remoteAccess.allowed') }}</h2>
                 <div class="mt-3 overflow-x-auto">
                     <table class="min-w-full text-left text-sm">
                         <thead class="bg-slate-50 dark:bg-slate-800">
                             <tr>
-                                <th class="px-3 py-2">IP / CIDR</th>
-                                <th class="px-3 py-2">Note</th>
-                                <th class="px-3 py-2">Added</th>
+                                <th class="px-3 py-2">{{ t('databases.remoteAccess.col.ip') }}</th>
+                                <th class="px-3 py-2">{{ t('databases.remoteAccess.col.note') }}</th>
+                                <th class="px-3 py-2">{{ t('databases.remoteAccess.col.added') }}</th>
                                 <th class="px-3 py-2"></th>
                             </tr>
                         </thead>
@@ -202,12 +205,12 @@ const refresh = async () => {
                                 <td class="px-3 py-2 text-xs">{{ rule.created_at }}</td>
                                 <td class="px-3 py-2 text-right">
                                     <button type="button" :disabled="removingId === rule.id" class="rounded border border-red-300 px-2.5 py-1 text-xs text-red-700 hover:bg-red-50 disabled:opacity-60 dark:border-red-700 dark:text-red-400 dark:hover:bg-red-900/20" @click="removeIp(rule)">
-                                        {{ removingId === rule.id ? 'Removing…' : 'Remove' }}
+                                        {{ removingId === rule.id ? t('databases.remoteAccess.removing') : t('databases.remoteAccess.remove') }}
                                     </button>
                                 </td>
                             </tr>
                             <tr v-if="state.rules.length === 0">
-                                <td colspan="4" class="px-3 py-4 text-center text-slate-500">No remote IPs allowed yet.</td>
+                                <td colspan="4" class="px-3 py-4 text-center text-slate-500">{{ t('databases.remoteAccess.empty') }}</td>
                             </tr>
                         </tbody>
                     </table>

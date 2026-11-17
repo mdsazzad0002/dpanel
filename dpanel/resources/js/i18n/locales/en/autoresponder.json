@@ -1,0 +1,13 @@
+{
+    "title": "Automatic reply",
+    "help": "Answers each sender once per interval, never to spam or mailing lists.",
+    "on": "On",
+    "subject": "Subject",
+    "body": "Message",
+    "from": "From (optional)",
+    "until": "Until (optional)",
+    "interval": "Days between replies to one sender",
+    "save": "Save reply",
+    "loadFailed": "The automatic reply could not be loaded.",
+    "saveFailed": "The automatic reply was not saved."
+}

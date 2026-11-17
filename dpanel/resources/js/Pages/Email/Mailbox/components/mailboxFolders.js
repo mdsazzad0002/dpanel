@@ -1,11 +1,16 @@
+import { i18n } from '@/i18n';
+
+const t = (...args) => i18n.global.t(...args);
+
+// `label` is a getter so it follows the current language.
 const folderKinds = [
-    { key: 'inbox', match: (name) => name === 'inbox', label: 'Inbox', icon: 'bi-inbox' },
-    { key: 'sent', match: (name) => name.includes('sent'), label: 'Sent', icon: 'bi-send' },
-    { key: 'drafts', match: (name) => name.includes('draft'), label: 'Drafts', icon: 'bi-file-earmark' },
-    { key: 'spam', match: (name) => name.includes('spam') || name.includes('junk'), label: 'Spam', icon: 'bi-exclamation-octagon' },
-    { key: 'trash', match: (name) => name.includes('trash') || name.includes('bin') || name.includes('deleted'), label: 'Trash', icon: 'bi-trash3' },
-    { key: 'outbox', match: (name) => name === 'outbox', label: 'Outbox', icon: 'bi-box-arrow-up-right' },
-    { key: 'all', match: (name) => name === 'all mail', label: 'All mail', icon: 'bi-envelope' },
+    { key: 'inbox', match: (name) => name === 'inbox', get label() { return t('email.mailbox.folders.inbox'); }, icon: 'bi-inbox' },
+    { key: 'sent', match: (name) => name.includes('sent'), get label() { return t('email.mailbox.folders.sent'); }, icon: 'bi-send' },
+    { key: 'drafts', match: (name) => name.includes('draft'), get label() { return t('email.mailbox.folders.drafts'); }, icon: 'bi-file-earmark' },
+    { key: 'spam', match: (name) => name.includes('spam') || name.includes('junk'), get label() { return t('email.mailbox.folders.spam'); }, icon: 'bi-exclamation-octagon' },
+    { key: 'trash', match: (name) => name.includes('trash') || name.includes('bin') || name.includes('deleted'), get label() { return t('email.mailbox.folders.trash'); }, icon: 'bi-trash3' },
+    { key: 'outbox', match: (name) => name === 'outbox', get label() { return t('email.mailbox.folders.outbox'); }, icon: 'bi-box-arrow-up-right' },
+    { key: 'all', match: (name) => name === 'all mail', get label() { return t('email.mailbox.folders.all'); }, icon: 'bi-envelope' },
 ];
 
 const findKind = (name) => {

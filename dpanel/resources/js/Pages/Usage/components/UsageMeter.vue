@@ -1,6 +1,9 @@
 <script setup>
 // One resource of one account: use, limit and a bar that turns amber at 80% and red at 100% (P6).
 import { computed } from 'vue';
+import { useI18n } from 'vue-i18n';
+
+const { t } = useI18n();
 
 const props = defineProps({
     resource: { type: Object, required: true },
@@ -25,7 +28,7 @@ const tone = computed(() => {
     <div class="min-w-[8rem]">
         <p class="text-sm">
             <span class="font-medium text-slate-900 dark:text-white">{{ format(resource.used, resource.unit) }}</span>
-            <span class="text-slate-400"> / {{ resource.limit === null ? 'no limit' : format(resource.limit, resource.unit) }}</span>
+            <span class="text-slate-400"> / {{ resource.limit === null ? t('usage.meter.noLimit') : format(resource.limit, resource.unit) }}</span>
         </p>
         <div v-if="resource.limit !== null" class="mt-1 h-1.5 overflow-hidden rounded-full bg-slate-100 dark:bg-white/[0.06]">
             <div class="h-full rounded-full" :class="tone" :style="{ width: `${Math.min(100, resource.percent ?? 0)}%` }"></div>

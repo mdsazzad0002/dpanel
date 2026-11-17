@@ -1,0 +1,98 @@
+{
+    "edit": {
+        "tabs": {
+            "profile": {
+                "label": "个人资料",
+                "hint": "姓名和邮箱"
+            },
+            "password": {
+                "label": "密码",
+                "hint": "修改密码"
+            },
+            "security": {
+                "label": "安全",
+                "hint": "双重验证设置"
+            }
+        },
+        "title": "个人资料",
+        "subtitle": "管理你的账户设置",
+        "avatar": "更换头像",
+        "user": "用户",
+        "verified": "已验证",
+        "unverified": "未验证",
+        "twoFaOn": "双重验证已开启",
+        "twoFaOff": "双重验证已关闭",
+        "completion": "资料完成度",
+        "complete": "完成",
+        "pending": "待完成",
+        "emailStatus": "邮箱状态",
+        "enabled": "已启用",
+        "disabled": "已停用",
+        "twoFaStatus": "双重验证状态",
+        "role": "角色",
+        "infoTitle": "个人信息",
+        "infoText": "更新你的账户详情",
+        "passwordTitle": "更新密码",
+        "passwordText": "确保你的账户安全",
+        "twoFaTitle": "双重验证",
+        "twoFaText": "为你的账户增加额外的安全保护"
+    },
+    "info": {
+        "name": "全名",
+        "email": "邮箱地址",
+        "emailLocked": "无法在此处更改邮箱地址",
+        "notVerified": "邮箱未验证",
+        "verifyPrompt": "请验证你的邮箱地址以使用全部功能。",
+        "resend": "重新发送验证邮件",
+        "sent": "验证链接已发送到你的邮箱",
+        "verified": "邮箱已验证",
+        "verifiedText": "你的邮箱地址已通过验证",
+        "saving": "正在保存...",
+        "save": "保存更改",
+        "saved": "保存成功"
+    },
+    "password": {
+        "weak": "弱",
+        "fair": "一般",
+        "good": "良好",
+        "strong": "强",
+        "current": "当前密码",
+        "new": "新密码",
+        "confirm": "确认密码",
+        "strength": "密码强度",
+        "match": "密码一致",
+        "noMatch": "密码不一致",
+        "updating": "正在更新...",
+        "submit": "更新密码",
+        "saved": "密码更新成功"
+    },
+    "twoFactor": {
+        "sendFailed": "无法发送验证邮件。",
+        "title": "安全",
+        "subtitle": "使用下方的验证卡片管理你的双重验证设置。",
+        "emailTitle": "邮箱验证",
+        "verified": "已验证",
+        "pending": "待验证",
+        "emailText": "发送验证邮件以确认你的账户邮箱地址。",
+        "emailSent": "验证邮件已发送。",
+        "code": "确认码",
+        "codePlaceholder": "输入验证码",
+        "codeSent": "验证码已发送到你的邮箱地址。",
+        "codeHint": "使用发送到你邮箱的验证码确认启用或停用。",
+        "sendEmail": "发送邮件",
+        "enable": "启用",
+        "disable": "停用",
+        "googleTitle": "Google Authenticator",
+        "enabled": "已启用",
+        "ready": "就绪",
+        "googleText": "使用 Google Authenticator 或其他 TOTP 应用扫描二维码。",
+        "confirmation": "确认",
+        "appPlaceholder": "输入验证器代码",
+        "googleRequired": "扫描二维码，然后输入应用中的验证码以启用 Google Authenticator。",
+        "qr": "二维码",
+        "retry": "重试",
+        "qrAlt": "Google Authenticator 二维码",
+        "qrHint": "启用 Google Authenticator 以生成二维码。",
+        "qrHidden": "Google Authenticator 已启用，因此二维码已隐藏。"
+    }
+}

@@ -1,0 +1,60 @@
+{
+    "card": {
+        "badge": {
+            "running": "Running",
+            "error": "Failed",
+            "stopped": "Stopped",
+            "starting": "Starting…"
+        },
+        "port": "Port",
+        "user": "User",
+        "publicOn": "Public on",
+        "notPublic": "Not public. {link}.",
+        "publishLink": "Publish it from Rules → Port Share",
+        "listening": "port listening",
+        "notListening": "port not listening",
+        "start": "Start",
+        "stop": "Stop",
+        "restart": "Restart",
+        "status": "Status",
+        "edit": "Edit",
+        "delete": "Delete",
+        "default": "default",
+        "workers": "{n} workers",
+        "runs": "Runs",
+        "settingUp": "Setting up in the background (Python, venv, packages). The first start can take a few minutes."
+    },
+    "index": {
+        "title": "Python Apps",
+        "subtitle": "Django, Flask, FastAPI… run from any folder of your home directory.",
+        "new": "New Python app",
+        "empty": "No Python apps yet",
+        "noHome": "No home directory available",
+        "emptyHelp": "Create one, then publish it from Rules → Port Share.",
+        "noHomeHelp": "Apps run inside a website user's home. Create a website first."
+    },
+    "form": {
+        "editTitle": "Edit {name}",
+        "newTitle": "New Python app",
+        "subtitle": "Gets its own .venv and requirements.txt install, runs with gunicorn as the home's Linux user. Publish it from Rules → Port Share.",
+        "name": "App name",
+        "home": "Home directory",
+        "workdir": "Working directory",
+        "workdirHelp": "The folder with your code and requirements.txt. Empty runs from the home itself.",
+        "optional": "(optional)",
+        "port": "Port",
+        "auto": "Auto",
+        "startAfter": "Start after creating",
+        "portNote": "Port {port}. A running app restarts with the new settings.",
+        "create": "Create app",
+        "overrides": "Overrides {cmd}. The app must listen on 127.0.0.1 and {port}.",
+        "startCommand": "Start command",
+        "entryHelp": "e.g. {flask} (Flask), {django} (Django)",
+        "version": "Python version",
+        "workers": "Workers",
+        "mode": "Mode",
+        "production": "Production",
+        "development": "Development",
+        "timeout": "Timeout (s)"
+    }
+}

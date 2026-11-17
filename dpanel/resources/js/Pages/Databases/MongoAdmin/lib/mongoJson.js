@@ -4,6 +4,10 @@
 // ObjectId("…"), ISODate("…"), new Date("…"), NumberLong(…), NumberInt(…),
 // NumberDecimal("…"), Timestamp(t, i), UUID("…"), BinData(n, "…"), MinKey, MaxKey.
 
+import { i18n } from '@/i18n';
+
+const t = (...args) => i18n.global.t(...args);
+
 export class MongoSyntaxError extends Error {}
 
 export function parseMongo(text) {
@@ -12,7 +16,7 @@ export function parseMongo(text) {
 
     const fail = (message) => {
         const line = src.slice(0, i).split('\n').length;
-        throw new MongoSyntaxError(`${message} (line ${line})`);
+        throw new MongoSyntaxError(t('databases.mongoAdmin.json.atLine', { message, line }));
     };
 
     const skip = () => {
@@ -31,7 +35,7 @@ export function parseMongo(text) {
 
     const expect = (ch) => {
         skip();
-        if (src[i] !== ch) fail(`Expected "${ch}"`);
+        if (src[i] !== ch) fail(t('databases.mongoAdmin.json.expected', { ch }));
         i++;
     };
 
@@ -53,21 +57,21 @@ export function parseMongo(text) {
                 out += src[i++];
             }
         }
-        if (src[i] !== quote) fail('Unterminated string');
+        if (src[i] !== quote) fail(t('databases.mongoAdmin.json.unterminatedString'));
         i++;
         return out;
     };
 
     const identifier = () => {
         const match = /^[A-Za-z_$][\w$.]*/.exec(src.slice(i));
-        if (!match) fail(`Unexpected "${src[i] ?? 'end of input'}"`);
+        if (!match) fail(src[i] === undefined ? t('databases.mongoAdmin.json.unexpectedEnd') : t('databases.mongoAdmin.json.unexpected', { ch: src[i] }));
         i += match[0].length;
         return match[0];
     };
 
     const number = () => {
         const match = /^-?(\d+\.?\d*|\.\d+)([eE][+-]?\d+)?/.exec(src.slice(i));
-        if (!match) fail('Invalid number');
+        if (!match) fail(t('databases.mongoAdmin.json.invalidNumber'));
         i += match[0].length;
         const value = Number(match[0]);
         if (Number.isInteger(value) && !Number.isSafeInteger(value)) return { $numberLong: match[0] };
@@ -84,7 +88,7 @@ export function parseMongo(text) {
             else if (src[i] === ']') inClass = false;
             pattern += src[i++];
         }
-        if (src[i] !== '/') fail('Unterminated regular expression');
+        if (src[i] !== '/') fail(t('databases.mongoAdmin.json.unterminatedRegex'));
         i++;
         const flags = /^[a-z]*/.exec(src.slice(i))[0];
         i += flags.length;
@@ -99,7 +103,7 @@ export function parseMongo(text) {
             list.push(value());
             skip();
             if (src[i] === ',') i++;
-            else if (src[i] !== ')') fail('Expected "," or ")"');
+            else if (src[i] !== ')') fail(t('databases.mongoAdmin.json.expectedEither', { a: ',', b: ')' }));
             skip();
         }
         i++;
@@ -108,14 +112,14 @@ export function parseMongo(text) {
 
     const hexToBase64 = (hex) => {
         const clean = String(hex).replace(/-/g, '');
-        if (!/^[0-9a-fA-F]{32}$/.test(clean)) fail('UUID needs 32 hex digits');
+        if (!/^[0-9a-fA-F]{32}$/.test(clean)) fail(t('databases.mongoAdmin.json.uuidHex'));
         const bytes = clean.match(/../g).map((pair) => parseInt(pair, 16));
         return btoa(String.fromCharCode(...bytes));
     };
 
     const isoDate = (arg) => {
         const date = arg === undefined ? new Date() : new Date(typeof arg === 'object' && arg?.$numberLong ? Number(arg.$numberLong) : arg);
-        if (Number.isNaN(date.getTime())) fail('Invalid date');
+        if (Number.isNaN(date.getTime())) fail(t('databases.mongoAdmin.json.invalidDate'));
         return { $date: date.toISOString() };
     };
 
@@ -133,7 +137,7 @@ export function parseMongo(text) {
         const list = args();
         switch (name) {
             case 'ObjectId':
-                if (!/^[0-9a-fA-F]{24}$/.test(String(list[0] ?? ''))) fail('ObjectId needs 24 hex digits');
+                if (!/^[0-9a-fA-F]{24}$/.test(String(list[0] ?? ''))) fail(t('databases.mongoAdmin.json.objectIdHex'));
                 return { $oid: String(list[0]).toLowerCase() };
             case 'ISODate':
             case 'Date':
@@ -151,7 +155,7 @@ export function parseMongo(text) {
             case 'BinData':
                 return { $binary: { base64: String(list[1] ?? ''), subType: Number(list[0] ?? 0).toString(16).padStart(2, '0') } };
             default:
-                return fail(`Unknown helper ${name}()`);
+                return fail(t('databases.mongoAdmin.json.unknownHelper', { name }));
         }
     };
 
@@ -160,13 +164,13 @@ export function parseMongo(text) {
         const out = {};
         skip();
         while (src[i] !== '}') {
-            if (i >= src.length) fail('Unterminated object');
+            if (i >= src.length) fail(t('databases.mongoAdmin.json.unterminatedObject'));
             const key = src[i] === '"' || src[i] === "'" ? string() : identifier();
             expect(':');
             out[key] = value();
             skip();
             if (src[i] === ',') i++;
-            else if (src[i] !== '}') fail('Expected "," or "}"');
+            else if (src[i] !== '}') fail(t('databases.mongoAdmin.json.expectedEither', { a: ',', b: '}' }));
             skip();
         }
         i++;
@@ -178,11 +182,11 @@ export function parseMongo(text) {
         const out = [];
         skip();
         while (src[i] !== ']') {
-            if (i >= src.length) fail('Unterminated array');
+            if (i >= src.length) fail(t('databases.mongoAdmin.json.unterminatedArray'));
             out.push(value());
             skip();
             if (src[i] === ',') i++;
-            else if (src[i] !== ']') fail('Expected "," or "]"');
+            else if (src[i] !== ']') fail(t('databases.mongoAdmin.json.expectedEither', { a: ',', b: ']' }));
             skip();
         }
         i++;
@@ -197,7 +201,7 @@ export function parseMongo(text) {
         if (ch === '"' || ch === "'") return string();
         if (ch === '/') return regex();
         if (ch === '-' || ch === '.' || (ch >= '0' && ch <= '9')) return number();
-        if (ch === undefined) return fail('Unexpected end of input');
+        if (ch === undefined) return fail(t('databases.mongoAdmin.json.unexpectedEnd'));
         return helper(identifier());
     }
 
@@ -205,7 +209,7 @@ export function parseMongo(text) {
     if (i >= src.length) return null;
     const result = value();
     skip();
-    if (i < src.length) fail(`Unexpected "${src[i]}" after the value`);
+    if (i < src.length) fail(t('databases.mongoAdmin.json.unexpectedAfter', { ch: src[i] }));
     return result;
 }
 
@@ -213,7 +217,7 @@ export function parseMongo(text) {
 export function parseMongoObject(text, what = 'value') {
     const value = parseMongo(text);
     if (value === null) return {};
-    if (typeof value !== 'object' || Array.isArray(value)) throw new MongoSyntaxError(`The ${what} must be an object like { … }.`);
+    if (typeof value !== 'object' || Array.isArray(value)) throw new MongoSyntaxError(t('databases.mongoAdmin.json.mustBeObject', { what: t(`databases.mongoAdmin.json.what.${what}`) }));
     return value;
 }
 

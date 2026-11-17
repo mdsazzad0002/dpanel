@@ -2,6 +2,9 @@
 import { computed, ref } from 'vue';
 import axios from 'axios';
 import ScanProgressCard from './ScanProgressCard.vue';
+import { useI18n } from 'vue-i18n';
+
+const { t } = useI18n();
 
 const props = defineProps({
     websites: { type: Array, default: () => [] },
@@ -39,7 +42,7 @@ const startScan = async () => {
         });
         emit('queued');
     } catch (e) {
-        emit('message', { type: 'error', text: e.response?.data?.message || 'Could not start the scan.' });
+        emit('message', { type: 'error', text: e.response?.data?.message || t('security.scanLauncher.startFailed') });
     } finally {
         starting.value = false;
     }
@@ -49,23 +52,23 @@ const startScan = async () => {
 <template>
     <section class="rounded-xl border border-slate-200 bg-white p-6 dark:border-slate-800 dark:bg-slate-900">
         <div class="flex flex-wrap items-center justify-between gap-2">
-            <h2 class="text-base font-semibold">Scan now</h2>
+            <h2 class="text-base font-semibold">{{ t('security.scanLauncher.title') }}</h2>
             <span v-if="activeScans.length" class="rounded-full bg-blue-100 px-2.5 py-0.5 text-xs font-medium text-blue-700 dark:bg-blue-900/40 dark:text-blue-300">
-                {{ activeScans.length }} running
+                {{ t('security.scanLauncher.running', { count: activeScans.length }) }}
             </span>
         </div>
 
         <div class="mt-4 grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,2fr)_auto] lg:items-end">
             <div>
-                <label for="scan-target" class="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500">Target</label>
+                <label for="scan-target" class="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500">{{ t('security.scanLauncher.target') }}</label>
                 <select id="scan-target" v-model="target" class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-800">
-                    <option v-if="isAdmin" value="server">Server configuration</option>
+                    <option v-if="isAdmin" value="server">{{ t('security.common.scanTypes.configuration') }}</option>
                     <option v-for="website in websites" :key="website.id" :value="website.id">{{ website.domain }}</option>
                 </select>
             </div>
 
             <fieldset :disabled="isServerTarget" class="min-w-0 disabled:opacity-50">
-                <legend class="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500">Scan type</legend>
+                <legend class="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500">{{ t('security.scanLauncher.scanType') }}</legend>
                 <div v-if="!isServerTarget" class="grid grid-cols-2 gap-2 xl:grid-cols-4">
                     <label
                         v-for="type in types"
@@ -79,17 +82,17 @@ const startScan = async () => {
                     </label>
                 </div>
                 <p v-else class="rounded-md border border-slate-200 px-3 py-2 text-sm text-slate-600 dark:border-slate-700 dark:text-slate-300">
-                    SSH, firewall, open ports, SSL and backups.
+                    {{ t('security.scanLauncher.serverCovers') }}
                 </p>
             </fieldset>
 
             <button type="button" :disabled="starting || !target || alreadyRunning" class="h-10 rounded-md bg-blue-600 px-5 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-40" @click="startScan">
-                <i class="bi bi-play-fill mr-1" aria-hidden="true" />{{ starting ? 'Starting…' : (alreadyRunning ? 'Running…' : 'Scan now') }}
+                <i class="bi bi-play-fill mr-1" aria-hidden="true" />{{ starting ? t('security.scanLauncher.starting') : (alreadyRunning ? t('security.scanLauncher.runningEllipsis') : t('security.scanLauncher.title')) }}
             </button>
         </div>
 
         <p class="mt-3 text-xs text-slate-500 dark:text-slate-400">
-            The first scan of a website records file hashes; later scans report files that changed since then.
+            {{ t('security.scanLauncher.firstScan') }}
         </p>
 
         <div v-if="activeScans.length" class="mt-4 space-y-3">

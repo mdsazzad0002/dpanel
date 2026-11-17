@@ -1,0 +1,36 @@
+{
+    "cols": {
+        "disk": "磁盘",
+        "bandwidth": "带宽（本月）",
+        "memory": "内存",
+        "cpu": "CPU"
+    },
+    "title": "用量与限制",
+    "subtitle": "相对于套餐的用量，最新读数",
+    "unassignedOne": "有 1 个网站没有所有者，因此其用量不计入此处。请在该网站的管理页面为其指定所有者。",
+    "unassignedMany": "有 {count} 个网站没有所有者，因此其用量不计入此处。请在网站的管理页面为其指定所有者。",
+    "websites": "网站",
+    "search": "搜索账户或套餐…",
+    "onlyAlerts": "仅显示 80% 及以上（{count}）",
+    "account": "账户",
+    "alertSent": "已发送 {percent}% 提醒",
+    "sevenDays": "7 天",
+    "noMatch": "没有匹配的账户。",
+    "empty": "还没有任何账户拥有网站或套餐。",
+    "footnote": "对每个拥有网站的账户，磁盘每小时测量一次，带宽每 15 分钟测量一次；CPU 和内存每五分钟测量一次，仅在套餐有限制时测量。用量达到限制的 80% 和 100% 时会通知账户，在用量回落前只通知一次。",
+    "history": {
+        "charts": {
+            "disk": "磁盘（MB）",
+            "bandwidth": "本月带宽（MB）",
+            "memory": "内存（MB）",
+            "cpu": "CPU（%）"
+        },
+        "failed": "无法加载历史记录。",
+        "loading": "正在加载最近七天…",
+        "noReadings": "最近七天没有读数。",
+        "note": "七天内的每小时平均值。虚线为套餐限制。"
+    },
+    "meter": {
+        "noLimit": "无限制"
+    }
+}

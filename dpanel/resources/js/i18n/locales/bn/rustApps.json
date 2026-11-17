@@ -1,0 +1,54 @@
+{
+    "card": {
+        "badge": {
+            "running": "চলছে",
+            "error": "ব্যর্থ",
+            "stopped": "বন্ধ",
+            "starting": "Build হচ্ছে…"
+        },
+        "port": "Port",
+        "user": "User",
+        "publicOn": "Public ঠিকানা",
+        "notPublic": "Public নয়। {link}।",
+        "publishLink": "Rules → Port Share থেকে publish করুন",
+        "listening": "port listen করছে",
+        "notListening": "port listen করছে না",
+        "start": "চালু",
+        "stop": "বন্ধ",
+        "restart": "Restart",
+        "status": "Status",
+        "edit": "সম্পাদনা",
+        "delete": "মুছুন",
+        "runtime": "Runtime",
+        "cargoRelease": "Cargo release",
+        "command": "Command",
+        "cargoBinary": "Cargo binary",
+        "building": "Background-এ cargo দিয়ে build হচ্ছে, তারপর চালু হবে। প্রথম build-এ কয়েক মিনিট লাগতে পারে।"
+    },
+    "index": {
+        "title": "Rust app",
+        "subtitle": "Cargo project build করে আপনার site user হিসেবে চালায়। Rules → Port Share থেকে publish করুন।",
+        "new": "নতুন Rust app",
+        "empty": "এখনও কোনো Rust app নেই",
+        "noHome": "কোনো home directory নেই",
+        "emptyHelp": "একটি তৈরি করুন, তারপর Rules → Port Share থেকে publish করুন।",
+        "noHomeHelp": "App চলে website user-এর home-এর ভেতরে। আগে একটি website তৈরি করুন।"
+    },
+    "form": {
+        "editTitle": "{name} সম্পাদনা",
+        "newTitle": "নতুন Rust app",
+        "subtitle": "Cargo project build করে home-এর Linux user হিসেবে চালায়। Rules → Port Share থেকে publish করুন।",
+        "name": "App-এর নাম",
+        "home": "Home directory",
+        "workdir": "Working directory",
+        "workdirHelp": "যে folder-এ Cargo.toml আছে। Home directory ব্যবহার করতে খালি রাখুন।",
+        "optional": "(ঐচ্ছিক)",
+        "port": "Port",
+        "auto": "স্বয়ংক্রিয়",
+        "startAfter": "তৈরির পর চালু করুন",
+        "portNote": "Port {port}। চালু থাকা app নতুন setting নিয়ে restart হবে।",
+        "create": "App তৈরি করুন",
+        "args": "Argument",
+        "argsHelp": "প্রতিবার চালুর সময় {build} চলে এবং shell ছাড়াই এই সাধারণ argument দিয়ে Cargo binary চালু হয়। অন্য file চালাতে তার path দিয়ে শুরু করুন, যেমন {example}। App তার port {env} environment variable থেকে পড়ে এবং 127.0.0.1-এ listen করতে হবে।"
+    }
+}

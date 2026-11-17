@@ -5,6 +5,9 @@ import Offcanvas from '@/Components/Offcanvas.vue';
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { Head, Link, usePage } from '@inertiajs/vue3';
 import axios from 'axios';
+import { useI18n } from 'vue-i18n';
+
+const { t } = useI18n();
 
 const AUTO = '__auto__';
 const MODEL_AUTO = '__auto_model__';
@@ -36,7 +39,7 @@ const readToolsMode = () => {
 const toolsMode = ref(props.canUseServerTools ? readToolsMode() : 'off');
 let previousToolsMode = toolsMode.value;
 const onToolsModeChange = () => {
-    if (toolsMode.value === 'full' && !confirm('Full access lets the AI change this server: edit files, run commands and restart services. Every change is recorded and files are backed up. Continue?')) {
+    if (toolsMode.value === 'full' && !confirm(t('aiGateway.chat.fullConfirm'))) {
         toolsMode.value = previousToolsMode;
         return;
     }
@@ -49,49 +52,49 @@ const onToolsModeChange = () => {
 };
 // Icon and readable name per server tool; unknown tools fall back to their raw name.
 const TOOL_META = {
-    get_panel_overview: ['bi-speedometer2', 'Server overview'],
-    run_health_check: ['bi-clipboard2-pulse', 'Health check'],
-    list_servers: ['bi-hdd-network', 'List servers'],
-    list_websites: ['bi-globe2', 'List websites'],
-    get_website: ['bi-globe', 'Website details'],
-    check_website: ['bi-activity', 'Live website check'],
-    list_ssl_certificates: ['bi-shield-lock', 'SSL certificates'],
-    list_dns_records: ['bi-signpost-split', 'DNS records'],
-    list_databases: ['bi-database', 'Databases'],
-    list_cron_jobs: ['bi-clock-history', 'Cron jobs'],
-    get_mail_status: ['bi-envelope-check', 'Mail status'],
-    list_backups: ['bi-archive', 'Backups'],
-    list_security_findings: ['bi-shield-exclamation', 'Security findings'],
-    get_service_status: ['bi-cpu', 'Service status'],
-    read_service_logs: ['bi-journal-text', 'Service logs'],
-    read_log_file: ['bi-file-earmark-text', 'Read log'],
-    list_recent_commands: ['bi-terminal', 'Recent commands'],
-    list_recent_activity: ['bi-list-check', 'Recent activity'],
-    find_website_errors: ['bi-bug', 'Find website errors'],
-    list_directory: ['bi-folder2-open', 'List directory'],
-    read_file: ['bi-file-earmark-code', 'Read file'],
-    search_files: ['bi-search', 'Search files'],
-    analyze_disk_usage: ['bi-pie-chart', 'Disk usage'],
-    write_file: ['bi-pencil-square', 'Write file'],
-    edit_file: ['bi-pencil', 'Edit file'],
-    file_operation: ['bi-files', 'File operation'],
-    run_command: ['bi-terminal-fill', 'Run command'],
-    restart_service: ['bi-arrow-clockwise', 'Restart service'],
+    get_panel_overview: 'bi-speedometer2',
+    run_health_check: 'bi-clipboard2-pulse',
+    list_servers: 'bi-hdd-network',
+    list_websites: 'bi-globe2',
+    get_website: 'bi-globe',
+    check_website: 'bi-activity',
+    list_ssl_certificates: 'bi-shield-lock',
+    list_dns_records: 'bi-signpost-split',
+    list_databases: 'bi-database',
+    list_cron_jobs: 'bi-clock-history',
+    get_mail_status: 'bi-envelope-check',
+    list_backups: 'bi-archive',
+    list_security_findings: 'bi-shield-exclamation',
+    get_service_status: 'bi-cpu',
+    read_service_logs: 'bi-journal-text',
+    read_log_file: 'bi-file-earmark-text',
+    list_recent_commands: 'bi-terminal',
+    list_recent_activity: 'bi-list-check',
+    find_website_errors: 'bi-bug',
+    list_directory: 'bi-folder2-open',
+    read_file: 'bi-file-earmark-code',
+    search_files: 'bi-search',
+    analyze_disk_usage: 'bi-pie-chart',
+    write_file: 'bi-pencil-square',
+    edit_file: 'bi-pencil',
+    file_operation: 'bi-files',
+    run_command: 'bi-terminal-fill',
+    restart_service: 'bi-arrow-clockwise',
 };
-const toolIcon = (step) => TOOL_META[step.name]?.[0] ?? 'bi-tools';
+const toolIcon = (step) => TOOL_META[step.name] ?? 'bi-tools';
 const toolLabel = (step) => {
     const args = step.arguments && typeof step.arguments === 'object' ? step.arguments : {};
     const main = args.path || args.domain || args.command || args.service || args.pattern || args.name || '';
-    const title = TOOL_META[step.name]?.[1] ?? step.name;
+    const title = TOOL_META[step.name] ? t(`aiGateway.chat.tools.${step.name}`) : step.name;
     return main ? `${title} · ${String(main).slice(0, 80)}` : title;
 };
 // Long tool runs fold into one summary row once finished; open while running.
 const toolSummary = (tools) => {
-    const seconds = tools.reduce((sum, t) => sum + (t.duration_ms ?? 0), 0) / 1000;
-    const failed = tools.filter((t) => t.status === 'error').length;
-    return `Used ${tools.length} tool${tools.length === 1 ? '' : 's'} · ${seconds.toFixed(1)}s${failed ? ` · ${failed} failed` : ''}`;
+    const seconds = tools.reduce((sum, tl) => sum + (tl.duration_ms ?? 0), 0) / 1000;
+    const failed = tools.filter((tl) => tl.status === 'error').length;
+    return t('aiGateway.chat.toolSummary', { count: tools.length, seconds: seconds.toFixed(1) }) + (failed ? ' · ' + t('aiGateway.chat.toolsFailed', { count: failed }) : '');
 };
-const toolsFolded = (m) => m.tools.length > 3 && !m.toolsOpen && !m.tools.some((t) => t.status === 'running');
+const toolsFolded = (m) => m.tools.length > 3 && !m.toolsOpen && !m.tools.some((tl) => tl.status === 'running');
 
 const providerId = ref(props.initialProviderId ?? props.providers[0]?.id ?? null);
 const isAuto = computed(() => providerId.value === AUTO);
@@ -184,10 +187,10 @@ const useSuggestion = (text) => {
     nextTick(() => inputEl.value?.focus());
 };
 const suggestions = computed(() => (mode.value === 'image'
-    ? ['A minimalist logo for a hosting company, flat vector', 'A cozy server room at night, cinematic lighting']
+    ? [t('aiGateway.chat.suggest.image1'), t('aiGateway.chat.suggest.image2')]
     : props.canUseServerTools && toolsMode.value !== 'off'
-        ? ['Run a full health check of this server', 'Why is my website slow or down?', 'What is filling up the disk?', 'Check mail delivery and DNS for my domains', 'Are there any security issues?', 'Are my backups working?']
-        : ['Explain how to set up a cron job in Laravel', 'Write a bash script to back up a MySQL database', 'Explain how a reverse proxy routes traffic to PHP-FPM']));
+        ? [t('aiGateway.chat.suggest.server1'), t('aiGateway.chat.suggest.server2'), t('aiGateway.chat.suggest.server3'), t('aiGateway.chat.suggest.server4'), t('aiGateway.chat.suggest.server5'), t('aiGateway.chat.suggest.server6')]
+        : [t('aiGateway.chat.suggest.general1'), t('aiGateway.chat.suggest.general2'), t('aiGateway.chat.suggest.general3')]));
 
 // Images waiting to go with the next message: [{ id, owner, preview, uploading }].
 const pendingImages = ref([]);
@@ -216,7 +219,7 @@ const viewerUrl = computed(() => (viewer.value.images.length ? mediaUrl(viewer.v
 const attachFiles = async (files) => {
     for (const file of [...files].filter((f) => f.type.startsWith('image/'))) {
         if (pendingImages.value.length >= MAX_IMAGES) {
-            error.value = `At most ${MAX_IMAGES} images per message.`;
+            error.value = t('aiGateway.chat.maxImages', { max: MAX_IMAGES });
             break;
         }
         const entry = { id: null, owner: currentUserId.value, preview: URL.createObjectURL(file), uploading: true };
@@ -229,7 +232,7 @@ const attachFiles = async (files) => {
             item.id = data.id;
             item.uploading = false;
         } catch (e) {
-            error.value = e.response?.data?.message || 'Could not upload that image.';
+            error.value = e.response?.data?.message || t('aiGateway.chat.uploadFailed');
             removePending(item);
         }
     }
@@ -339,13 +342,13 @@ const openChat = async (session) => {
         sidebarOpen.value = false;
         scrollToBottom();
     } catch (e) {
-        error.value = 'Could not load that chat.';
+        error.value = t('aiGateway.chat.loadFailed');
     }
 };
 
 const deleteChat = async (session, e) => {
     e.stopPropagation();
-    if (!confirm(`Delete chat "${session.title}"?`)) return;
+    if (!confirm(t('aiGateway.chat.deleteConfirm', { title: session.title }))) return;
 
     if (session.id === sessionId.value && sending.value) {
         abortController?.abort();
@@ -356,7 +359,7 @@ const deleteChat = async (session, e) => {
         history.value = history.value.filter((s) => s.id !== session.id);
         if (sessionId.value === session.id) newChat();
     } catch (e) {
-        error.value = 'Could not delete that chat.';
+        error.value = t('aiGateway.chat.deleteFailed');
     }
 };
 
@@ -401,7 +404,7 @@ const generateImage = async () => {
             provider_id: isAuto.value ? null : provider.value?.id,
         });
         Object.assign(assistantMessage, {
-            content: data.text || 'Here is the generated image.',
+            content: data.text || t('aiGateway.chat.generatedImage'),
             images: data.images.map((img) => img.id),
             model: data.model,
             providerName: data.provider_name,
@@ -410,7 +413,7 @@ const generateImage = async () => {
         isNewPendingSession = false;
         await persist();
     } catch (e) {
-        error.value = e.response?.data?.message || e.message || 'Image generation failed.';
+        error.value = e.response?.data?.message || e.message || t('aiGateway.chat.imageFailed');
         messages.value = messages.value.filter((m) => m !== assistantMessage);
         if (isNewPendingSession) history.value = history.value.filter((s) => s.id !== sessionId.value);
     } finally {
@@ -430,7 +433,7 @@ const startSession = (title) => {
     error.value = '';
     upsertHistoryEntry({
         id: sessionId.value,
-        title: (title || 'Image').slice(0, 60),
+        title: (title || t('aiGateway.chat.image')).slice(0, 60),
         updated_at: new Date().toISOString(),
         owner_id: currentUserId.value,
         running: true,
@@ -446,7 +449,7 @@ const send = async () => {
     pendingImages.value.forEach((img) => URL.revokeObjectURL(img.preview));
     pendingImages.value = [];
 
-    startSession(content || 'Image');
+    startSession(content || t('aiGateway.chat.image'));
     messages.value.push({ role: 'user', content, ...(images.length ? { images } : {}) });
     input.value = '';
     sending.value = true;
@@ -476,7 +479,7 @@ const send = async () => {
             assistantMessage.content += payload.text;
             scrollToBottom(false);
         } else if (eventName === 'tool') {
-            const step = assistantMessage.tools.find((t) => t.id === payload.id);
+            const step = assistantMessage.tools.find((tl) => tl.id === payload.id);
             if (step) {
                 Object.assign(step, { status: payload.status, preview: payload.preview || '', duration_ms: payload.duration_ms });
             } else {
@@ -491,7 +494,7 @@ const send = async () => {
             isNewPendingSession = false;
             persist();
         } else if (eventName === 'error') {
-            error.value = payload.message || 'Request failed.';
+            error.value = payload.message || t('aiGateway.providers.requestFailed');
             messages.value = messages.value.filter((m) => m !== assistantMessage);
             if (isNewPendingSession) {
                 history.value = history.value.filter((s) => s.id !== sessionId.value);
@@ -535,7 +538,7 @@ const send = async () => {
     } catch (e) {
         const wasCancelled = axios.isCancel(e) || e.name === 'CanceledError' || e.code === 'ERR_CANCELED';
         if (!wasCancelled) {
-            error.value = e.response?.data?.message || e.message || 'Request failed.';
+            error.value = e.response?.data?.message || e.message || t('aiGateway.providers.requestFailed');
         }
         if (!assistantMessage.content) {
             messages.value = messages.value.filter((m) => m !== assistantMessage);
@@ -585,24 +588,22 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-    <Head title="AI Chat" />
+    <Head :title="t('aiGateway.chat.headTitle')" />
 
     <AuthenticatedLayout>
         <template #header>
             <div class="flex items-center justify-between">
                 <div>
-                    <h1 class="text-lg font-semibold">Chat</h1>
-                    <p class="text-sm text-slate-500 dark:text-slate-400">{{ isAuto ? 'Auto — picks a provider automatically, fails over on rate limits' : (provider?.driver_label || 'No provider selected') }}</p>
+                    <h1 class="text-lg font-semibold">{{ t('aiGateway.chat.title') }}</h1>
+                    <p class="text-sm text-slate-500 dark:text-slate-400">{{ isAuto ? t('aiGateway.chat.autoHelp') : (provider?.driver_label || t('aiGateway.chat.noProvider')) }}</p>
                 </div>
-                <Link v-if="provider" :href="panelRoute('ai-gateway.providers.edit', { provider: provider.id })" class="text-sm text-slate-500 hover:underline"><i class="bi bi-gear"></i> Provider settings</Link>
+                <Link v-if="provider" :href="panelRoute('ai-gateway.providers.edit', { provider: provider.id })" class="text-sm text-slate-500 hover:underline"><i class="bi bi-gear"></i> {{ t('aiGateway.chat.providerSettings') }}</Link>
             </div>
         </template>
 
         <div v-if="!providers.length" class="mx-auto rounded-xl border border-slate-200 bg-white p-10 text-center text-sm text-slate-500 dark:border-slate-700 dark:bg-slate-800">
             <i class="bi bi-robot mb-2 block text-3xl text-slate-300 dark:text-slate-600"></i>
-            No active AI providers yet.
-            <Link :href="panelRoute('ai-gateway.providers.create')" class="text-blue-600 hover:underline">Add one</Link>
-            to start chatting.
+            <i18n-t keypath="aiGateway.chat.noProviders" scope="global"><template #link><Link :href="panelRoute('ai-gateway.providers.create')" class="text-blue-600 hover:underline">{{ t('aiGateway.chat.addOne') }}</Link></template></i18n-t>
         </div>
 
         <div v-else class="relative mx-auto flex h-[calc(100vh-11rem)] min-h-[32rem] overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm dark:border-slate-700 dark:bg-slate-800">
@@ -614,20 +615,20 @@ onBeforeUnmount(() => {
             >
                 <div class="space-y-2 p-3">
                     <button @click="newChat" class="flex w-full items-center justify-center gap-2 rounded-lg bg-blue-600 px-3 py-2 text-sm font-medium text-white shadow-sm hover:bg-blue-700">
-                        <i class="bi bi-plus-lg"></i> New chat
+                        <i class="bi bi-plus-lg"></i> {{ t('aiGateway.chat.newChat') }}
                     </button>
                     <select v-model="providerId" @change="onProviderChange" class="w-full rounded-lg border-slate-300 py-1.5 text-sm dark:border-slate-600 dark:bg-slate-800">
-                        <option v-if="canAuto" :value="AUTO">Auto (all providers)</option>
+                        <option v-if="canAuto" :value="AUTO">{{ t('aiGateway.chat.autoAll') }}</option>
                         <option v-for="p in providers" :key="p.id" :value="p.id">{{ p.name }}</option>
                     </select>
                     <div class="relative">
                         <i class="bi bi-search pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-xs text-slate-400"></i>
-                        <input v-model="historySearch" type="search" placeholder="Search chats" class="w-full rounded-lg border-slate-300 py-1.5 pl-8 text-sm dark:border-slate-600 dark:bg-slate-800" />
+                        <input v-model="historySearch" type="search" :placeholder="t('aiGateway.chat.searchChats')" class="w-full rounded-lg border-slate-300 py-1.5 pl-8 text-sm dark:border-slate-600 dark:bg-slate-800" />
                     </div>
                 </div>
                 <div class="flex-1 overflow-y-auto px-2 pb-2">
-                    <div v-if="historyLoading" class="px-2 py-4 text-center text-xs text-slate-400">Loading…</div>
-                    <div v-else-if="!filteredHistory.length" class="px-2 py-4 text-center text-xs text-slate-400">{{ historySearch ? 'No matching chats.' : 'No saved chats yet.' }}</div>
+                    <div v-if="historyLoading" class="px-2 py-4 text-center text-xs text-slate-400">{{ t('common.loading') }}</div>
+                    <div v-else-if="!filteredHistory.length" class="px-2 py-4 text-center text-xs text-slate-400">{{ historySearch ? t('aiGateway.chat.noMatch') : t('aiGateway.chat.noSaved') }}</div>
                     <div
                         v-for="s in filteredHistory"
                         :key="s.id"
@@ -636,7 +637,7 @@ onBeforeUnmount(() => {
                     >
                         <button type="button" @click="openChat(s)" class="min-w-0 flex-1 px-3 py-2 text-left">
                             <div class="flex items-center gap-1.5">
-                                <span v-if="s.running" class="inline-block h-1.5 w-1.5 flex-shrink-0 animate-pulse rounded-full bg-emerald-500" title="Generating…"></span>
+                                <span v-if="s.running" class="inline-block h-1.5 w-1.5 flex-shrink-0 animate-pulse rounded-full bg-emerald-500" :title="t('aiGateway.chat.generating')"></span>
                                 <span class="truncate text-sm text-slate-700 dark:text-slate-200">{{ s.title }}</span>
                             </div>
                             <div class="truncate text-[10px] text-slate-400">
@@ -644,7 +645,7 @@ onBeforeUnmount(() => {
                                 <span v-if="s.owner_id !== currentUserId && s.owner_name"> · {{ s.owner_name }}</span>
                             </div>
                         </button>
-                        <button type="button" @click="deleteChat(s, $event)" class="mr-1 shrink-0 rounded p-1.5 text-slate-400 opacity-0 hover:bg-slate-200 hover:text-red-500 group-hover:opacity-100 dark:hover:bg-slate-700" :title="s.running ? 'Cancel' : 'Delete'"><i class="bi bi-trash3 text-xs"></i></button>
+                        <button type="button" @click="deleteChat(s, $event)" class="mr-1 shrink-0 rounded p-1.5 text-slate-400 opacity-0 hover:bg-slate-200 hover:text-red-500 group-hover:opacity-100 dark:hover:bg-slate-700" :title="s.running ? t('common.cancel') : t('aiGateway.chat.delete')"><i class="bi bi-trash3 text-xs"></i></button>
                     </div>
                 </div>
             </aside>
@@ -652,28 +653,28 @@ onBeforeUnmount(() => {
             <!-- Chat panel -->
             <div class="flex min-w-0 flex-1 flex-col overflow-hidden">
                 <div class="flex flex-wrap items-center gap-2 border-b border-slate-200 px-3 py-2 dark:border-slate-700">
-                    <button type="button" @click="sidebarOpen = true" class="rounded-md p-1.5 text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-700 md:hidden" title="Chats"><i class="bi bi-layout-sidebar"></i></button>
-                    <select v-model="model" :disabled="readOnly || isAuto" :title="isAuto ? 'Provider is Auto, so model is Auto too' : ''" class="max-w-[16rem] rounded-lg border-slate-300 py-1 text-sm disabled:opacity-60 dark:border-slate-600 dark:bg-slate-900">
-                        <option v-if="isAuto" :value="MODEL_AUTO">Auto (any provider, any model)</option>
+                    <button type="button" @click="sidebarOpen = true" class="rounded-md p-1.5 text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-700 md:hidden" :title="t('aiGateway.chat.chats')"><i class="bi bi-layout-sidebar"></i></button>
+                    <select v-model="model" :disabled="readOnly || isAuto" :title="isAuto ? t('aiGateway.chat.autoModelHint') : ''" class="max-w-[16rem] rounded-lg border-slate-300 py-1 text-sm disabled:opacity-60 dark:border-slate-600 dark:bg-slate-900">
+                        <option v-if="isAuto" :value="MODEL_AUTO">{{ t('aiGateway.chat.autoAny') }}</option>
                         <template v-else>
-                            <option v-if="!availableModels.length" value="">{{ mode === 'image' ? 'No image models on this provider' : 'No models linked' }}</option>
-                            <option v-else :value="MODEL_AUTO">Auto (any model on {{ provider?.name }})</option>
+                            <option v-if="!availableModels.length" value="">{{ mode === 'image' ? t('aiGateway.chat.noImageModels') : t('aiGateway.chat.noModels') }}</option>
+                            <option v-else :value="MODEL_AUTO">{{ t('aiGateway.chat.autoOn', { name: provider?.name }) }}</option>
                             <option v-for="m in availableModels" :key="m.name" :value="m.name">{{ m.display_name || m.name }}</option>
                         </template>
                     </select>
                     <div v-if="hasImageModels && !readOnly" class="flex rounded-lg bg-slate-100 p-0.5 text-xs dark:bg-slate-900">
-                        <button type="button" @click="setMode('chat')" :disabled="sending" class="rounded-md px-2.5 py-1" :class="mode === 'chat' ? 'bg-white text-blue-700 shadow-sm dark:bg-slate-700 dark:text-blue-300' : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-200'"><i class="bi bi-chat-dots"></i> Chat</button>
-                        <button type="button" @click="setMode('image')" :disabled="sending" class="rounded-md px-2.5 py-1" :class="mode === 'image' ? 'bg-white text-blue-700 shadow-sm dark:bg-slate-700 dark:text-blue-300' : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-200'"><i class="bi bi-image"></i> Image</button>
+                        <button type="button" @click="setMode('chat')" :disabled="sending" class="rounded-md px-2.5 py-1" :class="mode === 'chat' ? 'bg-white text-blue-700 shadow-sm dark:bg-slate-700 dark:text-blue-300' : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-200'"><i class="bi bi-chat-dots"></i> {{ t('aiGateway.chat.modeChat') }}</button>
+                        <button type="button" @click="setMode('image')" :disabled="sending" class="rounded-md px-2.5 py-1" :class="mode === 'image' ? 'bg-white text-blue-700 shadow-sm dark:bg-slate-700 dark:text-blue-300' : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-200'"><i class="bi bi-image"></i> {{ t('aiGateway.chat.modeImage') }}</button>
                     </div>
                     <div class="ml-auto">
-                        <span v-if="readOnly" class="rounded-full bg-slate-100 px-2 py-1 text-xs text-slate-500 dark:bg-slate-900"><i class="bi bi-eye"></i> Viewing another user's chat (read-only)</span>
-                        <label v-else-if="canUseServerTools && mode === 'chat'" class="flex items-center gap-2 text-xs text-slate-500 dark:text-slate-400" title="Let the AI use the MCP tools on this server (logs, files, commands)">
+                        <span v-if="readOnly" class="rounded-full bg-slate-100 px-2 py-1 text-xs text-slate-500 dark:bg-slate-900"><i class="bi bi-eye"></i> {{ t('aiGateway.chat.readOnly') }}</span>
+                        <label v-else-if="canUseServerTools && mode === 'chat'" class="flex items-center gap-2 text-xs text-slate-500 dark:text-slate-400" :title="t('aiGateway.chat.toolsHint')">
                             <i class="bi bi-tools"></i>
-                            <span class="hidden sm:inline">Server tools</span>
+                            <span class="hidden sm:inline">{{ t('aiGateway.chat.serverTools') }}</span>
                             <select v-model="toolsMode" @change="onToolsModeChange" :disabled="sending" class="rounded-lg border-slate-300 py-1 text-sm dark:border-slate-600 dark:bg-slate-900" :class="toolsMode === 'full' ? 'border-amber-400 text-amber-700 dark:text-amber-400' : ''">
-                                <option value="off">Off</option>
-                                <option value="read">Read-only</option>
-                                <option value="full">Full access</option>
+                                <option value="off">{{ t('aiGateway.chat.toolsOff') }}</option>
+                                <option value="read">{{ t('aiGateway.chat.toolsRead') }}</option>
+                                <option value="full">{{ t('aiGateway.chat.toolsFull') }}</option>
                             </select>
                         </label>
                     </div>
@@ -685,8 +686,8 @@ onBeforeUnmount(() => {
                             <div class="mb-3 flex h-12 w-12 items-center justify-center rounded-2xl bg-blue-50 text-2xl text-blue-600 dark:bg-blue-500/10 dark:text-blue-400">
                                 <i class="bi" :class="mode === 'image' ? 'bi-image' : 'bi-stars'"></i>
                             </div>
-                            <h2 class="text-base font-semibold text-slate-700 dark:text-slate-200">{{ mode === 'image' ? 'Generate an image' : 'How can I help?' }}</h2>
-                            <p class="mt-1 text-sm text-slate-400">Send a message to test {{ isAuto ? 'your providers' : `"${provider?.name}"` }} live.</p>
+                            <h2 class="text-base font-semibold text-slate-700 dark:text-slate-200">{{ mode === 'image' ? t('aiGateway.chat.emptyImage') : t('aiGateway.chat.emptyChat') }}</h2>
+                            <p class="mt-1 text-sm text-slate-400">{{ isAuto ? t('aiGateway.chat.testAll') : t('aiGateway.chat.testOne', { name: provider?.name }) }}</p>
                             <div v-if="!readOnly" class="mt-6 flex max-w-xl flex-wrap justify-center gap-2">
                                 <button v-for="q in suggestions" :key="q" type="button" @click="useSuggestion(q)" class="rounded-full border border-slate-200 px-3 py-1.5 text-xs text-slate-600 hover:border-blue-300 hover:bg-blue-50 hover:text-blue-700 dark:border-slate-600 dark:text-slate-300 dark:hover:border-blue-500/50 dark:hover:bg-blue-500/10 dark:hover:text-blue-300">{{ q }}</button>
                             </div>
@@ -711,7 +712,7 @@ onBeforeUnmount(() => {
                                     <i class="bi bi-stars"></i>
                                 </div>
                                 <div class="min-w-0 flex-1 text-slate-800 dark:text-slate-100">
-                                    <button v-if="m.tools?.length > 3 && !m.tools.some((t) => t.status === 'running')" type="button" @click="m.toolsOpen = !m.toolsOpen" class="mb-1.5 inline-flex items-center gap-1.5 rounded-full border border-slate-200 bg-white px-2.5 py-1 text-[11px] font-medium text-slate-500 hover:border-blue-300 hover:text-blue-600 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-400 dark:hover:border-blue-500/50 dark:hover:text-blue-300">
+                                    <button v-if="m.tools?.length > 3 && !m.tools.some((tl) => tl.status === 'running')" type="button" @click="m.toolsOpen = !m.toolsOpen" class="mb-1.5 inline-flex items-center gap-1.5 rounded-full border border-slate-200 bg-white px-2.5 py-1 text-[11px] font-medium text-slate-500 hover:border-blue-300 hover:text-blue-600 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-400 dark:hover:border-blue-500/50 dark:hover:text-blue-300">
                                         <i class="bi bi-tools"></i> {{ toolSummary(m.tools) }}
                                         <i class="bi" :class="m.toolsOpen ? 'bi-chevron-up' : 'bi-chevron-down'"></i>
                                     </button>
@@ -734,8 +735,8 @@ onBeforeUnmount(() => {
                                             <img :src="mediaUrl(id)" alt="" class="max-h-80 max-w-full rounded-xl object-cover ring-1 ring-slate-200 hover:opacity-90 dark:ring-slate-700" />
                                         </button>
                                     </div>
-                                    <div v-if="m.generating" class="flex items-center gap-2 text-sm text-slate-500"><span class="inline-block h-2 w-2 animate-pulse rounded-full bg-blue-500"></span> Generating image…</div>
-                                    <div v-else-if="sending && i === messages.length - 1 && !m.content && !m.tools?.some((t) => t.status === 'running')" class="flex h-6 items-center gap-1">
+                                    <div v-if="m.generating" class="flex items-center gap-2 text-sm text-slate-500"><span class="inline-block h-2 w-2 animate-pulse rounded-full bg-blue-500"></span> {{ t('aiGateway.chat.generatingImage') }}</div>
+                                    <div v-else-if="sending && i === messages.length - 1 && !m.content && !m.tools?.some((tl) => tl.status === 'running')" class="flex h-6 items-center gap-1">
                                         <span class="h-1.5 w-1.5 animate-bounce rounded-full bg-slate-400 [animation-delay:-0.3s]"></span>
                                         <span class="h-1.5 w-1.5 animate-bounce rounded-full bg-slate-400 [animation-delay:-0.15s]"></span>
                                         <span class="h-1.5 w-1.5 animate-bounce rounded-full bg-slate-400"></span>
@@ -743,11 +744,11 @@ onBeforeUnmount(() => {
                                     <MarkdownContent v-if="m.content" :content="m.content" />
                                     <span v-if="sending && i === messages.length - 1 && m.content && !m.generating" class="ml-0.5 inline-block h-4 w-1.5 animate-pulse bg-slate-400 align-middle"></span>
                                     <div v-if="m.content && !(sending && i === messages.length - 1)" class="mt-2 flex items-center gap-3 text-[11px] text-slate-400">
-                                        <button type="button" @click="copyMessage(m, i)" class="rounded px-1 py-0.5 hover:bg-slate-100 hover:text-slate-600 dark:hover:bg-slate-700 dark:hover:text-slate-200" title="Copy">
-                                            <i class="bi" :class="copiedIndex === i ? 'bi-check2' : 'bi-clipboard'"></i> {{ copiedIndex === i ? 'Copied' : 'Copy' }}
+                                        <button type="button" @click="copyMessage(m, i)" class="rounded px-1 py-0.5 hover:bg-slate-100 hover:text-slate-600 dark:hover:bg-slate-700 dark:hover:text-slate-200" :title="t('aiGateway.chat.copy')">
+                                            <i class="bi" :class="copiedIndex === i ? 'bi-check2' : 'bi-clipboard'"></i> {{ copiedIndex === i ? t('aiGateway.chat.copied') : t('aiGateway.chat.copy') }}
                                         </button>
                                         <span v-if="m.model" class="opacity-0 transition-opacity group-hover:opacity-100">
-                                            {{ m.model }}<span v-if="m.providerName"> via {{ m.providerName }}</span><template v-if="m.usage"> · {{ m.usage.input }}→{{ m.usage.output }} tokens</template>
+                                            {{ m.model }}<span v-if="m.providerName"> {{ t('aiGateway.chat.via', { name: m.providerName }) }}</span><template v-if="m.usage"> · {{ t('aiGateway.chat.usage', { input: m.usage.input, output: m.usage.output }) }}</template>
                                         </span>
                                     </div>
                                 </div>
@@ -762,13 +763,13 @@ onBeforeUnmount(() => {
 
                 <div class="px-4 pb-4 pt-2" @dragover.prevent @drop.prevent="onDrop">
                     <div class="mx-auto max-w-3xl">
-                        <p v-if="imagesWillBeOcr" class="mb-2 text-xs text-amber-600">This model can't see images (no "vision" capability), so the text in them will be read with OCR and sent instead.</p>
+                        <p v-if="imagesWillBeOcr" class="mb-2 text-xs text-amber-600">{{ t('aiGateway.chat.ocrNote') }}</p>
                         <div class="rounded-2xl border border-slate-300 bg-white shadow-sm focus-within:border-blue-400 focus-within:ring-2 focus-within:ring-blue-100 dark:border-slate-600 dark:bg-slate-900 dark:focus-within:ring-blue-500/20" :class="readOnly ? 'opacity-60' : ''">
                             <div v-if="pendingImages.length" class="flex flex-wrap gap-2 px-3 pt-3">
                                 <div v-for="(img, k) in pendingImages" :key="k" class="relative">
                                     <img :src="img.preview" alt="" class="h-16 w-16 rounded-lg object-cover" :class="img.uploading ? 'opacity-50' : ''" />
                                     <span v-if="img.uploading" class="absolute inset-0 flex items-center justify-center"><span class="h-4 w-4 animate-spin rounded-full border-2 border-blue-500 border-t-transparent"></span></span>
-                                    <button type="button" @click="removePending(img)" class="absolute -right-1.5 -top-1.5 flex h-5 w-5 items-center justify-center rounded-full bg-slate-800 text-[10px] text-white" title="Remove"><i class="bi bi-x"></i></button>
+                                    <button type="button" @click="removePending(img)" class="absolute -right-1.5 -top-1.5 flex h-5 w-5 items-center justify-center rounded-full bg-slate-800 text-[10px] text-white" :title="t('aiGateway.chat.remove')"><i class="bi bi-x"></i></button>
                                 </div>
                             </div>
                             <textarea
@@ -778,29 +779,29 @@ onBeforeUnmount(() => {
                                 @paste="onPaste"
                                 :disabled="readOnly"
                                 rows="1"
-                                :placeholder="mode === 'image' ? 'Describe the image to generate…' : 'Message…'"
+                                :placeholder="mode === 'image' ? t('aiGateway.chat.imagePlaceholder') : t('aiGateway.chat.messagePlaceholder')"
                                 class="block max-h-[200px] w-full resize-none border-0 bg-transparent px-4 pb-1 pt-3 text-sm focus:ring-0 disabled:cursor-not-allowed"
                             ></textarea>
                             <div class="flex items-center gap-1 px-2 pb-2">
                                 <template v-if="mode === 'chat'">
                                     <input ref="fileInput" type="file" accept="image/png,image/jpeg,image/webp,image/gif" multiple class="hidden" @change="onPickFiles" />
-                                    <button type="button" @click="fileInput?.click()" :disabled="readOnly || sending" title="Attach images (or paste / drop them)" class="flex h-8 w-8 items-center justify-center rounded-lg text-slate-500 hover:bg-slate-100 disabled:opacity-50 dark:hover:bg-slate-800"><i class="bi bi-paperclip"></i></button>
+                                    <button type="button" @click="fileInput?.click()" :disabled="readOnly || sending" :title="t('aiGateway.chat.attach')" class="flex h-8 w-8 items-center justify-center rounded-lg text-slate-500 hover:bg-slate-100 disabled:opacity-50 dark:hover:bg-slate-800"><i class="bi bi-paperclip"></i></button>
                                 </template>
-                                <span class="hidden text-[11px] text-slate-400 sm:inline">{{ mode === 'image' ? 'Enter to generate' : 'Enter to send · Shift+Enter for newline' }}</span>
+                                <span class="hidden text-[11px] text-slate-400 sm:inline">{{ mode === 'image' ? t('aiGateway.chat.enterGenerate') : t('aiGateway.chat.enterSend') }}</span>
                                 <button
                                     v-if="sending && mode === 'chat'"
                                     type="button"
                                     @click="stop"
                                     class="ml-auto flex h-8 items-center gap-1.5 rounded-lg bg-slate-800 px-3 text-xs font-medium text-white hover:bg-slate-700 dark:bg-slate-200 dark:text-slate-900 dark:hover:bg-white"
-                                    title="Stop generating"
-                                ><i class="bi bi-stop-fill"></i> Stop</button>
+                                    :title="t('aiGateway.chat.stopGenerating')"
+                                ><i class="bi bi-stop-fill"></i> {{ t('aiGateway.chat.stop') }}</button>
                                 <button
                                     v-else
                                     type="button"
                                     @click="send"
                                     :disabled="!canSend"
                                     class="ml-auto flex h-8 items-center gap-1.5 rounded-lg bg-blue-600 px-3 text-xs font-medium text-white hover:bg-blue-700 disabled:opacity-40"
-                                ><i class="bi" :class="mode === 'image' ? 'bi-magic' : 'bi-send-fill'"></i> {{ mode === 'image' ? 'Generate' : 'Send' }}</button>
+                                ><i class="bi" :class="mode === 'image' ? 'bi-magic' : 'bi-send-fill'"></i> {{ mode === 'image' ? t('aiGateway.chat.generate') : t('aiGateway.chat.send') }}</button>
                             </div>
                         </div>
                     </div>
@@ -810,8 +811,8 @@ onBeforeUnmount(() => {
 
         <Offcanvas
             :show="viewer.show"
-            title="Image"
-            :subtitle="viewer.images.length > 1 ? `${viewer.index + 1} of ${viewer.images.length}` : ''"
+            :title="t('aiGateway.chat.image')"
+            :subtitle="viewer.images.length > 1 ? t('aiGateway.chat.nOf', { n: viewer.index + 1, total: viewer.images.length }) : ''"
             width="wide"
             @close="viewer.show = false"
         >
@@ -819,12 +820,12 @@ onBeforeUnmount(() => {
                 <div class="relative flex flex-1 items-center justify-center rounded-xl bg-slate-100 p-2 dark:bg-slate-800">
                     <img v-if="viewerUrl" :src="viewerUrl" alt="" class="max-h-[calc(100vh-12rem)] max-w-full rounded-lg object-contain" />
                     <template v-if="viewer.images.length > 1">
-                        <button type="button" @click="stepViewer(-1)" class="absolute left-2 top-1/2 flex h-9 w-9 -translate-y-1/2 items-center justify-center rounded-full bg-white/90 text-slate-700 shadow hover:bg-white dark:bg-slate-900/90 dark:text-slate-200" title="Previous"><i class="bi bi-chevron-left"></i></button>
-                        <button type="button" @click="stepViewer(1)" class="absolute right-2 top-1/2 flex h-9 w-9 -translate-y-1/2 items-center justify-center rounded-full bg-white/90 text-slate-700 shadow hover:bg-white dark:bg-slate-900/90 dark:text-slate-200" title="Next"><i class="bi bi-chevron-right"></i></button>
+                        <button type="button" @click="stepViewer(-1)" class="absolute left-2 top-1/2 flex h-9 w-9 -translate-y-1/2 items-center justify-center rounded-full bg-white/90 text-slate-700 shadow hover:bg-white dark:bg-slate-900/90 dark:text-slate-200" :title="t('aiGateway.chat.previous')"><i class="bi bi-chevron-left"></i></button>
+                        <button type="button" @click="stepViewer(1)" class="absolute right-2 top-1/2 flex h-9 w-9 -translate-y-1/2 items-center justify-center rounded-full bg-white/90 text-slate-700 shadow hover:bg-white dark:bg-slate-900/90 dark:text-slate-200" :title="t('aiGateway.chat.next')"><i class="bi bi-chevron-right"></i></button>
                     </template>
                 </div>
                 <div class="flex justify-end gap-2 text-sm">
-                    <a :href="viewerUrl" download class="rounded-lg border border-slate-300 px-3 py-1.5 hover:bg-slate-100 dark:border-slate-600 dark:hover:bg-slate-800"><i class="bi bi-download"></i> Download</a>
+                    <a :href="viewerUrl" download class="rounded-lg border border-slate-300 px-3 py-1.5 hover:bg-slate-100 dark:border-slate-600 dark:hover:bg-slate-800"><i class="bi bi-download"></i> {{ t('aiGateway.chat.download') }}</a>
                 </div>
             </div>
         </Offcanvas>

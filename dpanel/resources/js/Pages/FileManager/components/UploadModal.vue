@@ -1,4 +1,7 @@
 <script setup>
+import { useI18n } from 'vue-i18n';
+
+const { t } = useI18n();
 defineProps({
     fm: {
         type: Object,
@@ -18,22 +21,22 @@ defineProps({
             @drop.prevent="fm.handleUploadDrop"
         >
             <i class="bi bi-cloud-arrow-up text-3xl text-slate-400"></i>
-            <p class="mt-2 text-sm font-medium">Drag and drop files here</p>
-            <p class="mt-1 text-xs text-slate-500">or choose from your computer</p>
+            <p class="mt-2 text-sm font-medium">{{ t('fileManager.upload.drop') }}</p>
+            <p class="mt-1 text-xs text-slate-500">{{ t('fileManager.upload.choose') }}</p>
             <input id="file-upload-input" type="file" multiple class="mt-3 w-full text-sm" @change="fm.handleUploadChange" />
             <div v-if="fm.uploadForm.uploads?.length" class="mt-2 space-y-1 text-left text-xs text-slate-600 dark:text-slate-300">
-                <p>{{ fm.uploadForm.uploads.length }} file(s) selected</p>
+                <p>{{ t('fileManager.upload.selected', { count: fm.uploadForm.uploads.length }) }}</p>
                 <p class="max-h-20 overflow-auto break-all">
                     {{ fm.uploadForm.uploads.map((file) => file.name).join(', ') }}
                 </p>
             </div>
         </div>
         <button type="button" :disabled="fm.uploadInProgress || !fm.uploadForm.uploads?.length" class="rounded-md bg-blue-600 px-4 py-2 text-sm text-white hover:bg-blue-700 disabled:opacity-60" @click="fm.submitUpload">
-            {{ fm.uploadInProgress ? 'Uploading...' : 'Upload File(s)' }}
+            {{ fm.uploadInProgress ? t('fileManager.upload.uploading') : t('fileManager.upload.submit') }}
         </button>
         <div v-if="fm.uploadInProgress || fm.uploadTaskComplete" class="space-y-1">
             <div class="flex items-center justify-between text-xs text-slate-500">
-                <span class="truncate">{{ fm.uploadTaskComplete ? 'Complete' : `Uploading ${fm.uploadCurrentFile}...` }}</span>
+                <span class="truncate">{{ fm.uploadTaskComplete ? t('fileManager.upload.complete') : t('fileManager.upload.uploadingFile', { file: fm.uploadCurrentFile }) }}</span>
                 <span>{{ fm.uploadProgress }}%</span>
             </div>
             <div class="h-1.5 overflow-hidden rounded-full bg-slate-200 dark:bg-slate-700">

@@ -2,6 +2,9 @@
 import { Link } from '@inertiajs/vue3';
 import { computed } from 'vue';
 import SiteSwitcher from './SiteSwitcher.vue';
+import { useI18n } from 'vue-i18n';
+
+const { t } = useI18n();
 
 const props = defineProps({
     fm: {
@@ -51,13 +54,14 @@ const currentFolderUrl = computed(() => {
             <Link
                 :href="fm.panelRoute('websites.manage', { id: fm.props.website.id })"
                 class="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-red-200 bg-red-50 text-red-600 transition-all hover:border-red-300 hover:bg-red-100 dark:border-red-900/50 dark:bg-red-900/20 dark:text-red-400 dark:hover:bg-red-900/30"
-                title="Exit file manager"
+                :title="t('fileManager.topBar.exit')"
             >
                 <i class="bi bi-box-arrow-left text-sm"></i>
             </Link>
 
             <button
                 type="button"
+                :aria-label="t('fileManager.topBar.toggleSidebar')"
                 class="rounded-lg border border-slate-300/80 bg-white/70 px-2 py-1.5 shadow-sm transition hover:-translate-y-0.5 hover:bg-white lg:hidden dark:border-slate-700 dark:bg-slate-800/70 dark:hover:bg-slate-700"
                 @click="fm.toggleSidebar()"
             >
@@ -65,7 +69,7 @@ const currentFolderUrl = computed(() => {
             </button>
 
             <div class="flex min-w-0 items-center gap-1 overflow-x-auto text-sm">
-                <button type="button" class="shrink-0 rounded-md px-1.5 py-1 transition hover:bg-slate-100 dark:hover:bg-slate-800" @click="fm.goRoot">
+                <button type="button" :aria-label="t('fileManager.topBar.root')" class="shrink-0 rounded-md px-1.5 py-1 transition hover:bg-slate-100 dark:hover:bg-slate-800" @click="fm.goRoot">
                     <i class="bi bi-house-door text-xs"></i>
                 </button>
                 <template v-for="(segment, idx) in (fm.props.currentPath || '').split('/').filter(Boolean)" :key="idx">
@@ -86,8 +90,8 @@ const currentFolderUrl = computed(() => {
                 target="_blank"
                 rel="noopener noreferrer"
                 class="flex h-7 w-7 shrink-0 items-center justify-center rounded-md border border-emerald-200 bg-emerald-50 text-emerald-600 transition-all hover:border-emerald-300 hover:bg-emerald-100 dark:border-emerald-900/50 dark:bg-emerald-900/20 dark:text-emerald-400 dark:hover:bg-emerald-900/30"
-                :title="`Browse ${currentFolderUrl}`"
-                :aria-label="`Browse ${currentFolderUrl}`"
+                :title="t('fileManager.topBar.browse', { url: currentFolderUrl })"
+                :aria-label="t('fileManager.topBar.browse', { url: currentFolderUrl })"
             >
                 <i class="bi bi-globe2 text-xs"></i>
             </a>
@@ -101,7 +105,7 @@ const currentFolderUrl = computed(() => {
                         v-model="fm.searchQuery"
                         type="text"
                         class="w-40 rounded-xl border border-slate-200/80 bg-white/80 py-1.5 pl-7 pr-2 text-xs shadow-sm outline-none transition focus:border-sky-400 focus:bg-white focus:ring-2 focus:ring-sky-400/15 dark:border-slate-700 dark:bg-slate-800/80 dark:text-slate-300 dark:focus:bg-slate-800"
-                        placeholder="Search files..."
+                        :placeholder="t('fileManager.topBar.search')"
                     >
                 </div>
             </div>

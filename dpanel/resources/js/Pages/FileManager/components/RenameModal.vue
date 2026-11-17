@@ -1,4 +1,7 @@
 <script setup>
+import { useI18n } from 'vue-i18n';
+
+const { t } = useI18n();
 defineProps({
     fm: {
         type: Object,
@@ -9,9 +12,9 @@ defineProps({
 
 <template>
     <div v-if="fm.modalType === 'rename'" class="space-y-3">
-        <input v-model="fm.renameForm.new_name" type="text" placeholder="new name" class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-800" />
+        <input v-model="fm.renameForm.new_name" type="text" :placeholder="t('fileManager.modal.newNamePlaceholder')" class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-800" />
         <button type="button" :disabled="fm.renameInProgress || !fm.renameForm.new_name" class="rounded-md bg-blue-600 px-4 py-2 text-sm text-white hover:bg-blue-700 disabled:opacity-60" @click="fm.submitRename">
-            {{ fm.renameInProgress ? 'Renaming...' : 'Rename' }}
+            {{ fm.renameInProgress ? t('fileManager.rename.renaming') : t('fileManager.rename.submit') }}
         </button>
     </div>
 </template>

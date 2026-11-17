@@ -3,6 +3,9 @@ import { ref, computed } from 'vue';
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
 import { Head, Link, usePage } from '@inertiajs/vue3';
 import axios from 'axios';
+import { useI18n } from 'vue-i18n';
+
+const { t } = useI18n();
 
 const props = defineProps({
     services: { type: Array, default: () => [] },
@@ -46,17 +49,17 @@ const applyState = (data) => {
 
 const toggle = async (service) => {
     const turningOn = !service.active;
-    if (!turningOn && !confirm(`Turn off ${service.label}? It will also stay off after a reboot.`)) return;
+    if (!turningOn && !confirm(t('databases.postgresql.offConfirm', { name: service.label }))) return;
 
     busyService.value = service.key;
     message.value = null;
     try {
         const { data } = await axios.post(panelRoute('databases.mongodb.toggle', { service: service.key }), { running: turningOn });
         applyState(data);
-        message.value = { type: 'success', text: `${service.label} turned ${turningOn ? 'on' : 'off'}.` };
+        message.value = { type: 'success', text: turningOn ? t('databases.postgresql.turnedOn', { name: service.label }) : t('databases.postgresql.turnedOff', { name: service.label }) };
     } catch (e) {
         if (e.response?.data) applyState(e.response.data);
-        message.value = { type: 'error', text: e.response?.data?.message || 'Request failed.' };
+        message.value = { type: 'error', text: e.response?.data?.message || t('databases.postgresql.requestFailed') };
     } finally {
         busyService.value = null;
     }
@@ -75,9 +78,9 @@ const refresh = async () => {
 const copy = async (value) => {
     try {
         await navigator.clipboard.writeText(String(value ?? ''));
-        message.value = { type: 'success', text: 'Copied to clipboard.' };
+        message.value = { type: 'success', text: t('databases.postgresql.copied') };
     } catch {
-        message.value = { type: 'error', text: 'Could not copy to clipboard.' };
+        message.value = { type: 'error', text: t('databases.postgresql.copyFailed') };
     }
 };
 </script>
@@ -89,7 +92,7 @@ const copy = async (value) => {
         <template #header>
             <div>
                 <h1 class="text-lg font-semibold">MongoDB</h1>
-                <p class="text-sm text-slate-500 dark:text-slate-400">MongoDB is installed but off by default. Turn it on here when you need it, then browse it with Mongo Admin.</p>
+                <p class="text-sm text-slate-500 dark:text-slate-400">{{ t('databases.mongodb.subtitle') }}</p>
             </div>
         </template>
 
@@ -103,9 +106,9 @@ const copy = async (value) => {
 
             <section class="rounded-xl border border-slate-200 bg-white p-6 dark:border-slate-800 dark:bg-slate-900">
                 <div class="flex flex-wrap items-center justify-between gap-3">
-                    <h2 class="text-base font-semibold">Services</h2>
+                    <h2 class="text-base font-semibold">{{ t('databases.postgresql.services') }}</h2>
                     <button type="button" :disabled="refreshing" class="rounded-md border border-slate-300 px-3 py-2 text-xs hover:bg-slate-100 disabled:opacity-60 dark:border-slate-700 dark:hover:bg-slate-800" @click="refresh">
-                        {{ refreshing ? 'Refreshing…' : 'Refresh Status' }}
+                        {{ refreshing ? t('databases.postgresql.refreshing') : t('databases.postgresql.refreshStatus') }}
                     </button>
                 </div>
 
@@ -126,7 +129,7 @@ const copy = async (value) => {
                                             : 'bg-amber-100 text-amber-700 dark:bg-amber-950 dark:text-amber-300'"
                                 class="rounded-full px-2 py-1 text-xs"
                             >
-                                {{ !service.installed ? 'Not installed' : service.active ? 'On' : service.state === 'failed' ? 'Failed' : 'Off' }}
+                                {{ !service.installed ? t('databases.postgresql.notInstalled') : service.active ? t('databases.postgresql.on') : service.state === 'failed' ? t('databases.postgresql.failed') : t('databases.postgresql.off') }}
                             </span>
                         </div>
 
@@ -141,17 +144,17 @@ const copy = async (value) => {
                                 class="rounded-md px-3 py-2 text-sm font-medium disabled:opacity-50"
                                 @click="toggle(service)"
                             >
-                                {{ busyService === service.key ? 'Working…' : service.active ? 'Turn Off' : 'Turn On' }}
+                                {{ busyService === service.key ? t('databases.postgresql.working') : service.active ? t('databases.postgresql.turnOff') : t('databases.postgresql.turnOn') }}
                             </button>
                             <Link
                                 v-if="service.key === 'mongodb' && service.active"
                                 :href="panelRoute('databases.mongodb.admin')"
                                 class="rounded-md border border-emerald-300 bg-emerald-50 px-3 py-2 text-sm font-medium text-emerald-700 hover:bg-emerald-100 dark:border-emerald-700 dark:bg-emerald-950/30 dark:text-emerald-200"
                             >
-                                Open Mongo Admin
+                                {{ t('databases.mongodb.openAdmin') }}
                             </Link>
                             <p v-if="!service.installed" class="text-xs text-slate-500 dark:text-slate-400">
-                                Install on the server with <code>sudo dpanel mongodb install</code>.
+                                <i18n-t keypath="databases.postgresql.installHint" scope="global"><template #cmd><code>sudo dpanel mongodb install</code></template></i18n-t>
                             </p>
                         </div>
                     </div>
@@ -159,22 +162,22 @@ const copy = async (value) => {
             </section>
 
             <section class="rounded-xl border border-slate-200 bg-white p-6 dark:border-slate-800 dark:bg-slate-900">
-                <h2 class="text-base font-semibold">Connection</h2>
+                <h2 class="text-base font-semibold">{{ t('databases.mongodb.connection') }}</h2>
                 <dl class="mt-4 space-y-3 text-sm">
-                    <div class="flex justify-between gap-3"><dt class="text-slate-500">Host</dt><dd class="font-mono">{{ state.connection.host }}</dd></div>
-                    <div class="flex justify-between gap-3"><dt class="text-slate-500">Port</dt><dd class="font-mono">{{ state.connection.port }}</dd></div>
-                    <div class="flex justify-between gap-3"><dt class="text-slate-500">Admin user</dt><dd class="font-mono">{{ state.connection.username }}</dd></div>
+                    <div class="flex justify-between gap-3"><dt class="text-slate-500">{{ t('databases.postgresql.host') }}</dt><dd class="font-mono">{{ state.connection.host }}</dd></div>
+                    <div class="flex justify-between gap-3"><dt class="text-slate-500">{{ t('databases.postgresql.port') }}</dt><dd class="font-mono">{{ state.connection.port }}</dd></div>
+                    <div class="flex justify-between gap-3"><dt class="text-slate-500">{{ t('databases.mongodb.adminUser') }}</dt><dd class="font-mono">{{ state.connection.username }}</dd></div>
                     <div class="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-                        <dt class="text-slate-500">Connection string</dt>
+                        <dt class="text-slate-500">{{ t('databases.mongodb.connectionString') }}</dt>
                         <dd v-if="state.connection.password" class="flex min-w-0 items-center gap-2">
                             <span class="truncate font-mono text-xs">{{ connectionString }}</span>
-                            <button type="button" class="text-xs text-blue-600 hover:underline dark:text-blue-300" @click="revealed = !revealed">{{ revealed ? 'Hide' : 'Show' }}</button>
-                            <button type="button" class="text-xs text-blue-600 hover:underline dark:text-blue-300" @click="copy(fullConnectionString)">Copy</button>
+                            <button type="button" class="text-xs text-blue-600 hover:underline dark:text-blue-300" @click="revealed = !revealed">{{ revealed ? t('databases.postgresql.hide') : t('databases.postgresql.show') }}</button>
+                            <button type="button" class="text-xs text-blue-600 hover:underline dark:text-blue-300" @click="copy(fullConnectionString)">{{ t('databases.postgresql.copy') }}</button>
                         </dd>
-                        <dd v-else class="text-slate-500">No admin password saved</dd>
+                        <dd v-else class="text-slate-500">{{ t('databases.mongodb.noPassword') }}</dd>
                     </div>
                 </dl>
-                <p class="mt-4 text-xs text-slate-500 dark:text-slate-400">MongoDB only listens on this server (localhost), with access control on. The admin user has the root role.</p>
+                <p class="mt-4 text-xs text-slate-500 dark:text-slate-400">{{ t('databases.mongodb.localhostOnly') }}</p>
             </section>
         </div>
     </AuthenticatedLayout>

@@ -1,0 +1,410 @@
+{
+    "modal": {
+        "creating": "তৈরি হচ্ছে...",
+        "createFile": "File তৈরি করুন",
+        "createFolder": "Folder তৈরি করুন",
+        "selectedItems": "নির্বাচিত item: {count}",
+        "destinationPlaceholder": "গন্তব্য folder-এর path (খালি = root)",
+        "newNamePlaceholder": "নতুন নাম"
+    },
+    "rename": {
+        "renaming": "নাম বদলানো হচ্ছে...",
+        "submit": "নাম বদলান"
+    },
+    "move": {
+        "dragHint": "নির্বাচিত row টেনে sidebar-এর folder-এও ছেড়ে দিতে পারেন।",
+        "moving": "সরানো হচ্ছে...",
+        "submit": "সরান"
+    },
+    "unzip": {
+        "archive": "Archive: {path}",
+        "extractTo": "যে folder-এ extract হবে",
+        "note": "Folder না থাকলে তৈরি হবে। একই নামের বিদ্যমান file প্রতিস্থাপিত হবে।",
+        "formats": "সমর্থিত format: .zip, .tar, .tar.gz, .tgz, এবং একক-file .gz।",
+        "extracting": "Extract হচ্ছে...",
+        "submit": "Archive extract করুন"
+    },
+    "copy": {
+        "name": "Copy-র নাম দিন",
+        "note": "মূল item যেখানে আছে সেখানেই থাকবে; গন্তব্যে একটি copy তৈরি হবে।",
+        "copying": "Copy হচ্ছে...",
+        "submit": "Copy করুন"
+    },
+    "zip": {
+        "format": "Archive format",
+        "name": "Archive-এর নাম",
+        "creating": "Archive তৈরি হচ্ছে...",
+        "submit": "Archive তৈরি করুন"
+    },
+    "selection": {
+        "selected": "{count}টি নির্বাচিত",
+        "clear": "বাতিল",
+        "move": "সরান",
+        "copy": "Copy",
+        "delete": "মুছুন"
+    },
+    "toast": {
+        "dismiss": "বন্ধ করুন"
+    },
+    "upload": {
+        "drop": "File এখানে টেনে এনে ছাড়ুন",
+        "choose": "অথবা আপনার computer থেকে বেছে নিন",
+        "selected": "{count}টি file নির্বাচিত",
+        "uploading": "Upload হচ্ছে...",
+        "submit": "File upload করুন",
+        "complete": "সম্পূর্ণ",
+        "uploadingFile": "{file} upload হচ্ছে..."
+    },
+    "context": {
+        "openFolder": "Folder খুলুন",
+        "openSqlite": "SQLite Viewer-এ খুলুন",
+        "preview": "Preview",
+        "editFile": "File সম্পাদনা",
+        "openFile": "File খুলুন",
+        "download": "Download",
+        "rename": "নাম বদলান",
+        "permissions": "Permission",
+        "move": "সরান",
+        "copy": "Copy",
+        "zip": "Zip তৈরি করুন",
+        "unzip": "Archive extract করুন",
+        "delete": "মুছুন"
+    },
+    "trash": {
+        "intro": "মুছে ফেলা item zip করে স্থায়ীভাবে সরানোর আগে এখানে রাখা হয়।",
+        "empty": "Trash খালি।",
+        "selected": "{count}টি নির্বাচিত",
+        "selectAll": "সব নির্বাচন করুন",
+        "deleting": "মোছা হচ্ছে…",
+        "deleteForeverCount": "চিরতরে মুছুন ({count})",
+        "from": "উৎস: /{path}",
+        "root": "(root)",
+        "restore": "ফিরিয়ে আনুন",
+        "deleteForever": "চিরতরে মুছুন"
+    },
+    "perm": {
+        "presets": {
+            "owner644": "Owner RW, অন্যরা R",
+            "owner755": "Owner সব, অন্যরা RX",
+            "group775": "Group লিখতে পারে",
+            "world777": "সবাই লিখতে পারে",
+            "owner600": "শুধু owner",
+            "group640": "Owner RW, group R",
+            "owner700": "শুধু owner (exec)",
+            "zero0755": "শুরুতে শূন্য"
+        },
+        "presetsTitle": "Preset",
+        "highRisk": "উচ্চ ঝুঁকি",
+        "safe": "নিরাপদ",
+        "custom": "নিজস্ব permission",
+        "customHint": "`644`, `755` বা `0777`-এর মতো ৩ বা ৪ অঙ্ক ব্যবহার করুন।",
+        "preview": "Live preview",
+        "symbolic": "Symbolic",
+        "warning": "সতর্কতা: এই mode-এ সবাই লিখতে পারে বা অন্যভাবে উচ্চ ঝুঁকিপূর্ণ। সাবধানে ব্যবহার করুন।",
+        "recursive": "Subdirectory ও file-এ recursively প্রয়োগ করুন",
+        "saving": "Save হচ্ছে...",
+        "saveRecursive": "Recursively save করুন",
+        "save": "Permission save করুন"
+    },
+    "sidebar": {
+        "close": "Sidebar বন্ধ করুন",
+        "folders": "Folder",
+        "goToPath": "Path-এ যান...",
+        "dropUp": "এক ধাপ উপরে সরাতে item এখানে ছাড়ুন",
+        "up": "উপরের directory",
+        "root": "Root-এ যান"
+    },
+    "editor": {
+        "readonly": "শুধু পড়া",
+        "saving": "Save হচ্ছে...",
+        "explorer": "Explorer",
+        "file": "File",
+        "folder": "Folder",
+        "lines": "লাইন",
+        "tips": "পরামর্শ",
+        "tipSave": "Save করতে Ctrl/Cmd+S",
+        "tipFullscreen": "Full-screen code editing ব্যবহার করুন",
+        "tipSplit": "দায়িত্ব অনুযায়ী file আলাদা রাখুন",
+        "unsaved": "Save না করা পরিবর্তন",
+        "saved": "Save হয়েছে",
+        "lineCount": "{count} লাইন",
+        "openFull": "পুরো file খুলুন",
+        "modified": "পরিবর্তিত",
+        "noChanges": "কোনো পরিবর্তন নেই"
+    },
+    "topBar": {
+        "exit": "File manager থেকে বের হন",
+        "toggleSidebar": "Sidebar দেখান/লুকান",
+        "root": "Root-এ যান",
+        "browse": "{url} browse করুন",
+        "search": "File খুঁজুন..."
+    },
+    "table": {
+        "open": "খুলুন",
+        "view": "দেখুন",
+        "edit": "সম্পাদনা",
+        "download": "Download",
+        "name": "নাম",
+        "action": "কাজ",
+        "type": "ধরন",
+        "size": "আকার",
+        "perm": "Perm",
+        "modified": "পরিবর্তিত",
+        "calculate": "হিসাব করুন",
+        "calculating": "হিসাব হচ্ছে…",
+        "noMatch": "আপনার খোঁজার সাথে কোনো file মেলেনি",
+        "empty": "এই directory-তে কোনো file নেই"
+    },
+    "switcher": {
+        "title": "Website বদলান বা browse করুন",
+        "search": "Website খুঁজুন...",
+        "openHere": "{domain}-এর file এই tab-এ খুলুন",
+        "current": "বর্তমান",
+        "openNew": "{domain}-এর file নতুন tab-এ খুলুন",
+        "noMatch": "“{query}”-এর সাথে কোনো website মেলেনি।"
+    },
+    "preview": {
+        "openNewTab": "নতুন tab-এ খুলুন",
+        "download": "Download",
+        "close": "বন্ধ করুন (Esc)",
+        "failed": "এই file preview করা যায়নি।",
+        "downloadInstead": "বরং download করুন",
+        "previous": "আগেরটি (←)",
+        "next": "পরেরটি (→)"
+    },
+    "index": {
+        "headTitle": "File Manager - {site}",
+        "dropTo": "Upload করতে file এখানে ছাড়ুন:",
+        "items": "{count}টি item",
+        "openTerminal": "Terminal খুলুন",
+        "terminal": "Terminal",
+        "closeTerminal": "Terminal বন্ধ করুন",
+        "titles": {
+            "createFolder": "Folder তৈরি করুন",
+            "createFile": "File তৈরি করুন",
+            "rename": "Item-এর নাম বদলান",
+            "permissions": "Permission পরিবর্তন করুন",
+            "move": "Item সরান",
+            "copy": "Item copy করুন",
+            "zip": "Archive তৈরি করুন",
+            "unzip": "Archive extract করুন",
+            "trash": "Trash",
+            "upload": "File upload করুন"
+        }
+    },
+    "sqlite": {
+        "closeEsc": "বন্ধ করুন (Esc)",
+        "ai": {
+            "placeholder": "AI-কে জিজ্ঞেস করুন: যেমন এই মাসে sign up করা শেষ ১০ জন user / Gmail user-দের তালিকা দাও",
+            "writing": "লেখা হচ্ছে…",
+            "generate": "SQL তৈরি করুন",
+            "hint": "SQL নিচের editor-এ বসবে। দেখে নিয়ে Run চাপুন — নিজে থেকে কিছুই চলবে না।"
+        },
+        "query": {
+            "run": "Run",
+            "editingHint": "Ctrl+Enter · editing চালু: INSERT, UPDATE, DELETE, CREATE … সত্যিই চলবে",
+            "readOnlyHint": "Ctrl+Enter · শুধু পড়া: SELECT, WITH, EXPLAIN ও read-only PRAGMA",
+            "changed": "{count}টি row পরিবর্তিত",
+            "rows": "{count}টি row, {ms} ms-এ",
+            "truncated": "প্রথম {count}টি দেখানো হচ্ছে"
+        },
+        "structure": {
+            "dropConfirm": "\"{table}\" থেকে column \"{column}\" মুছবেন? এর data হারিয়ে যাবে। এটি আর ফেরানো যাবে না।",
+            "dropped": "Column {column} মোছা হয়েছে।",
+            "addColumn": "Column যোগ করুন",
+            "column": "Column",
+            "type": "ধরন",
+            "default": "Default",
+            "key": "Key",
+            "actions": "কাজ",
+            "generated": "generated",
+            "edit": "সম্পাদনা",
+            "deleteColumn": "Column মুছুন",
+            "indexes": "Index",
+            "createStatement": "CREATE statement"
+        },
+        "column": {
+            "needDefault": "বিদ্যমান row-সহ table-এ NOT NULL column যোগ করতে SQLite-এর একটি default মান লাগে।",
+            "added": "Column {name} যোগ হয়েছে।",
+            "renamed": "Column-এর নাম বদলে {name} করা হয়েছে।",
+            "editTitle": "Column {name} সম্পাদনা",
+            "name": "নাম",
+            "value": "মান…",
+            "typeLabel": "ধরন:",
+            "nullable": "nullable",
+            "defaultLabel": "default",
+            "renameOnly": "SQLite শুধু column-এর নাম বদলাতে পারে। ধরন বা constraint বদলাতে SQL দিয়ে table নতুন করে তৈরি করুন।",
+            "sqlPreview": "যে SQL চলবে",
+            "rename": "নাম বদলান"
+        },
+        "grid": {
+            "noRows": "কোনো row নেই।",
+            "editRow": "Row সম্পাদনা",
+            "deleteRow": "Row মুছুন",
+            "dblClick": "সম্পাদনা করতে double-click করুন",
+            "clickCopy": "Copy করতে click করুন"
+        },
+        "row": {
+            "addTitle": "{table}-এ row যোগ করুন",
+            "editTitle": "Row {rowid} সম্পাদনা",
+            "emptyDefault": "খালি field-এ column-এর default মান বসবে",
+            "undo": "এই field-এর পরিবর্তন বাতিল করুন",
+            "locked": "পুরোটা load করা হয়নি; SQL দিয়ে পরিবর্তন করুন।",
+            "auto": "auto",
+            "defaultPlaceholder": "default: {value}",
+            "convert": "রূপান্তর / format পরিবর্তন",
+            "working": "কাজ চলছে…",
+            "format": "Format…",
+            "changed": "{count}টি field পরিবর্তিত",
+            "insert": "Row যোগ করুন",
+            "save": "পরিবর্তন save করুন"
+        },
+        "data": {
+            "savedCell": "{column} save হয়েছে।",
+            "deleteRowsConfirm": "\"{table}\" থেকে {count}টি row মুছবেন? এটি আর ফেরানো যাবে না।",
+            "deletedRows": "{count}টি row মোছা হয়েছে।",
+            "deleteRowConfirm": "\"{table}\" থেকে row {rowid} মুছবেন? এটি আর ফেরানো যাবে না।",
+            "deletedRow": "Row {rowid} মোছা হয়েছে।",
+            "rowAdded": "Row যোগ হয়েছে (rowid {rowid})।",
+            "savedFields": "{count}টি field save হয়েছে।",
+            "search": "সব column-এ খুঁজুন",
+            "addRow": "Row যোগ করুন",
+            "deleteCount": "{count}টি মুছুন",
+            "matchCount": "{count}টি row মিলেছে",
+            "rowCount": "{count}টি row",
+            "perPage": "{n} / page",
+            "viewReadonly": "View grid-এ সম্পাদনা করা যায় না — SQL tab ব্যবহার করুন।",
+            "noRowid": "এই table-এর কোনো rowid নেই, তাই grid-এ সম্পাদনা করা যায় না — SQL tab ব্যবহার করুন।"
+        },
+        "viewer": {
+            "tabData": "Data",
+            "tabStructure": "গঠন",
+            "requestFailed": "Request ব্যর্থ হয়েছে।",
+            "aiFailed": "AI request ব্যর্থ হয়েছে।",
+            "convertFailed": "রূপান্তর ব্যর্থ হয়েছে।",
+            "editing": "সম্পাদনা চলছে",
+            "readOnly": "শুধু পড়া",
+            "writeOn": "লেখা চালু: পরিবর্তন সরাসরি database file-এ যাবে",
+            "writeOff": "শুধু পড়া: data পরিবর্তন করতে চালু করুন",
+            "write": "লেখা",
+            "opening": "Database খোলা হচ্ছে…",
+            "filter": "Table filter করুন",
+            "noTables": "কোনো table নেই।",
+            "showInternal": "sqlite_ table দেখান"
+        }
+    },
+    "icons": {
+        "folder": "folder",
+        "file": "file"
+    },
+    "cells": {
+        "blob": "BLOB {bytes} bytes",
+        "emptyBlob": "খালি blob",
+        "textCut": "Text {total} অক্ষরের মধ্যে {shown} অক্ষরে কাটা হয়েছে"
+    },
+    "formats": {
+        "errors": {
+            "notNumber": "সংখ্যা নয়।",
+            "notBase64": "সঠিক Base64 নয়।",
+            "notJson": "সঠিক JSON নয়।",
+            "notUnix": "Unix timestamp নয়।",
+            "notDate": "তারিখ নয়।",
+            "valueNotNumber": "\"{value}\" সংখ্যা নয়।"
+        },
+        "groups": {
+            "type": "ধরন",
+            "hash": "Hash",
+            "text": "Text",
+            "encode": "Encode",
+            "dateId": "তারিখ ও ID"
+        },
+        "items": {
+            "text": "Text",
+            "int": "Integer (পূর্ণসংখ্যা)",
+            "real": "Real (দশমিক)",
+            "bcrypt": "bcrypt (password)",
+            "argon2id": "Argon2id (password)",
+            "upper": "বড় হাতের অক্ষর (UPPERCASE)",
+            "lower": "ছোট হাতের অক্ষর (lowercase)",
+            "trim": "আগে-পরের space বাদ দিন",
+            "slug": "Slug",
+            "empty": "খালি string",
+            "b64e": "Base64 encode",
+            "b64d": "Base64 decode",
+            "urle": "URL encode",
+            "urld": "URL decode",
+            "jsonp": "JSON সাজানো (pretty)",
+            "jsonm": "JSON ছোট করা (minify)",
+            "now": "এখন (YYYY-MM-DD HH:MM:SS)",
+            "nowunix": "এখন (Unix timestamp)",
+            "unix2date": "Unix timestamp → তারিখ",
+            "date2unix": "তারিখ → Unix timestamp",
+            "uuid": "নতুন UUID v4"
+        }
+    },
+    "manager": {
+        "website": "Website",
+        "home": "Home",
+        "pathInside": "Path অবশ্যই {base}-এর ভেতরে থাকতে হবে।",
+        "cannotEdit": "\"{filename}\" edit করা যাবে না। এই ধরনের file edit করা সমর্থিত নয়।",
+        "largeFileConfirm": "\"{name}\" এর আকার {size}। পুরো file লোড করলে browser ধীর হতে পারে। পুরো file খুলবেন?",
+        "sizeFailed": "Folder-এর আকার হিসাব করা যায়নি।",
+        "trashConfirm": "{count}টি item trash-এ সরাবেন?",
+        "renamed": "Item-এর নাম বদলানো হয়েছে।",
+        "renameFailed": "Item-এর নাম বদলানো যায়নি।",
+        "trashLoadFailed": "Trash আনা যায়নি।",
+        "restored": "Item ফিরিয়ে আনা হয়েছে।",
+        "restoreFailed": "ফিরিয়ে আনা যায়নি।",
+        "purgeOneConfirm": "এই trash item স্থায়ীভাবে মুছবেন? এটি আর ফেরানো যাবে না।",
+        "purged": "স্থায়ীভাবে মুছে ফেলা হয়েছে।",
+        "deleteFailed": "মোছা যায়নি।",
+        "purgeManyConfirm": "{count}টি item স্থায়ীভাবে মুছবেন? এটি আর ফেরানো যাবে না।",
+        "deleteSelectedFailed": "নির্বাচিত item মোছা যায়নি।",
+        "extracted": "Archive extract হয়েছে।",
+        "extractFailed": "Archive extract করা যায়নি।",
+        "uploadedMany": "{count}টি file upload হয়েছে।",
+        "uploadedOne": "File upload হয়েছে।",
+        "uploadFailed": "Upload ব্যর্থ হয়েছে।",
+        "cacheCleared": "Project cache পরিষ্কার হয়েছে।",
+        "cacheFailed": "Project cache পরিষ্কার করা যায়নি।",
+        "saved": "File save হয়েছে।",
+        "saveFailed": "File save করা যায়নি।",
+        "owner": "মালিক (Owner)",
+        "group": "Group",
+        "world": "সবাই (World)"
+    },
+    "quick": {
+        "groups": {
+            "create": "তৈরি",
+            "fileOps": "File কাজ",
+            "navigation": "নেভিগেশন",
+            "danger": "বিপজ্জনক"
+        },
+        "upload": "Upload",
+        "uploadHint": "এই folder-এ file যোগ করুন",
+        "newFile": "নতুন File",
+        "newFileHint": "একটি খালি file তৈরি করুন",
+        "newFolder": "নতুন Folder",
+        "newFolderHint": "একটি directory তৈরি করুন",
+        "permissions": "Permission",
+        "permissionsHint": "Access mode বদলান",
+        "download": "Download",
+        "downloadHint": "নিজের computer-এ save করুন",
+        "zip": "Zip",
+        "zipHint": "নির্বাচিতগুলো compress করুন",
+        "extract": "Extract",
+        "extractHint": "Archive খুলুন",
+        "clearing": "পরিষ্কার হচ্ছে...",
+        "clearCache": "Cache পরিষ্কার",
+        "clearCacheHint": "Laravel optimize:clear চালান",
+        "upLevel": "এক ধাপ উপরে",
+        "upLevelHint": "উপরের folder-এ যান",
+        "hideHidden": "Hidden লুকান",
+        "showHidden": "Hidden দেখান",
+        "hiddenHint": "Dotfile দেখানো/লুকানো",
+        "trash": "Trash",
+        "trashHint": "ফিরিয়ে আনুন বা স্থায়ীভাবে মুছুন",
+        "delete": "মুছুন",
+        "deleteHint": "নির্বাচিত item মুছুন"
+    }
+}

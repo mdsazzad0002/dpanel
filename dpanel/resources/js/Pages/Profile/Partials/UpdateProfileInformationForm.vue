@@ -4,6 +4,9 @@ import InputLabel from '@/Components/InputLabel.vue';
 import PrimaryButton from '@/Components/PrimaryButton.vue';
 import { Link, useForm, usePage } from '@inertiajs/vue3';
 import { ref } from 'vue';
+import { useI18n } from 'vue-i18n';
+
+const { t } = useI18n();
 
 defineProps({
     mustVerifyEmail: {
@@ -31,7 +34,7 @@ const isFocused = ref(null);
         >
             <!-- Name Field -->
             <div>
-                <InputLabel for="name" value="Full Name" />
+                <InputLabel for="name" :value="t('profile.info.name')" />
                 <div class="relative mt-2">
                     <div class="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3">
                         <i class="bi bi-person text-slate-400"></i>
@@ -57,7 +60,7 @@ const isFocused = ref(null);
 
             <!-- Email Field (Read Only) -->
             <div>
-                <InputLabel value="Email Address" />
+                <InputLabel :value="t('profile.info.email')" />
                 <div class="relative mt-2">
                     <div class="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3">
                         <i class="bi bi-envelope text-slate-400"></i>
@@ -74,7 +77,7 @@ const isFocused = ref(null);
                 </div>
                 <p class="mt-2 flex items-center gap-1.5 text-xs text-slate-500 dark:text-slate-400">
                     <i class="bi bi-info-circle"></i>
-                    Email address cannot be changed from here
+                    {{ t('profile.info.emailLocked') }}
                 </p>
             </div>
 
@@ -85,9 +88,9 @@ const isFocused = ref(null);
                         <i class="bi bi-exclamation-triangle"></i>
                     </div>
                     <div class="flex-1">
-                        <p class="text-sm font-medium text-amber-800 dark:text-amber-200">Email not verified</p>
+                        <p class="text-sm font-medium text-amber-800 dark:text-amber-200">{{ t('profile.info.notVerified') }}</p>
                         <p class="mt-1 text-xs text-amber-700 dark:text-amber-300">
-                            Please verify your email address to access all features.
+                            {{ t('profile.info.verifyPrompt') }}
                         </p>
                         <Link
                             :href="route('verification.send')"
@@ -96,7 +99,7 @@ const isFocused = ref(null);
                             class="mt-3 inline-flex items-center gap-1.5 rounded-lg bg-amber-600 px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-amber-700"
                         >
                             <i class="bi bi-send"></i>
-                            Resend verification email
+                            {{ t('profile.info.resend') }}
                         </Link>
                     </div>
                 </div>
@@ -105,7 +108,7 @@ const isFocused = ref(null);
                     class="mt-3 flex items-center gap-2 rounded-lg bg-emerald-100 px-3 py-2 text-xs font-medium text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400"
                 >
                     <i class="bi bi-check-circle-fill"></i>
-                    Verification link sent to your email
+                    {{ t('profile.info.sent') }}
                 </div>
             </div>
 
@@ -115,8 +118,8 @@ const isFocused = ref(null);
                     <i class="bi bi-check-circle-fill"></i>
                 </div>
                 <div>
-                    <p class="text-sm font-medium text-emerald-800 dark:text-emerald-200">Email verified</p>
-                    <p class="text-xs text-emerald-700 dark:text-emerald-300">Your email address has been verified</p>
+                    <p class="text-sm font-medium text-emerald-800 dark:text-emerald-200">{{ t('profile.info.verified') }}</p>
+                    <p class="text-xs text-emerald-700 dark:text-emerald-300">{{ t('profile.info.verifiedText') }}</p>
                 </div>
             </div>
 
@@ -128,7 +131,7 @@ const isFocused = ref(null);
                 >
                     <i v-if="form.processing" class="bi bi-arrow-repeat animate-spin"></i>
                     <i v-else class="bi bi-check-lg"></i>
-                    {{ form.processing ? 'Saving...' : 'Save Changes' }}
+                    {{ form.processing ? t('profile.info.saving') : t('profile.info.save') }}
                 </PrimaryButton>
 
                 <Transition
@@ -141,7 +144,7 @@ const isFocused = ref(null);
                 >
                     <div v-if="form.recentlySuccessful" class="flex items-center gap-2 text-sm text-emerald-600 dark:text-emerald-400">
                         <i class="bi bi-check-circle-fill"></i>
-                        Saved successfully
+                        {{ t('profile.info.saved') }}
                     </div>
                 </Transition>
             </div>

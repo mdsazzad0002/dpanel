@@ -1,0 +1,20 @@
+{
+    "manage": {
+        "deleteConfirm": "Role \"{name}\" মুছবেন?",
+        "title": "Role পরিচালনা",
+        "subtitle": "Permission আসে একটি নির্দিষ্ট system তালিকা থেকে; প্রতিটি role-এ কোনগুলো প্রযোজ্য তা বেছে নিন।",
+        "create": "Role তৈরি করুন",
+        "role": "Role",
+        "permissions": "Permission",
+        "users": "User",
+        "actions": "কাজ",
+        "system": "System",
+        "noPermissions": "কোনো permission নেই",
+        "edit": "সম্পাদনা",
+        "delete": "মুছুন",
+        "empty": "কোনো role পাওয়া যায়নি।",
+        "editTitle": "\"{name}\" সম্পাদনা",
+        "name": "Role-এর নাম",
+        "namePlaceholder": "যেমন support_agent"
+    }
+}

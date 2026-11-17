@@ -2,6 +2,9 @@
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
 import { Head, usePage } from '@inertiajs/vue3';
 import { computed, ref } from 'vue';
+import { useI18n } from 'vue-i18n';
+
+const { t } = useI18n();
 
 const props = defineProps({
     versions: {
@@ -52,10 +55,10 @@ const editConfig = async (version) => {
         url.searchParams.set('version', version);
         const response = await fetch(url, { headers: { Accept: 'application/json' }, credentials: 'same-origin' });
         const payload = await response.json();
-        if (!response.ok || !payload.success) throw new Error(payload.message || 'Unable to load PHP config.');
+        if (!response.ok || !payload.success) throw new Error(payload.message || t('php.manager.loadConfigFailed'));
         configValues.value = { ...(payload.data?.configValues || {}) };
     } catch (error) {
-        configError.value = error?.message || 'Unable to load PHP config.';
+        configError.value = error?.message || t('php.manager.loadConfigFailed');
     } finally {
         loadingConfig.value = false;
     }
@@ -74,10 +77,10 @@ const saveConfig = async () => {
             body: JSON.stringify({ version: selectedVersion.value, ...configValues.value }),
         });
         const payload = await response.json();
-        if (!response.ok || !payload.success) throw new Error(payload.message || 'Unable to save PHP config.');
-        configMessage.value = payload.message || 'PHP config updated.';
+        if (!response.ok || !payload.success) throw new Error(payload.message || t('php.manager.saveConfigFailed'));
+        configMessage.value = payload.message || t('php.manager.configUpdated');
     } catch (error) {
-        configError.value = error?.message || 'Unable to save PHP config.';
+        configError.value = error?.message || t('php.manager.saveConfigFailed');
     } finally {
         savingConfig.value = false;
     }
@@ -105,7 +108,7 @@ const editExtensions = async (version) => {
         });
         const payload = await response.json();
         if (!response.ok || !payload.success) {
-            throw new Error(payload.message || 'Unable to load PHP extensions.');
+            throw new Error(payload.message || t('php.manager.loadExtFailed'));
         }
 
         const data = payload.data || {};
@@ -113,7 +116,7 @@ const editExtensions = async (version) => {
         const states = data.extensionStates || {};
         enabledExtensions.value = extensions.value.filter((extension) => states[extension] !== false);
     } catch (error) {
-        extensionError.value = error?.message || 'Unable to load PHP extensions.';
+        extensionError.value = error?.message || t('php.manager.loadExtFailed');
     } finally {
         loadingExtensions.value = false;
     }
@@ -141,12 +144,12 @@ const saveExtensions = async () => {
         });
         const payload = await response.json();
         if (!response.ok || !payload.success) {
-            throw new Error(payload.message || 'Unable to save PHP extensions.');
+            throw new Error(payload.message || t('php.manager.saveExtFailed'));
         }
 
-        extensionMessage.value = payload.message || 'PHP extensions updated.';
+        extensionMessage.value = payload.message || t('php.manager.extUpdated');
     } catch (error) {
-        extensionError.value = error?.message || 'Unable to save PHP extensions.';
+        extensionError.value = error?.message || t('php.manager.saveExtFailed');
     } finally {
         savingExtensions.value = false;
     }
@@ -154,13 +157,13 @@ const saveExtensions = async () => {
 </script>
 
 <template>
-    <Head title="PHP Manager" />
+    <Head :title="t('php.manager.title')" />
 
     <AuthenticatedLayout>
         <template #header>
             <div class="space-y-1">
-                <h1 class="text-lg font-semibold">PHP Manager</h1>
-                <p class="text-sm text-slate-500 dark:text-slate-400">PHP versions and extensions reported by the Rust API.</p>
+                <h1 class="text-lg font-semibold">{{ t('php.manager.title') }}</h1>
+                <p class="text-sm text-slate-500 dark:text-slate-400">{{ t('php.manager.subtitle') }}</p>
             </div>
         </template>
 
@@ -168,8 +171,8 @@ const saveExtensions = async () => {
             <section class="rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900">
                 <div class="flex items-center justify-between gap-3 border-b border-slate-200 px-6 py-4 dark:border-slate-800">
                     <div>
-                        <h2 class="text-lg font-semibold text-slate-900 dark:text-white">Available PHP Versions</h2>
-                        <p class="text-sm text-slate-500 dark:text-slate-400">Select a version to inspect and edit its extensions.</p>
+                        <h2 class="text-lg font-semibold text-slate-900 dark:text-white">{{ t('php.manager.versions') }}</h2>
+                        <p class="text-sm text-slate-500 dark:text-slate-400">{{ t('php.manager.versionsHelp') }}</p>
                     </div>
                     <span
                         class="rounded-full px-3 py-1 text-xs font-medium"
@@ -177,7 +180,7 @@ const saveExtensions = async () => {
                             ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300'
                             : 'bg-red-100 text-red-700 dark:bg-red-950 dark:text-red-300'"
                     >
-                        Rust API {{ apiAvailable ? 'Connected' : 'Unavailable' }}
+                        {{ apiAvailable ? t('php.manager.apiConnected') : t('php.manager.apiUnavailable') }}
                     </span>
                 </div>
 
@@ -185,7 +188,7 @@ const saveExtensions = async () => {
                     <div v-for="version in versions" :key="version" class="flex items-center justify-between gap-4 rounded-xl border border-slate-200 bg-slate-50 p-4 dark:border-slate-700 dark:bg-slate-800/60">
                         <div>
                             <p class="font-semibold text-slate-900 dark:text-white">PHP {{ displayVersion(version) }}</p>
-                            <p class="text-xs text-slate-500 dark:text-slate-400">Server runtime</p>
+                            <p class="text-xs text-slate-500 dark:text-slate-400">{{ t('php.manager.runtime') }}</p>
                         </div>
                         <div class="flex flex-wrap justify-end gap-2">
                             <button
@@ -193,20 +196,20 @@ const saveExtensions = async () => {
                                 class="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm font-medium text-emerald-700 hover:bg-emerald-100 dark:border-emerald-800 dark:bg-emerald-950 dark:text-emerald-300 dark:hover:bg-emerald-900"
                                 @click="editConfig(version)"
                             >
-                                Edit Config
+                                {{ t('php.manager.editConfig') }}
                             </button>
                             <button
                                 type="button"
                                 class="rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-sm font-medium text-blue-700 hover:bg-blue-100 dark:border-blue-800 dark:bg-blue-950 dark:text-blue-300 dark:hover:bg-blue-900"
                                 @click="editExtensions(version)"
                             >
-                                Edit Extensions
+                                {{ t('php.manager.editExt') }}
                             </button>
                         </div>
                     </div>
                 </div>
                 <div v-else class="px-6 py-10 text-center text-sm text-slate-500 dark:text-slate-400">
-                    No PHP versions were reported by the Rust API.
+                    {{ t('php.manager.noVersions') }}
                 </div>
             </section>
 
@@ -214,18 +217,18 @@ const saveExtensions = async () => {
 
         <Teleport to="body">
             <div v-if="extensionPanelOpen" class="fixed inset-0 z-50">
-                <button type="button" aria-label="Close extension editor" class="absolute inset-0 bg-slate-950/50" @click="closeExtensionPanel" />
+                <button type="button" :aria-label="t('php.manager.closeExt')" class="absolute inset-0 bg-slate-950/50" @click="closeExtensionPanel" />
                 <aside class="absolute inset-y-0 right-0 flex w-full flex-col bg-white text-slate-900 shadow-2xl sm:w-[70vw] dark:bg-slate-900 dark:text-slate-100">
                     <header class="flex items-center justify-between border-b border-slate-200 px-5 py-4 dark:border-slate-800">
                         <div>
-                            <h2 class="font-semibold text-slate-900 dark:text-white">PHP {{ displayVersion(selectedVersion) }} Extensions</h2>
-                            <p class="text-xs text-slate-500 dark:text-slate-400">Loaded from the Rust API</p>
+                            <h2 class="font-semibold text-slate-900 dark:text-white">{{ t('php.manager.extTitle', { version: displayVersion(selectedVersion) }) }}</h2>
+                            <p class="text-xs text-slate-500 dark:text-slate-400">{{ t('php.manager.fromApi') }}</p>
                         </div>
                         <button type="button" class="rounded-lg px-3 py-2 text-xl text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800" @click="closeExtensionPanel">×</button>
                     </header>
 
                     <div class="flex-1 overflow-y-auto p-5">
-                        <div v-if="loadingExtensions" class="py-12 text-center text-sm text-slate-500">Loading extensions…</div>
+                        <div v-if="loadingExtensions" class="py-12 text-center text-sm text-slate-500">{{ t('php.manager.loadingExt') }}</div>
                         <div v-else-if="extensionError" class="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-900 dark:bg-red-950 dark:text-red-300">
                             {{ extensionError }}
                         </div>
@@ -239,7 +242,7 @@ const saveExtensions = async () => {
                                 <input v-model="enabledExtensions" :value="extension" type="checkbox" class="h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500" />
                             </label>
                         </div>
-                        <div v-else class="py-12 text-center text-sm text-slate-500">No extensions were reported for this version.</div>
+                        <div v-else class="py-12 text-center text-sm text-slate-500">{{ t('php.manager.noExt') }}</div>
 
                         <div v-if="extensionMessage" class="mt-4 rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700 dark:border-emerald-900 dark:bg-emerald-950 dark:text-emerald-300">
                             {{ extensionMessage }}
@@ -247,14 +250,14 @@ const saveExtensions = async () => {
                     </div>
 
                     <footer class="flex justify-end gap-3 border-t border-slate-200 px-5 py-4 dark:border-slate-800">
-                        <button type="button" class="rounded-lg border border-slate-300 px-4 py-2 text-sm dark:border-slate-700" @click="closeExtensionPanel">Cancel</button>
+                        <button type="button" class="rounded-lg border border-slate-300 px-4 py-2 text-sm dark:border-slate-700" @click="closeExtensionPanel">{{ t('common.cancel') }}</button>
                         <button
                             type="button"
                             :disabled="loadingExtensions || savingExtensions || !extensions.length"
                             class="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50"
                             @click="saveExtensions"
                         >
-                            {{ savingExtensions ? 'Saving…' : 'Save Extensions' }}
+                            {{ savingExtensions ? t('php.manager.saving') : t('php.manager.saveExt') }}
                         </button>
                     </footer>
                 </aside>
@@ -263,18 +266,18 @@ const saveExtensions = async () => {
 
         <Teleport to="body">
             <div v-if="configPanelOpen" class="fixed inset-0 z-50">
-                <button type="button" aria-label="Close config editor" class="absolute inset-0 bg-slate-950/50" @click="configPanelOpen = false" />
+                <button type="button" :aria-label="t('php.manager.closeConfig')" class="absolute inset-0 bg-slate-950/50" @click="configPanelOpen = false" />
                 <aside class="absolute inset-y-0 right-0 flex w-full flex-col bg-white text-slate-900 shadow-2xl sm:w-[70vw] dark:bg-slate-900 dark:text-slate-100">
                     <header class="flex items-center justify-between border-b border-slate-200 px-5 py-4 dark:border-slate-800">
                         <div>
-                            <h2 class="font-semibold text-slate-900 dark:text-white">PHP {{ displayVersion(selectedVersion) }} Config</h2>
-                            <p class="text-xs text-slate-500 dark:text-slate-400">PHP runtime configuration</p>
+                            <h2 class="font-semibold text-slate-900 dark:text-white">{{ t('php.manager.configTitle', { version: displayVersion(selectedVersion) }) }}</h2>
+                            <p class="text-xs text-slate-500 dark:text-slate-400">{{ t('php.manager.configHelp') }}</p>
                         </div>
                         <button type="button" class="rounded-lg px-3 py-2 text-xl text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800" @click="configPanelOpen = false">×</button>
                     </header>
 
                     <div class="flex-1 overflow-y-auto p-5">
-                        <div v-if="loadingConfig" class="py-12 text-center text-sm text-slate-500">Loading configuration…</div>
+                        <div v-if="loadingConfig" class="py-12 text-center text-sm text-slate-500">{{ t('php.manager.loadingConfig') }}</div>
                         <div v-else-if="configError" class="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-900 dark:bg-red-950 dark:text-red-300">{{ configError }}</div>
                         <div v-else class="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
                             <label v-for="field in ['memory_limit', 'upload_max_filesize', 'post_max_size', 'max_execution_time', 'max_input_vars']" :key="field" class="text-sm">
@@ -293,9 +296,9 @@ const saveExtensions = async () => {
                     </div>
 
                     <footer class="flex justify-end gap-3 border-t border-slate-200 px-5 py-4 dark:border-slate-800">
-                        <button type="button" class="rounded-lg border border-slate-300 px-4 py-2 text-sm dark:border-slate-700" @click="configPanelOpen = false">Cancel</button>
+                        <button type="button" class="rounded-lg border border-slate-300 px-4 py-2 text-sm dark:border-slate-700" @click="configPanelOpen = false">{{ t('common.cancel') }}</button>
                         <button type="button" :disabled="loadingConfig || savingConfig" class="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-700 disabled:opacity-50" @click="saveConfig">
-                            {{ savingConfig ? 'Saving…' : 'Save Config' }}
+                            {{ savingConfig ? t('php.manager.saving') : t('php.manager.saveConfig') }}
                         </button>
                     </footer>
                 </aside>

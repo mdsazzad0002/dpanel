@@ -1,5 +1,8 @@
 <script setup>
 import Card from './Card.vue';
+import { useI18n } from 'vue-i18n';
+
+const { t } = useI18n();
 
 // mongo-express style key / value stats, in two columns on wide screens.
 defineProps({
@@ -14,7 +17,7 @@ defineProps({
 <template>
     <Card :title="title" :icon="icon" flush>
         <p v-if="error" class="px-4 py-3 text-sm text-slate-500 dark:text-slate-400">{{ error }}</p>
-        <p v-else-if="loading && !rows.length" class="px-4 py-3 text-sm text-slate-400">Loading…</p>
+        <p v-else-if="loading && !rows.length" class="px-4 py-3 text-sm text-slate-400">{{ t('common.loading') }}</p>
         <dl v-else class="grid text-sm sm:grid-cols-2">
             <div v-for="[label, value] in rows" :key="label" class="flex justify-between gap-4 border-b border-slate-100 px-4 py-2 dark:border-slate-800">
                 <dt class="text-slate-500 dark:text-slate-400">{{ label }}</dt>

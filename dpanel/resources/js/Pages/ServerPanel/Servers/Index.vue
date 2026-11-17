@@ -3,6 +3,9 @@ import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
 import ServerFormFields from '@/Components/ServerPanel/ServerFormFields.vue';
 import { Head, Link, router, useForm } from '@inertiajs/vue3';
 import { ref } from 'vue';
+import { useI18n } from 'vue-i18n';
+
+const { t } = useI18n();
 
 const props = defineProps({
     servers: { type: Array, default: () => [] },
@@ -90,23 +93,23 @@ const runAction = (name, serverId) => {
 </script>
 
 <template>
-    <Head title="Servers" />
+    <Head :title="t('serverPanel.servers.index.title')" />
     <AuthenticatedLayout>
         <template #header>
             <div class="flex items-center justify-between">
                 <div>
-                    <h1 class="text-lg font-semibold">Servers</h1>
-                    <p class="text-sm text-slate-500">Simple server list and quick actions</p>
+                    <h1 class="text-lg font-semibold">{{ t('serverPanel.servers.index.title') }}</h1>
+                    <p class="text-sm text-slate-500">{{ t('serverPanel.servers.index.subtitle') }}</p>
                 </div>
-                <button type="button" class="rounded-lg bg-cyan-700 px-4 py-2 text-sm font-semibold text-white hover:bg-cyan-800" @click="openCreate">Add Server</button>
+                <button type="button" class="rounded-lg bg-cyan-700 px-4 py-2 text-sm font-semibold text-white hover:bg-cyan-800" @click="openCreate">{{ t('serverPanel.servers.form.add') }}</button>
             </div>
         </template>
 
         <div class="space-y-6">
             <section class="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
-                <div class="rounded-xl border border-slate-200 bg-white p-4"><p class="text-xs uppercase text-slate-500">Online</p><p class="text-2xl font-semibold">{{ statusCounts.online || 0 }}</p></div>
-                <div class="rounded-xl border border-slate-200 bg-white p-4"><p class="text-xs uppercase text-slate-500">Errors</p><p class="text-2xl font-semibold">{{ statusCounts.error || 0 }}</p></div>
-                <div class="rounded-xl border border-slate-200 bg-white p-4"><p class="text-xs uppercase text-slate-500">Failed Commands</p><p class="text-2xl font-semibold">{{ statusCounts.failed || 0 }}</p></div>
+                <div class="rounded-xl border border-slate-200 bg-white p-4"><p class="text-xs uppercase text-slate-500">{{ t('serverPanel.servers.index.online') }}</p><p class="text-2xl font-semibold">{{ statusCounts.online || 0 }}</p></div>
+                <div class="rounded-xl border border-slate-200 bg-white p-4"><p class="text-xs uppercase text-slate-500">{{ t('serverPanel.servers.index.errors') }}</p><p class="text-2xl font-semibold">{{ statusCounts.error || 0 }}</p></div>
+                <div class="rounded-xl border border-slate-200 bg-white p-4"><p class="text-xs uppercase text-slate-500">{{ t('serverPanel.servers.index.failedCommands') }}</p><p class="text-2xl font-semibold">{{ statusCounts.failed || 0 }}</p></div>
             </section>
 
             <section class="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
@@ -114,19 +117,19 @@ const runAction = (name, serverId) => {
                     <div class="flex items-start justify-between">
                         <div>
                             <h2 class="text-base font-semibold">{{ server.name }}</h2>
-                            <p class="text-sm text-slate-600">{{ server.host }}:{{ server.port }} as {{ server.username }}</p>
+                            <p class="text-sm text-slate-600">{{ t('serverPanel.servers.index.hostAs', { host: `${server.host}:${server.port}`, user: server.username }) }}</p>
                         </div>
                         <span class="rounded-full px-2 py-1 text-xs font-semibold" :class="server.status === 'online' ? 'bg-emerald-100 text-emerald-700' : (server.status === 'error' ? 'bg-red-100 text-red-700' : 'bg-slate-100 text-slate-700')">{{ server.status }}</span>
                     </div>
-                    <p class="mt-2 text-xs text-slate-500">Last Connected: {{ server.last_connected_at || '-' }}</p>
+                    <p class="mt-2 text-xs text-slate-500">{{ t('serverPanel.servers.index.lastConnected', { time: server.last_connected_at || '-' }) }}</p>
                     <div class="mt-4 grid grid-cols-2 gap-2 text-xs">
-                        <button type="button" class="rounded border border-slate-300 px-2 py-2 hover:bg-slate-50" @click="runAction('test', server.id)">Test Connection</button>
-                        <button type="button" class="rounded border border-slate-300 px-2 py-2 hover:bg-slate-50" @click="runAction('scan', server.id)">Scan</button>
-                        <Link :href="route('servers.commands', server.id)" class="col-span-2 rounded border border-slate-300 px-2 py-2 text-center hover:bg-slate-50">Open Commands</Link>
+                        <button type="button" class="rounded border border-slate-300 px-2 py-2 hover:bg-slate-50" @click="runAction('test', server.id)">{{ t('serverPanel.servers.show.test') }}</button>
+                        <button type="button" class="rounded border border-slate-300 px-2 py-2 hover:bg-slate-50" @click="runAction('scan', server.id)">{{ t('serverPanel.servers.show.scan') }}</button>
+                        <Link :href="route('servers.commands', server.id)" class="col-span-2 rounded border border-slate-300 px-2 py-2 text-center hover:bg-slate-50">{{ t('serverPanel.servers.index.openCommands') }}</Link>
                     </div>
                     <div class="mt-2 flex items-center gap-3 text-xs">
-                        <Link :href="route('servers.show', server.id)" class="text-xs font-semibold text-cyan-700">Open Details</Link>
-                        <button type="button" class="text-xs font-semibold text-slate-700" @click="openEdit(server)">Edit</button>
+                        <Link :href="route('servers.show', server.id)" class="text-xs font-semibold text-cyan-700">{{ t('serverPanel.servers.index.openDetails') }}</Link>
+                        <button type="button" class="text-xs font-semibold text-slate-700" @click="openEdit(server)">{{ t('serverPanel.servers.index.edit') }}</button>
                     </div>
                 </article>
             </section>
@@ -137,19 +140,19 @@ const runAction = (name, serverId) => {
             <aside class="absolute right-0 top-0 h-full w-full overflow-y-auto bg-white p-6 shadow-2xl lg:w-[70%]">
                 <div class="mb-4 flex items-start justify-between">
                     <div>
-                        <h2 class="text-lg font-semibold">{{ editingServer ? 'Edit Server' : 'Add Server' }}</h2>
-                        <p class="text-sm text-slate-500">Credentials are encrypted and never shown again.</p>
+                        <h2 class="text-lg font-semibold">{{ editingServer ? t('serverPanel.servers.form.edit') : t('serverPanel.servers.form.add') }}</h2>
+                        <p class="text-sm text-slate-500">{{ t('serverPanel.servers.form.encrypted') }}</p>
                     </div>
-                    <button type="button" class="rounded border border-slate-300 px-2 py-1 text-xs" @click="closeDrawer">Close</button>
+                    <button type="button" class="rounded border border-slate-300 px-2 py-1 text-xs" @click="closeDrawer">{{ t('common.close') }}</button>
                 </div>
 
                 <form class="grid gap-4 md:grid-cols-2" @submit.prevent="submit">
                     <ServerFormFields :form="form" />
 
                     <div class="md:col-span-2 flex justify-end gap-2">
-                        <button type="button" class="rounded border border-slate-300 px-4 py-2 text-sm" @click="closeDrawer">Cancel</button>
+                        <button type="button" class="rounded border border-slate-300 px-4 py-2 text-sm" @click="closeDrawer">{{ t('common.cancel') }}</button>
                         <button type="submit" class="rounded bg-cyan-700 px-4 py-2 text-sm font-semibold text-white" :disabled="form.processing">
-                            {{ editingServer ? 'Update Server' : 'Save Server' }}
+                            {{ editingServer ? t('serverPanel.servers.form.update') : t('serverPanel.servers.form.save') }}
                         </button>
                     </div>
                 </form>

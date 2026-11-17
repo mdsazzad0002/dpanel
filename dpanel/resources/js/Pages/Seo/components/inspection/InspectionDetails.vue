@@ -1,5 +1,8 @@
 <script setup>
 import { computed } from 'vue';
+import { useI18n } from 'vue-i18n';
+
+const { t } = useI18n();
 
 const props = defineProps({
     report: { type: Object, required: true },
@@ -16,7 +19,7 @@ const title = 'border-b border-slate-100 px-4 py-3 text-sm font-semibold dark:bo
 <template>
     <div class="space-y-4">
         <section :class="card">
-            <h2 :class="title">Redirect chain</h2>
+            <h2 :class="title">{{ t('seo.details.chain') }}</h2>
             <ol class="divide-y divide-slate-100 text-sm dark:divide-slate-700">
                 <li v-for="(hop, i) in report.http.chain" :key="i" class="flex items-center gap-3 px-4 py-2">
                     <span class="w-10 shrink-0 font-mono font-semibold" :class="statusClass(hop.status)">{{ hop.status || '—' }}</span>
@@ -27,13 +30,13 @@ const title = 'border-b border-slate-100 px-4 py-3 text-sm font-semibold dark:bo
         </section>
 
         <section v-if="meta?.canonical && meta.canonical !== report.final_url" :class="card" class="flex flex-wrap items-center gap-3 px-4 py-3 text-sm">
-            <span class="font-medium">Canonical</span>
+            <span class="font-medium">{{ t('seo.details.canonical') }}</span>
             <span class="min-w-0 flex-1 truncate font-mono text-xs">{{ meta.canonical }}</span>
-            <button type="button" @click="$emit('inspect', meta.canonical)" class="rounded-md border border-slate-300 px-2.5 py-1 text-xs font-medium hover:bg-slate-50 dark:border-slate-600 dark:hover:bg-slate-700">Inspect canonical</button>
+            <button type="button" @click="$emit('inspect', meta.canonical)" class="rounded-md border border-slate-300 px-2.5 py-1 text-xs font-medium hover:bg-slate-50 dark:border-slate-600 dark:hover:bg-slate-700">{{ t('seo.details.inspectCanonical') }}</button>
         </section>
 
         <section :class="card">
-            <h2 :class="title">Response headers</h2>
+            <h2 :class="title">{{ t('seo.details.headers') }}</h2>
             <dl class="divide-y divide-slate-100 text-sm dark:divide-slate-700">
                 <div v-for="[name, value] in headers" :key="name" class="grid gap-1 px-4 py-1.5 sm:grid-cols-[16rem_1fr]">
                     <dt class="font-mono text-xs text-slate-500 dark:text-slate-400">{{ name }}</dt>
@@ -43,16 +46,16 @@ const title = 'border-b border-slate-100 px-4 py-3 text-sm font-semibold dark:bo
         </section>
 
         <section v-if="meta" :class="card">
-            <h2 :class="title">Page signals</h2>
+            <h2 :class="title">{{ t('seo.details.signals') }}</h2>
             <dl class="divide-y divide-slate-100 text-sm dark:divide-slate-700">
                 <div v-for="row in [
-                    ['Title', meta.title],
-                    ['Description', meta.description],
-                    ['Language', meta.lang],
-                    ['Meta robots', meta.robots],
-                    ['Words', meta.words],
-                    ['Links', `${meta.links.internal} internal · ${meta.links.external} external · ${meta.links.nofollow} nofollow`],
-                    ['Structured data', meta.schema_types.join(', ')],
+                    [t('seo.details.rows.title'), meta.title],
+                    [t('seo.details.rows.description'), meta.description],
+                    [t('seo.details.rows.language'), meta.lang],
+                    [t('seo.details.rows.robots'), meta.robots],
+                    [t('seo.details.rows.words'), meta.words],
+                    [t('seo.details.rows.links'), t('seo.details.linksValue', { internal: meta.links.internal, external: meta.links.external, nofollow: meta.links.nofollow })],
+                    [t('seo.details.rows.schema'), meta.schema_types.join(', ')],
                 ]" :key="row[0]" class="grid gap-1 px-4 py-2 sm:grid-cols-[12rem_1fr]">
                     <dt class="text-slate-500 dark:text-slate-400">{{ row[0] }}</dt>
                     <dd class="break-words">{{ row[1] === '' || row[1] === null ? '—' : row[1] }}</dd>
@@ -76,7 +79,7 @@ const title = 'border-b border-slate-100 px-4 py-3 text-sm font-semibold dark:bo
                 <span class="font-mono text-xs" :class="statusClass(report.robots.status)">HTTP {{ report.robots.status || '—' }}</span>
             </div>
             <pre v-if="report.robots.content" class="max-h-80 overflow-auto px-4 py-3 font-mono text-xs leading-5">{{ report.robots.content }}</pre>
-            <p v-else class="px-4 py-3 text-sm text-slate-500 dark:text-slate-400">No robots.txt content.</p>
+            <p v-else class="px-4 py-3 text-sm text-slate-500 dark:text-slate-400">{{ t('seo.details.noRobots') }}</p>
         </section>
     </div>
 </template>

@@ -3,6 +3,9 @@ import { computed, onMounted, ref } from 'vue';
 import { useMailContacts } from '../composables/useMailContacts';
 import MailAvatar from './MailAvatar.vue';
 import { avatarColorOf, formatAddress, initialsOf } from './mailAddresses';
+import { useI18n } from 'vue-i18n';
+
+const { t } = useI18n();
 
 // The mailbox address book page: saved contacts, plus people you have written to.
 const props = defineProps({
@@ -51,7 +54,7 @@ const act = async (key, work, success) => {
         if (success) emit('notify', success, 'success');
     }
     catch (error) {
-        emit('notify', error?.response?.data?.message || error?.message || 'Contact could not be updated.');
+        emit('notify', error?.response?.data?.message || error?.message || t('email.mailbox.contacts.updateFailed'));
     }
     finally {
         busy.value = '';
@@ -64,7 +67,7 @@ const addContact = () => act('add', async () => {
     newName.value = '';
     adding.value = false;
     tab.value = 'saved';
-}, 'Contact saved.');
+}, t('email.mailbox.contacts.saved'));
 
 const startEdit = (contact) => {
     editing.value = contact.email;
@@ -75,9 +78,9 @@ const saveEdit = (contact) => act(contact.email, async () => {
     editing.value = null;
 });
 
-const keep = (contact) => act(contact.email, () => contacts.save(contact.email, contact.name), 'Added to contacts.');
+const keep = (contact) => act(contact.email, () => contacts.save(contact.email, contact.name), t('email.mailbox.contacts.added'));
 const remove = (contact) => {
-    if (contact.saved && !confirm(`Remove ${contact.name || contact.email} from contacts?`)) return;
+    if (contact.saved && !confirm(t('email.mailbox.contacts.removeConfirm', { name: contact.name || contact.email }))) return;
     act(contact.email, () => contacts.remove(contact));
 };
 
@@ -86,32 +89,32 @@ const compose = (contact) => emit('compose', formatAddress(contact.name, contact
 
 <template>
     <div class="h-full overflow-y-auto">
-            <section :class="[ui.page, 'mx-auto flex w-full max-w-3xl flex-col py-2']" aria-label="Contacts">
+            <section :class="[ui.page, 'mx-auto flex w-full max-w-3xl flex-col py-2']" :aria-label="t('email.mailbox.contacts.title')">
                 <header class="flex items-center gap-3 px-5 pb-3 pt-5">
                     <span class="flex h-10 w-10 items-center justify-center rounded-full bg-blue-600/10 text-blue-600"><i class="bi bi-person-lines-fill text-lg"></i></span>
                     <div class="min-w-0 flex-1">
-                        <h2 :class="[ui.strong, 'text-lg font-semibold']">Contacts</h2>
-                        <p :class="[ui.muted, 'text-xs']">Saved people appear first when you type a recipient.</p>
+                        <h2 :class="[ui.strong, 'text-lg font-semibold']">{{ t('email.mailbox.contacts.title') }}</h2>
+                        <p :class="[ui.muted, 'text-xs']">{{ t('email.mailbox.contacts.subtitle') }}</p>
                     </div>
                     <button type="button" class="inline-flex h-9 items-center gap-1.5 rounded-full bg-blue-600 px-4 text-sm font-medium text-white transition hover:bg-blue-700" @click="adding = !adding">
-                        <i class="bi bi-person-plus"></i> New
+                        <i class="bi bi-person-plus"></i> {{ t('email.mailbox.contacts.new') }}
                     </button>
                 </header>
 
                 <form v-if="adding" :class="[ui.divider, 'mx-5 mb-3 grid gap-2 rounded-xl border p-3 sm:grid-cols-[1fr_1fr_auto]']" @submit.prevent="addContact">
-                    <input v-model="newName" type="text" placeholder="Name" :class="[ui.input, 'h-10 rounded-lg border px-3 text-sm outline-none focus:ring-0']">
+                    <input v-model="newName" type="text" :placeholder="t('email.mailbox.contacts.name')" :class="[ui.input, 'h-10 rounded-lg border px-3 text-sm outline-none focus:ring-0']">
                     <input v-model="newEmail" type="email" required placeholder="email@example.com" :class="[ui.input, 'h-10 rounded-lg border px-3 text-sm outline-none focus:ring-0']">
-                    <button type="submit" class="h-10 rounded-lg bg-blue-600 px-4 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-60" :disabled="busy === 'add'">Save</button>
+                    <button type="submit" class="h-10 rounded-lg bg-blue-600 px-4 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-60" :disabled="busy === 'add'">{{ t('common.save') }}</button>
                 </form>
 
                 <div class="px-5">
                     <div class="relative">
                         <i :class="[ui.muted, 'bi bi-search absolute left-3 top-1/2 -translate-y-1/2 text-sm']"></i>
-                        <input ref="searchInput" v-model="search" type="search" placeholder="Search name or email" :class="[ui.input, 'h-10 w-full rounded-full border pl-9 pr-4 text-sm outline-none focus:ring-0']">
+                        <input ref="searchInput" v-model="search" type="search" :placeholder="t('email.mailbox.contacts.search')" :class="[ui.input, 'h-10 w-full rounded-full border pl-9 pr-4 text-sm outline-none focus:ring-0']">
                     </div>
                     <div :class="[ui.divider, 'mt-3 flex gap-5 border-b text-sm']" role="tablist">
-                        <button type="button" role="tab" :aria-selected="tab === 'saved'" :class="[tab === 'saved' ? ui.tabOn : ['border-transparent', ui.tab], '-mb-px border-b-2 pb-2 font-medium']" @click="tab = 'saved'">Saved ({{ savedCount }})</button>
-                        <button type="button" role="tab" :aria-selected="tab === 'other'" :class="[tab === 'other' ? ui.tabOn : ['border-transparent', ui.tab], '-mb-px border-b-2 pb-2 font-medium']" @click="tab = 'other'">Other contacts ({{ otherCount }})</button>
+                        <button type="button" role="tab" :aria-selected="tab === 'saved'" :class="[tab === 'saved' ? ui.tabOn : ['border-transparent', ui.tab], '-mb-px border-b-2 pb-2 font-medium']" @click="tab = 'saved'">{{ t('email.mailbox.contacts.savedTab', { count: savedCount }) }}</button>
+                        <button type="button" role="tab" :aria-selected="tab === 'other'" :class="[tab === 'other' ? ui.tabOn : ['border-transparent', ui.tab], '-mb-px border-b-2 pb-2 font-medium']" @click="tab = 'other'">{{ t('email.mailbox.contacts.otherTab', { count: otherCount }) }}</button>
                     </div>
                 </div>
 
@@ -120,8 +123,8 @@ const compose = (contact) => emit('compose', formatAddress(contact.name, contact
                         <MailAvatar :email="contact.email" :initials="initialsOf(contact.name || contact.email)" :color-class="avatarColorOf(contact.email)" :endpoint="avatarEndpoint" class="h-10 w-10 shrink-0 text-sm" />
                         <div class="min-w-0 flex-1">
                             <form v-if="editing === contact.email" class="flex gap-2" @submit.prevent="saveEdit(contact)">
-                                <input v-model="editName" type="text" placeholder="Name" :class="[ui.input, 'h-8 min-w-0 flex-1 rounded-md border px-2 text-sm outline-none focus:ring-0']" @keydown.esc.stop="editing = null">
-                                <button type="submit" class="rounded-md bg-blue-600 px-3 text-xs font-medium text-white">Save</button>
+                                <input v-model="editName" type="text" :placeholder="t('email.mailbox.contacts.name')" :class="[ui.input, 'h-8 min-w-0 flex-1 rounded-md border px-2 text-sm outline-none focus:ring-0']" @keydown.esc.stop="editing = null">
+                                <button type="submit" class="rounded-md bg-blue-600 px-3 text-xs font-medium text-white">{{ t('common.save') }}</button>
                             </form>
                             <template v-else>
                                 <p :class="[ui.strong, 'truncate text-sm font-medium']">{{ contact.name || contact.email }}</p>
@@ -129,17 +132,17 @@ const compose = (contact) => emit('compose', formatAddress(contact.name, contact
                             </template>
                         </div>
                         <div class="flex shrink-0 items-center gap-0.5 opacity-100 transition sm:opacity-0 sm:group-hover:opacity-100 sm:group-focus-within:opacity-100">
-                            <button type="button" :class="[ui.icon, 'flex h-8 w-8 items-center justify-center rounded-full']" title="Send mail" @click="compose(contact)"><i class="bi bi-envelope"></i></button>
-                            <button v-if="contact.saved" type="button" :class="[ui.icon, 'flex h-8 w-8 items-center justify-center rounded-full']" title="Edit name" @click="startEdit(contact)"><i class="bi bi-pencil"></i></button>
-                            <button v-else type="button" :class="[ui.icon, 'flex h-8 w-8 items-center justify-center rounded-full']" title="Add to contacts" :disabled="busy === contact.email" @click="keep(contact)"><i class="bi bi-person-plus"></i></button>
-                            <button type="button" :class="[ui.icon, 'flex h-8 w-8 items-center justify-center rounded-full hover:!text-rose-600']" :title="contact.saved ? 'Remove' : 'Forget'" :disabled="busy === contact.email" @click="remove(contact)"><i class="bi bi-trash3"></i></button>
+                            <button type="button" :class="[ui.icon, 'flex h-8 w-8 items-center justify-center rounded-full']" :title="t('email.mailbox.contact.sendMail')" @click="compose(contact)"><i class="bi bi-envelope"></i></button>
+                            <button v-if="contact.saved" type="button" :class="[ui.icon, 'flex h-8 w-8 items-center justify-center rounded-full']" :title="t('email.mailbox.contacts.editName')" @click="startEdit(contact)"><i class="bi bi-pencil"></i></button>
+                            <button v-else type="button" :class="[ui.icon, 'flex h-8 w-8 items-center justify-center rounded-full']" :title="t('email.mailbox.contacts.addTo')" :disabled="busy === contact.email" @click="keep(contact)"><i class="bi bi-person-plus"></i></button>
+                            <button type="button" :class="[ui.icon, 'flex h-8 w-8 items-center justify-center rounded-full hover:!text-rose-600']" :title="contact.saved ? t('email.mailbox.contact.remove') : t('email.mailbox.contacts.forget')" :disabled="busy === contact.email" @click="remove(contact)"><i class="bi bi-trash3"></i></button>
                         </div>
                     </li>
                     <li v-if="!list.length" :class="[ui.muted, 'px-3 py-12 text-center text-sm']">
                         <i class="bi bi-people mb-2 block text-3xl opacity-60"></i>
-                        <template v-if="search">No contacts match "{{ search }}".</template>
-                        <template v-else-if="tab === 'saved'">No saved contacts yet. Hover a sender and click <i class="bi bi-person-plus"></i>, or add one with New.</template>
-                        <template v-else>People you write to will appear here.</template>
+                        <template v-if="search">{{ t('email.mailbox.contacts.noMatch', { query: search }) }}</template>
+                        <template v-else-if="tab === 'saved'"><i18n-t keypath="email.mailbox.contacts.noSaved" scope="global"><template #icon><i class="bi bi-person-plus"></i></template><template #new>{{ t('email.mailbox.contacts.new') }}</template></i18n-t></template>
+                        <template v-else>{{ t('email.mailbox.contacts.noOther') }}</template>
                     </li>
                 </ul>
             </section>

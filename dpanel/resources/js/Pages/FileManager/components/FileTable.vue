@@ -1,4 +1,7 @@
 <script setup>
+import { useI18n } from 'vue-i18n';
+
+const { t } = useI18n();
 const props = defineProps({
     fm: {
         type: Object,
@@ -11,15 +14,15 @@ const BTN_BASE = 'border-slate-200 text-slate-600 hover:bg-slate-100 dark:border
 // One primary action per row, matching what double-click does.
 function rowAction(item) {
     if (item.type === 'dir') {
-        return { kind: 'open', label: 'Open', icon: 'bi-folder2-open', className: 'border-amber-200 text-amber-700 hover:bg-amber-50 dark:border-amber-800/60 dark:text-amber-400 dark:hover:bg-amber-900/20' };
+        return { kind: 'open', label: t('fileManager.table.open'), icon: 'bi-folder2-open', className: 'border-amber-200 text-amber-700 hover:bg-amber-50 dark:border-amber-800/60 dark:text-amber-400 dark:hover:bg-amber-900/20' };
     }
     if (props.fm.isPreviewable(item.name)) {
-        return { kind: 'view', label: 'View', icon: 'bi-eye', className: 'border-sky-200 text-sky-700 hover:bg-sky-50 dark:border-sky-800/60 dark:text-sky-400 dark:hover:bg-sky-900/20' };
+        return { kind: 'view', label: t('fileManager.table.view'), icon: 'bi-eye', className: 'border-sky-200 text-sky-700 hover:bg-sky-50 dark:border-sky-800/60 dark:text-sky-400 dark:hover:bg-sky-900/20' };
     }
     if (props.fm.isEditableFile(item.name)) {
-        return { kind: 'edit', label: 'Edit', icon: 'bi-pencil-square', className: BTN_BASE };
+        return { kind: 'edit', label: t('fileManager.table.edit'), icon: 'bi-pencil-square', className: BTN_BASE };
     }
-    return { kind: 'download', label: 'Download', icon: 'bi-download', className: BTN_BASE };
+    return { kind: 'download', label: t('fileManager.table.download'), icon: 'bi-download', className: BTN_BASE };
 }
 
 function runRowAction(item) {
@@ -40,18 +43,18 @@ function runRowAction(item) {
                             <input type="checkbox" :checked="fm.isAllItemsSelected" @change="fm.toggleSelectAll($event.target.checked)" />
                         </th>
                         <th class="cursor-pointer px-3 py-3 text-xs font-semibold uppercase tracking-wider text-slate-500 select-none" @click="fm.toggleSort('name')">
-                            <span class="flex items-center gap-1">Name <i :class="['bi text-[10px]', fm.getSortIcon('name')]"></i></span>
+                            <span class="flex items-center gap-1">{{ t('fileManager.table.name') }} <i :class="['bi text-[10px]', fm.getSortIcon('name')]"></i></span>
                         </th>
-                        <th class="w-24 px-3 py-3 text-left text-xs font-semibold uppercase tracking-wider text-slate-500">Action</th>
+                        <th class="w-24 px-3 py-3 text-left text-xs font-semibold uppercase tracking-wider text-slate-500">{{ t('fileManager.table.action') }}</th>
                         <th class="hidden cursor-pointer px-3 py-3 text-xs font-semibold uppercase tracking-wider text-slate-500 select-none sm:table-cell" @click="fm.toggleSort('type')">
-                            <span class="flex items-center gap-1">Type <i :class="['bi text-[10px]', fm.getSortIcon('type')]"></i></span>
+                            <span class="flex items-center gap-1">{{ t('fileManager.table.type') }} <i :class="['bi text-[10px]', fm.getSortIcon('type')]"></i></span>
                         </th>
                         <th class="hidden cursor-pointer px-3 py-3 text-xs font-semibold uppercase tracking-wider text-slate-500 select-none md:table-cell" @click="fm.toggleSort('size')">
-                            <span class="flex items-center gap-1">Size <i :class="['bi text-[10px]', fm.getSortIcon('size')]"></i></span>
+                            <span class="flex items-center gap-1">{{ t('fileManager.table.size') }} <i :class="['bi text-[10px]', fm.getSortIcon('size')]"></i></span>
                         </th>
-                        <th class="hidden px-3 py-3 text-xs font-semibold uppercase tracking-wider text-slate-500 lg:table-cell">Perm</th>
+                        <th class="hidden px-3 py-3 text-xs font-semibold uppercase tracking-wider text-slate-500 lg:table-cell">{{ t('fileManager.table.perm') }}</th>
                         <th class="hidden cursor-pointer px-3 py-3 text-xs font-semibold uppercase tracking-wider text-slate-500 select-none xl:table-cell" @click="fm.toggleSort('modified')">
-                            <span class="flex items-center gap-1">Modified <i :class="['bi text-[10px]', fm.getSortIcon('modified')]"></i></span>
+                            <span class="flex items-center gap-1">{{ t('fileManager.table.modified') }} <i :class="['bi text-[10px]', fm.getSortIcon('modified')]"></i></span>
                         </th>
                     </tr>
                 </thead>
@@ -92,8 +95,8 @@ function runRowAction(item) {
                             <div class="mt-0.5 text-[11px] text-slate-500 dark:text-slate-400 sm:hidden">
                                 {{ fm.typeLabelForItem(item) }} &middot;
                                 <span v-if="item.type === 'dir' && item.size == null">
-                                    <button v-if="fm.folderSizeLoadingPath !== item.path" type="button" class="underline decoration-dotted" @click.stop="fm.calculateFolderSize(item)">Calculate</button>
-                                    <span v-else>Calculating…</span>
+                                    <button v-if="fm.folderSizeLoadingPath !== item.path" type="button" class="underline decoration-dotted" @click.stop="fm.calculateFolderSize(item)">{{ t('fileManager.table.calculate') }}</button>
+                                    <span v-else>{{ t('fileManager.table.calculating') }}</span>
                                 </span>
                                 <span v-else>{{ fm.formatBytes(item.size) }}</span>
                             </div>
@@ -123,9 +126,9 @@ function runRowAction(item) {
                                     class="text-xs text-sky-600 underline decoration-dotted hover:text-sky-700 dark:text-sky-400"
                                     @click.stop="fm.calculateFolderSize(item)"
                                 >
-                                    Calculate
+                                    {{ t('fileManager.table.calculate') }}
                                 </button>
-                                <span v-else class="text-xs text-slate-400">Calculating…</span>
+                                <span v-else class="text-xs text-slate-400">{{ t('fileManager.table.calculating') }}</span>
                             </span>
                             <span v-else>{{ fm.formatBytes(item.size) }}</span>
                         </td>
@@ -135,7 +138,7 @@ function runRowAction(item) {
                     <tr v-if="fm.filteredItems.length === 0">
                         <td colspan="7" class="px-4 py-16 text-center">
                             <i class="bi bi-inbox text-4xl text-slate-300 dark:text-slate-600"></i>
-                            <p class="mt-3 text-sm text-slate-500">{{ fm.searchQuery ? 'No files match your search' : 'No files in this directory' }}</p>
+                            <p class="mt-3 text-sm text-slate-500">{{ fm.searchQuery ? t('fileManager.table.noMatch') : t('fileManager.table.empty') }}</p>
                         </td>
                     </tr>
                 </tbody>

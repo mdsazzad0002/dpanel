@@ -2,6 +2,9 @@
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
 import { computed } from 'vue';
 import { Head, Link, usePage } from '@inertiajs/vue3';
+import { useI18n } from 'vue-i18n';
+
+const { t } = useI18n();
 
 const page = usePage();
 const panelToken = page.props.panel?.token;
@@ -133,138 +136,82 @@ console.log(response.choices[0].message.content);`);
 </script>
 
 <template>
-    <Head title="AI Gateway API Docs" />
+    <Head :title="t('aiGateway.docs.headTitle')" />
 
     <AuthenticatedLayout>
         <template #header>
             <div class="flex items-center justify-between">
                 <div>
-                    <h1 class="text-lg font-semibold">API Docs</h1>
-                    <p class="text-sm text-slate-500 dark:text-slate-400">OpenAI/OpenRouter-compatible API for calling this gateway from outside the panel.</p>
+                    <h1 class="text-lg font-semibold">{{ t('aiGateway.docs.title') }}</h1>
+                    <p class="text-sm text-slate-500 dark:text-slate-400">{{ t('aiGateway.docs.subtitle') }}</p>
                 </div>
-                <Link :href="panelRoute('ai-gateway.api-keys.index')" class="text-sm text-blue-600 hover:underline">Manage API keys →</Link>
+                <Link :href="panelRoute('ai-gateway.api-keys.index')" class="text-sm text-blue-600 hover:underline">{{ t('aiGateway.docs.manageKeys') }} →</Link>
             </div>
         </template>
 
         <div class="mx-auto max-w-3xl space-y-6">
             <section class="rounded-lg border border-slate-200 bg-white p-5 dark:border-slate-700 dark:bg-slate-800">
-                <h2 class="text-sm font-semibold">Base URL &amp; auth</h2>
-                <p class="mt-2 text-sm text-slate-600 dark:text-slate-300">
-                    All requests use standard OpenAI-style bearer auth. Create a key on the
-                    <Link :href="panelRoute('ai-gateway.api-keys.index')" class="text-blue-600 hover:underline">API Keys</Link> page — it's shown once, so copy it right away.
-                </p>
+                <h2 class="text-sm font-semibold">{{ t('aiGateway.docs.authTitle') }}</h2>
+                <p class="mt-2 text-sm text-slate-600 dark:text-slate-300"><i18n-t keypath="aiGateway.docs.authHelp" scope="global"><template #c1><Link :href="panelRoute('ai-gateway.api-keys.index')" class="text-blue-600 hover:underline">{{ t('aiGateway.apiKeys.title') }}</Link></template></i18n-t></p>
                 <pre class="mt-3 overflow-x-auto rounded-md bg-slate-900 px-4 py-3 text-xs text-slate-100"><code>Base URL:      {{ apiBaseUrl }}
 Authorization: Bearer sk-ag-...</code></pre>
-                <p class="mt-2 text-xs text-slate-400">Any request without a valid, active key returns <code>401</code>.</p>
+                <p class="mt-2 text-xs text-slate-400"><i18n-t keypath="aiGateway.docs.auth401" scope="global"><template #c1><code>401</code></template></i18n-t></p>
             </section>
 
             <section class="rounded-lg border border-slate-200 bg-white p-5 dark:border-slate-700 dark:bg-slate-800">
                 <h2 class="text-sm font-semibold">POST /chat/completions</h2>
-                <p class="mt-2 text-sm text-slate-600 dark:text-slate-300">
-                    Same request/response shape as OpenAI's Chat Completions API. Routing is always automatic —
-                    <code>model</code> must be <code>"auto"</code> or omitted (any other value is rejected with
-                    <code>400</code>). The gateway checks each provider's live rate-limit/cooldown state at request
-                    time, rotates round-robin across the eligible ones, and fails over automatically if the one it
-                    picked hits a limit mid-request. The response's <code>model</code> field always tells you which
-                    one actually served the request.
-                </p>
+                <p class="mt-2 text-sm text-slate-600 dark:text-slate-300"><i18n-t keypath="aiGateway.docs.chatHelp" scope="global"><template #c1><code>model</code></template><template #c2><code>"auto"</code></template><template #c3><code>400</code></template><template #c4><code>model</code></template></i18n-t></p>
                 <pre class="mt-3 overflow-x-auto rounded-md bg-slate-900 px-4 py-3 text-xs text-slate-100"><code>{{ curlChat }}</code></pre>
 
-                <h3 class="mt-4 text-xs font-semibold uppercase tracking-wide text-slate-500">Streaming (<code>stream: true</code>)</h3>
-                <p class="mt-1 text-sm text-slate-600 dark:text-slate-300">Returns Server-Sent Events, same chunk format as OpenAI (<code>chat.completion.chunk</code>, terminated by <code>data: [DONE]</code>).</p>
+                <h3 class="mt-4 text-xs font-semibold uppercase tracking-wide text-slate-500"><i18n-t keypath="aiGateway.docs.streaming" scope="global"><template #c1><code>stream: true</code></template></i18n-t></h3>
+                <p class="mt-1 text-sm text-slate-600 dark:text-slate-300"><i18n-t keypath="aiGateway.docs.streamingHelp" scope="global"><template #c1><code>chat.completion.chunk</code></template><template #c2><code>data: [DONE]</code></template></i18n-t></p>
                 <pre class="mt-3 overflow-x-auto rounded-md bg-slate-900 px-4 py-3 text-xs text-slate-100"><code>{{ curlStream }}</code></pre>
             </section>
 
             <section class="rounded-lg border border-slate-200 bg-white p-5 dark:border-slate-700 dark:bg-slate-800">
-                <h2 class="text-sm font-semibold">Server tools (ask about this server)</h2>
-                <p class="mt-2 text-sm text-slate-600 dark:text-slate-300">
-                    Add <code>"server_tools": "read"</code> and the gateway answers questions about this server itself,
-                    calling the panel's read-only tools (overview, service status, logs, files) until it can answer.
-                    Only read-only access is offered, the key must have been created by an admin, and it can't be
-                    combined with your own <code>tools</code>.
-                </p>
-                <p class="mt-2 text-sm text-slate-600 dark:text-slate-300">
-                    Every step is reported when it starts and when it finishes. When streaming, it comes as a chunk with an
-                    empty <code>delta</code> and a <code>dpanel_tool_step</code> field
-                    (<code>{id, name, arguments, status: "running"}</code>, then <code>{id, name, status: "ok"|"error", preview, duration_ms}</code>);
-                    without streaming, the finished steps are in <code>dpanel_tool_steps</code>.
-                </p>
+                <h2 class="text-sm font-semibold">{{ t('aiGateway.docs.serverTools') }}</h2>
+                <p class="mt-2 text-sm text-slate-600 dark:text-slate-300"><i18n-t keypath="aiGateway.docs.serverToolsHelp" scope="global"><template #c1><code>"server_tools": "read"</code></template><template #c2><code>tools</code></template></i18n-t></p>
+                <p class="mt-2 text-sm text-slate-600 dark:text-slate-300"><i18n-t keypath="aiGateway.docs.serverToolsSteps" scope="global"><template #c1><code>delta</code></template><template #c2><code>dpanel_tool_step</code></template><template #c3><code>{id, name, arguments, status: "running"}</code></template><template #c4><code>{id, name, status: "ok"|"error", preview, duration_ms}</code></template><template #c5><code>dpanel_tool_steps</code></template></i18n-t></p>
             </section>
 
             <section class="rounded-lg border border-slate-200 bg-white p-5 dark:border-slate-700 dark:bg-slate-800">
-                <h2 class="text-sm font-semibold">Tool / function calling (agent mode)</h2>
-                <p class="mt-2 text-sm text-slate-600 dark:text-slate-300">
-                    Same shape as OpenAI's tool calling: pass <code>tools</code> (and optionally <code>tool_choice</code> —
-                    <code>"auto"</code>, <code>"required"</code>, <code>"none"</code>, or a specific
-                    <code>{"type":"function","function":{"name":...}}</code>) and the model can respond with
-                    <code>tool_calls</code> instead of text. Whichever provider actually served the request
-                    (Anthropic, Gemini, or an OpenAI-family one) gets this translated to its own native tool format
-                    automatically — the request/response shape you see is always OpenAI's.
-                </p>
+                <h2 class="text-sm font-semibold">{{ t('aiGateway.docs.tools') }}</h2>
+                <p class="mt-2 text-sm text-slate-600 dark:text-slate-300"><i18n-t keypath="aiGateway.docs.toolsHelp" scope="global"><template #c1><code>tools</code></template><template #c2><code>tool_choice</code></template><template #c3><code>"auto"</code></template><template #c4><code>"required"</code></template><template #c5><code>"none"</code></template><template #c6><code>{"type":"function","function":{"name":...}}</code></template><template #c7><code>tool_calls</code></template></i18n-t></p>
                 <pre class="mt-3 overflow-x-auto rounded-md bg-slate-900 px-4 py-3 text-xs text-slate-100"><code>{{ curlTools }}</code></pre>
-                <p class="mt-3 text-sm text-slate-600 dark:text-slate-300">
-                    To continue the loop, run the function yourself and send its result back as a
-                    <code>tool</code> role message (with the matching <code>tool_call_id</code>), alongside the
-                    assistant's <code>tool_calls</code> message that triggered it:
-                </p>
+                <p class="mt-3 text-sm text-slate-600 dark:text-slate-300"><i18n-t keypath="aiGateway.docs.toolsLoop" scope="global"><template #c1><code>tool</code></template><template #c2><code>tool_call_id</code></template><template #c3><code>tool_calls</code></template></i18n-t></p>
                 <pre class="mt-3 overflow-x-auto rounded-md bg-slate-900 px-4 py-3 text-xs text-slate-100"><code>{{ curlToolsFollowup }}</code></pre>
-                <p class="mt-2 text-xs text-slate-400">
-                    In streaming mode, <code>tool_calls</code> arrive complete in a single chunk (not streamed
-                    argument-by-argument) followed by a chunk with <code>finish_reason: "tool_calls"</code>.
-                </p>
+                <p class="mt-2 text-xs text-slate-400"><i18n-t keypath="aiGateway.docs.toolsStream" scope="global"><template #c1><code>tool_calls</code></template><template #c2><code>finish_reason: "tool_calls"</code></template></i18n-t></p>
             </section>
 
             <section class="rounded-lg border border-slate-200 bg-white p-5 dark:border-slate-700 dark:bg-slate-800">
-                <h2 class="text-sm font-semibold">Images in chat (vision)</h2>
-                <p class="mt-2 text-sm text-slate-600 dark:text-slate-300">
-                    Send OpenAI-style content parts: <code>text</code> and <code>image_url</code>. Images must be inline
-                    <code>data:</code> URLs (PNG, JPEG, WebP or GIF, up to 10 MB, 8 per message); the gateway does not
-                    download image links. Requests with images prefer models tagged <code>vision</code>, which get the image
-                    itself. A model without <code>vision</code> gets the text OCR reads from the image instead.
-                </p>
+                <h2 class="text-sm font-semibold">{{ t('aiGateway.docs.vision') }}</h2>
+                <p class="mt-2 text-sm text-slate-600 dark:text-slate-300"><i18n-t keypath="aiGateway.docs.visionHelp" scope="global"><template #c1><code>text</code></template><template #c2><code>image_url</code></template><template #c3><code>data:</code></template><template #c4><code>vision</code></template><template #c5><code>vision</code></template></i18n-t></p>
                 <pre class="mt-3 overflow-x-auto rounded-md bg-slate-900 px-4 py-3 text-xs text-slate-100"><code>{{ curlVision }}</code></pre>
             </section>
 
             <section class="rounded-lg border border-slate-200 bg-white p-5 dark:border-slate-700 dark:bg-slate-800">
                 <h2 class="text-sm font-semibold">POST /images/generations</h2>
-                <p class="mt-2 text-sm text-slate-600 dark:text-slate-300">
-                    OpenAI-compatible image generation, routed automatically to a model tagged <code>image_generation</code>
-                    (e.g. <code>gpt-image-1</code>, <code>gemini-2.5-flash-image</code>) with failover between them.
-                    Options: <code>prompt</code> (required), <code>n</code> (1–4), <code>size</code> (e.g. <code>1024x1024</code>;
-                    ignored by models that pick their own). Images come back as base64 in <code>b64_json</code>.
-                </p>
+                <p class="mt-2 text-sm text-slate-600 dark:text-slate-300"><i18n-t keypath="aiGateway.docs.imagesHelp" scope="global"><template #c1><code>image_generation</code></template><template #c2><code>gpt-image-1</code></template><template #c3><code>gemini-2.5-flash-image</code></template><template #c4><code>prompt</code></template><template #c5><code>n</code></template><template #c6><code>size</code></template><template #c7><code>1024x1024</code></template><template #c8><code>b64_json</code></template></i18n-t></p>
                 <pre class="mt-3 overflow-x-auto rounded-md bg-slate-900 px-4 py-3 text-xs text-slate-100"><code>{{ curlImages }}</code></pre>
             </section>
 
             <section class="rounded-lg border border-slate-200 bg-white p-5 dark:border-slate-700 dark:bg-slate-800">
                 <h2 class="text-sm font-semibold">POST /audio/transcriptions</h2>
-                <p class="mt-2 text-sm text-slate-600 dark:text-slate-300">
-                    OpenAI-compatible speech to text (voice notes, calls, recordings), routed automatically to a model tagged
-                    <code>transcription</code> (e.g. <code>whisper-large-v3-turbo</code> on Groq, <code>whisper-1</code> or
-                    <code>gpt-4o-mini-transcribe</code> on OpenAI, <code>gemini-2.5-flash</code>) with failover between them.
-                    Send the recording as multipart form data: <code>file</code> (required; mp3, mp4/m4a, wav, ogg/opus, webm,
-                    flac…, up to 25 MB), <code>language</code> (optional ISO code such as <code>bn</code> or <code>en</code>,
-                    helps accuracy), <code>prompt</code> (optional words or names to spell right), and
-                    <code>response_format</code> (<code>json</code>, the default, or <code>text</code> for the bare transcript).
-                    The text stays in the language spoken; it is not translated.
-                </p>
+                <p class="mt-2 text-sm text-slate-600 dark:text-slate-300"><i18n-t keypath="aiGateway.docs.transcribeHelp" scope="global"><template #c1><code>transcription</code></template><template #c2><code>whisper-large-v3-turbo</code></template><template #c3><code>whisper-1</code></template><template #c4><code>gpt-4o-mini-transcribe</code></template><template #c5><code>gemini-2.5-flash</code></template><template #c6><code>file</code></template><template #c7><code>language</code></template><template #c8><code>bn</code></template><template #c9><code>en</code></template><template #c10><code>prompt</code></template><template #c11><code>response_format</code></template><template #c12><code>json</code></template><template #c13><code>text</code></template></i18n-t></p>
                 <pre class="mt-3 overflow-x-auto rounded-md bg-slate-900 px-4 py-3 text-xs text-slate-100"><code>{{ curlTranscribe }}</code></pre>
-                <p class="mt-2 text-xs text-slate-400">
-                    <code>model</code> is optional and, as everywhere, only <code>"auto"</code> is accepted. With the OpenAI SDK
-                    (client set up as below):
-                </p>
+                <p class="mt-2 text-xs text-slate-400"><i18n-t keypath="aiGateway.docs.transcribeSdk" scope="global"><template #c1><code>model</code></template><template #c2><code>"auto"</code></template></i18n-t></p>
                 <pre class="mt-2 overflow-x-auto rounded-md bg-slate-900 px-4 py-3 text-xs text-slate-100"><code>{{ pythonTranscribe }}</code></pre>
             </section>
 
             <section class="rounded-lg border border-slate-200 bg-white p-5 dark:border-slate-700 dark:bg-slate-800">
                 <h2 class="text-sm font-semibold">GET /models</h2>
-                <p class="mt-2 text-sm text-slate-600 dark:text-slate-300">Returns a single <code>"auto"</code> entry, OpenAI-style — the gateway always picks the provider/model itself.</p>
+                <p class="mt-2 text-sm text-slate-600 dark:text-slate-300"><i18n-t keypath="aiGateway.docs.modelsHelp" scope="global"><template #c1><code>"auto"</code></template></i18n-t></p>
                 <pre class="mt-3 overflow-x-auto rounded-md bg-slate-900 px-4 py-3 text-xs text-slate-100"><code>{{ curlModels }}</code></pre>
             </section>
 
             <section class="rounded-lg border border-slate-200 bg-white p-5 dark:border-slate-700 dark:bg-slate-800">
-                <h2 class="text-sm font-semibold">Using an OpenAI SDK</h2>
-                <p class="mt-2 text-sm text-slate-600 dark:text-slate-300">Point any OpenAI-compatible SDK at this gateway by overriding its base URL — this also makes it a drop-in OpenRouter replacement.</p>
+                <h2 class="text-sm font-semibold">{{ t('aiGateway.docs.sdk') }}</h2>
+                <p class="mt-2 text-sm text-slate-600 dark:text-slate-300">{{ t('aiGateway.docs.sdkHelp') }}</p>
                 <h3 class="mt-4 text-xs font-semibold uppercase tracking-wide text-slate-500">Python</h3>
                 <pre class="mt-2 overflow-x-auto rounded-md bg-slate-900 px-4 py-3 text-xs text-slate-100"><code>{{ pythonSdk }}</code></pre>
                 <h3 class="mt-4 text-xs font-semibold uppercase tracking-wide text-slate-500">Node.js</h3>

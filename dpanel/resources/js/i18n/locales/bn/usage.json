@@ -1,0 +1,36 @@
+{
+    "cols": {
+        "disk": "Disk",
+        "bandwidth": "Bandwidth (মাস)",
+        "memory": "Memory",
+        "cpu": "CPU"
+    },
+    "title": "ব্যবহার ও সীমা",
+    "subtitle": "package-এর তুলনায় ব্যবহার, সর্বশেষ পরিমাপ",
+    "unassignedOne": "১টি website-এর কোনো owner নেই, তাই এর ব্যবহার এখানে গোনা হয়নি। Website-এর Manage page থেকে এর একজন owner ঠিক করে দিন।",
+    "unassignedMany": "{count}টি website-এর কোনো owner নেই, তাই সেগুলোর ব্যবহার এখানে গোনা হয়নি। Website-এর Manage page থেকে সেগুলোর owner ঠিক করে দিন।",
+    "websites": "Website",
+    "search": "Account বা package খুঁজুন…",
+    "onlyAlerts": "শুধু ৮০% বা তার বেশি ({count})",
+    "account": "Account",
+    "alertSent": "{percent}% সতর্কবার্তা পাঠানো হয়েছে",
+    "sevenDays": "৭ দিন",
+    "noMatch": "কোনো account মেলেনি।",
+    "empty": "এখনও কোনো account-এর website বা package নেই।",
+    "footnote": "Website আছে এমন প্রতিটি account-এর disk প্রতি ঘণ্টায় এবং bandwidth প্রতি ১৫ মিনিটে মাপা হয়; CPU ও memory প্রতি পাঁচ মিনিটে, শুধু package-এ এগুলোর সীমা থাকলে। কোনো সীমার ৮০% ও ১০০%-এ account-কে একটি নোটিশ পাঠানো হয়, ব্যবহার আবার কমে না আসা পর্যন্ত একবারই।",
+    "history": {
+        "charts": {
+            "disk": "Disk (MB)",
+            "bandwidth": "এই মাসের bandwidth (MB)",
+            "memory": "Memory (MB)",
+            "cpu": "CPU (%)"
+        },
+        "failed": "ইতিহাস আনা যায়নি।",
+        "loading": "গত সাত দিনের তথ্য আনা হচ্ছে…",
+        "noReadings": "গত সাত দিনে কোনো পরিমাপ নেই।",
+        "note": "সাত দিনের ঘণ্টাভিত্তিক গড়। ড্যাশ দেওয়া রেখাটি package-এর সীমা।"
+    },
+    "meter": {
+        "noLimit": "কোনো সীমা নেই"
+    }
+}

@@ -1,0 +1,60 @@
+{
+    "card": {
+        "badge": {
+            "running": "চলছে",
+            "error": "ব্যর্থ",
+            "stopped": "বন্ধ",
+            "starting": "চালু হচ্ছে…"
+        },
+        "port": "Port",
+        "user": "User",
+        "publicOn": "Public ঠিকানা",
+        "notPublic": "Public নয়। {link}।",
+        "publishLink": "Rules → Port Share থেকে publish করুন",
+        "listening": "port listen করছে",
+        "notListening": "port listen করছে না",
+        "start": "চালু",
+        "stop": "বন্ধ",
+        "restart": "Restart",
+        "status": "Status",
+        "edit": "সম্পাদনা",
+        "delete": "মুছুন",
+        "default": "default",
+        "workers": "{n}টি worker",
+        "runs": "চালায়",
+        "settingUp": "Background-এ setup হচ্ছে (Python, venv, package)। প্রথমবার চালু হতে কয়েক মিনিট লাগতে পারে।"
+    },
+    "index": {
+        "title": "Python app",
+        "subtitle": "Django, Flask, FastAPI… আপনার home directory-র যেকোনো folder থেকে চালান।",
+        "new": "নতুন Python app",
+        "empty": "এখনও কোনো Python app নেই",
+        "noHome": "কোনো home directory নেই",
+        "emptyHelp": "একটি তৈরি করুন, তারপর Rules → Port Share থেকে publish করুন।",
+        "noHomeHelp": "App চলে website user-এর home-এর ভেতরে। আগে একটি website তৈরি করুন।"
+    },
+    "form": {
+        "editTitle": "{name} সম্পাদনা",
+        "newTitle": "নতুন Python app",
+        "subtitle": "নিজস্ব .venv ও requirements.txt install পায়, home-এর Linux user হিসেবে gunicorn দিয়ে চলে। Rules → Port Share থেকে publish করুন।",
+        "name": "App-এর নাম",
+        "home": "Home directory",
+        "workdir": "Working directory",
+        "workdirHelp": "আপনার code ও requirements.txt যে folder-এ আছে। খালি রাখলে home থেকেই চলবে।",
+        "optional": "(ঐচ্ছিক)",
+        "port": "Port",
+        "auto": "স্বয়ংক্রিয়",
+        "startAfter": "তৈরির পর চালু করুন",
+        "portNote": "Port {port}। চালু থাকা app নতুন setting নিয়ে restart হবে।",
+        "create": "App তৈরি করুন",
+        "overrides": "{cmd}-এর বদলে চলে। App-কে 127.0.0.1 ও {port}-এ listen করতে হবে।",
+        "startCommand": "Start command",
+        "entryHelp": "যেমন {flask} (Flask), {django} (Django)",
+        "version": "Python version",
+        "workers": "Worker",
+        "mode": "Mode",
+        "production": "Production",
+        "development": "Development",
+        "timeout": "Timeout (সেকেন্ড)"
+    }
+}

@@ -1,5 +1,8 @@
 <script setup>
 import { computed, ref } from 'vue';
+import { useI18n } from 'vue-i18n';
+
+const { t } = useI18n();
 
 const props = defineProps({
     backups: { type: Array, default: () => [] },
@@ -19,7 +22,7 @@ const toggleAll = () => emit('update:modelValue', allSelected.value ? [] : [...a
 const deleteSelected = async () => {
     const ids = [...props.modelValue];
     if (ids.length === 0) return;
-    if (!confirm(`Permanently delete ${ids.length} trash backup(s)? Deleted archives cannot be restored.`)) return;
+    if (!confirm(t('trashBackups.bulk.confirm', { count: ids.length }))) return;
 
     deleting.value = true;
     try {
@@ -37,11 +40,11 @@ const deleteSelected = async () => {
         const payload = await response.json().catch(() => ({}));
         emit('done', {
             type: response.ok ? (payload.type || 'success') : 'error',
-            message: payload.message || `Delete failed with HTTP ${response.status}.`,
+            message: payload.message || t('trashBackups.bulk.httpFailed', { status: response.status }),
             deleted: Array.isArray(payload.deleted) ? payload.deleted : [],
         });
     } catch (error) {
-        emit('done', { type: 'error', message: error?.message || 'Trash backup delete failed.', deleted: [] });
+        emit('done', { type: 'error', message: error?.message || t('trashBackups.bulk.failed'), deleted: [] });
     } finally {
         deleting.value = false;
     }
@@ -58,7 +61,7 @@ const deleteSelected = async () => {
                 class="rounded border-slate-300 text-emerald-600 focus:ring-emerald-500"
                 @change="toggleAll"
             />
-            {{ modelValue.length > 0 ? `${modelValue.length} selected` : 'Select all' }}
+            {{ modelValue.length > 0 ? t('trashBackups.bulk.selected', { count: modelValue.length }) : t('trashBackups.bulk.selectAll') }}
         </label>
         <button
             type="button"
@@ -67,7 +70,7 @@ const deleteSelected = async () => {
             @click="deleteSelected"
         >
             <i :class="deleting ? 'bi bi-arrow-repeat animate-spin' : 'bi bi-trash3'"></i>
-            {{ deleting ? 'Deleting...' : 'Delete Selected' }}
+            {{ deleting ? t('trashBackups.bulk.deleting') : t('trashBackups.bulk.delete') }}
         </button>
     </div>
 </template>

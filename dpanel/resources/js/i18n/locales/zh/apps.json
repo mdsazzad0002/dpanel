@@ -1,0 +1,42 @@
+{
+    "fields": {
+        "heading": "站点与管理员",
+        "site_name": "站点名称",
+        "admin_name": "管理员全名",
+        "admin_username": "管理员用户名",
+        "admin_email": "管理员邮箱",
+        "admin_password": "管理员密码",
+        "passwordHint": "（至少 12 个字符——请立即保存，面板不会存储它）",
+        "show": "显示",
+        "hide": "隐藏",
+        "generate": "生成"
+    },
+    "nextcloud": {
+        "installer": "Nextcloud 安装程序",
+        "card": "带管理员账户和 cron 的文件同步与共享",
+        "downloading": "正在下载 Nextcloud 并校验其 SHA-256…",
+        "configuring": "正在运行 occ maintenance:install…",
+        "note": "文件保存在项目根目录旁的文件夹（…-nextcloud-data）中，位于网站根目录之外。会为 cron.php 添加一个每 5 分钟的 cron。"
+    },
+    "prestashop": {
+        "installer": "PrestaShop 安装程序",
+        "card": "带后台账户的在线商店",
+        "downloading": "正在下载并解压 PrestaShop…",
+        "configuring": "正在运行 PrestaShop 安装程序…",
+        "note": "install/ 文件夹会被删除，admin/ 会被重命名为随机名称；安装后的消息会显示后台地址。使用管理员邮箱登录。"
+    },
+    "opencart": {
+        "installer": "OpenCart 安装程序",
+        "card": "带管理员账户的 OpenCart 4 商店",
+        "downloading": "正在下载并解压 OpenCart…",
+        "configuring": "正在运行 OpenCart 安装程序…",
+        "note": "install/ 文件夹会被删除，system/storage 会移到项目根目录旁（…-opencart-storage）。管理区域：/admin。"
+    },
+    "mediawiki": {
+        "installer": "MediaWiki 安装程序",
+        "card": "带管理员账户的 Wiki 引擎",
+        "downloading": "正在下载 MediaWiki 并验证其 GPG 签名…",
+        "configuring": "正在运行 maintenance/install.php…",
+        "note": "下载内容会用 MediaWiki 发布密钥验证（服务器上需要 gpg）。设置会写入 LocalSettings.php。"
+    }
+}

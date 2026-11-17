@@ -3,6 +3,9 @@ import { usePage } from '@inertiajs/vue3';
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
 import EnforcementFields from './Enforcement/EnforcementFields.vue';
 import { Head, Link, useForm } from '@inertiajs/vue3';
+import { useI18n } from 'vue-i18n';
+
+const { t } = useI18n();
 
 const page = usePage();
 const panelToken = page.props.panel?.token;
@@ -60,20 +63,20 @@ const formatStorage = (mb) => {
 </script>
 
 <template>
-    <Head :title="`Edit Package - ${plan.name}`" />
+    <Head :title="t('packagePlans.edit.headTitle', { name: plan.name })" />
 
     <AuthenticatedLayout>
         <template #header>
             <div>
-                <h1 class="text-lg font-semibold">Edit Package: {{ plan.name }}</h1>
-                <p class="text-sm text-slate-500 dark:text-slate-400">Update hard limits applied to assigned domain users.</p>
+                <h1 class="text-lg font-semibold">{{ t('packagePlans.edit.title', { name: plan.name }) }}</h1>
+                <p class="text-sm text-slate-500 dark:text-slate-400">{{ t('packagePlans.edit.subtitle') }}</p>
             </div>
         </template>
 
         <div class="space-y-4">
             <div class="flex justify-end">
                 <Link :href="panelRoute('packages.index')" class="rounded-md border border-slate-300 px-3 py-2 text-sm hover:bg-slate-100 dark:border-slate-700 dark:hover:bg-slate-800">
-                    Back to Packages
+                    {{ t('packagePlans.form.back') }}
                 </Link>
             </div>
 
@@ -82,14 +85,14 @@ const formatStorage = (mb) => {
             </div>
 
             <div class="rounded-xl border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-900">
-                <h2 class="text-sm font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Current Usage</h2>
+                <h2 class="text-sm font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">{{ t('packagePlans.edit.usage') }}</h2>
                 <div class="mt-2 flex gap-6 text-sm">
                     <div>
-                        <span class="text-slate-600 dark:text-slate-300">Mailboxes:</span>
-                        <span class="ml-1 font-medium">{{ mailboxCount }} / {{ plan.max_mailboxes >= 9999 ? 'unlimited' : plan.max_mailboxes }}</span>
+                        <span class="text-slate-600 dark:text-slate-300">{{ t('packagePlans.edit.mailboxes') }}</span>
+                        <span class="ml-1 font-medium">{{ mailboxCount }} / {{ plan.max_mailboxes >= 9999 ? t('packagePlans.edit.unlimited') : plan.max_mailboxes }}</span>
                     </div>
                     <div>
-                        <span class="text-slate-600 dark:text-slate-300">Storage Used:</span>
+                        <span class="text-slate-600 dark:text-slate-300">{{ t('packagePlans.edit.storageUsed') }}</span>
                         <span class="ml-1 font-medium">{{ formatStorage(totalStorageMb) }} / {{ formatStorage(plan.max_storage_mb) }}</span>
                     </div>
                 </div>
@@ -97,68 +100,68 @@ const formatStorage = (mb) => {
 
             <form class="grid gap-4 rounded-xl border border-slate-200 bg-white p-6 md:grid-cols-2 dark:border-slate-800 dark:bg-slate-900" @submit.prevent="submit">
                 <div class="md:col-span-2">
-                    <label class="mb-1 block text-sm">Package Name</label>
+                    <label class="mb-1 block text-sm">{{ t('packagePlans.form.name') }}</label>
                     <input v-model="form.name" type="text" class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-800" />
                     <p v-if="form.errors.name" class="mt-1 text-xs text-red-600">{{ form.errors.name }}</p>
                 </div>
 
                 <div>
-                    <label class="mb-1 block text-sm">Max Storage (MB)</label>
+                    <label class="mb-1 block text-sm">{{ t('packagePlans.form.storage') }}</label>
                     <input v-model.number="form.max_storage_mb" type="number" min="1" max="1048576" class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-800" />
                     <p class="mt-1 text-xs text-slate-500">{{ form.max_storage_mb >= 1024 ? (form.max_storage_mb / 1024).toFixed(0) + ' GB' : form.max_storage_mb + ' MB' }}</p>
                     <p v-if="form.errors.max_storage_mb" class="mt-1 text-xs text-red-600">{{ form.errors.max_storage_mb }}</p>
                 </div>
 
                 <div>
-                    <label class="mb-1 block text-sm">Max Mailboxes</label>
+                    <label class="mb-1 block text-sm">{{ t('packagePlans.form.mailboxes') }}</label>
                     <input v-model.number="form.max_mailboxes" type="number" min="1" max="99999" class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-800" />
                     <p v-if="form.errors.max_mailboxes" class="mt-1 text-xs text-red-600">{{ form.errors.max_mailboxes }}</p>
                 </div>
 
                 <div>
-                    <label class="mb-1 block text-sm">Max Websites</label>
+                    <label class="mb-1 block text-sm">{{ t('packagePlans.form.websites') }}</label>
                     <input v-model.number="form.max_websites" type="number" min="0" max="99999" class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-800" />
                     <p v-if="form.errors.max_websites" class="mt-1 text-xs text-red-600">{{ form.errors.max_websites }}</p>
                 </div>
                 <div>
-                    <label class="mb-1 block text-sm">Max Databases</label>
+                    <label class="mb-1 block text-sm">{{ t('packagePlans.form.databases') }}</label>
                     <input v-model.number="form.max_databases" type="number" min="0" max="99999" class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-800" />
                     <p v-if="form.errors.max_databases" class="mt-1 text-xs text-red-600">{{ form.errors.max_databases }}</p>
                 </div>
                 <div>
-                    <label class="mb-1 block text-sm">Bandwidth Limit (GB)</label>
+                    <label class="mb-1 block text-sm">{{ t('packagePlans.form.bandwidth') }}</label>
                     <input v-model.number="form.max_bandwidth_gb" type="number" min="0" max="1048576" class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-800" />
                     <p v-if="form.errors.max_bandwidth_gb" class="mt-1 text-xs text-red-600">{{ form.errors.max_bandwidth_gb }}</p>
                 </div>
                 <EnforcementFields :form="form" />
 
                 <div>
-                    <label class="mb-1 block text-sm">Sort Order</label>
+                    <label class="mb-1 block text-sm">{{ t('packagePlans.form.sortOrder') }}</label>
                     <input v-model.number="form.sort_order" type="number" min="0" max="9999" class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-800" />
                     <p v-if="form.errors.sort_order" class="mt-1 text-xs text-red-600">{{ form.errors.sort_order }}</p>
                 </div>
 
                 <div class="md:col-span-2">
-                    <label class="mb-1 block text-sm">Features</label>
+                    <label class="mb-1 block text-sm">{{ t('packagePlans.form.features') }}</label>
                     <div class="space-y-2">
                         <label class="flex items-center gap-2 text-sm">
                             <input v-model="form.allow_forwarding" type="checkbox" class="rounded border-slate-300 text-blue-600 dark:border-slate-600" />
-                            Allow Email Forwarding
+                            {{ t('packagePlans.form.forwarding') }}
                         </label>
                         <label class="flex items-center gap-2 text-sm">
                             <input v-model="form.allow_aliases" type="checkbox" class="rounded border-slate-300 text-blue-600 dark:border-slate-600" />
-                            Allow Aliases
+                            {{ t('packagePlans.form.aliases') }}
                         </label>
                         <label class="flex items-center gap-2 text-sm">
                             <input v-model="form.priority_support" type="checkbox" class="rounded border-slate-300 text-blue-600 dark:border-slate-600" />
-                            Priority Support
+                            {{ t('packagePlans.form.priority') }}
                         </label>
                     </div>
                 </div>
 
                 <div class="md:col-span-2">
                     <button type="submit" :disabled="form.processing" class="rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-60">
-                        Update Package
+                        {{ t('packagePlans.edit.submit') }}
                     </button>
                 </div>
             </form>

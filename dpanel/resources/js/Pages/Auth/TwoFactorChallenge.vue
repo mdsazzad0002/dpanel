@@ -5,6 +5,9 @@ import GuestLayout from '@/Layouts/GuestLayout.vue';
 import InputError from '@/Components/InputError.vue';
 import PrimaryButton from '@/Components/PrimaryButton.vue';
 import TextInput from '@/Components/TextInput.vue';
+import { useI18n } from 'vue-i18n';
+
+const { t } = useI18n();
 
 const props = defineProps({
     method: {
@@ -31,18 +34,18 @@ const props = defineProps({
 
 const methodTabs = {
     email: {
-        label: 'Email',
-        hint: 'Code sent to inbox',
+        get label() { return t('auth.twoFactor.tabs.email.label'); },
+        get hint() { return t('auth.twoFactor.tabs.email.hint'); },
         icon: 'bi bi-envelope',
     },
     google_auth_app: {
-        label: 'Authenticator',
-        hint: 'App-generated code',
+        get label() { return t('auth.twoFactor.tabs.app.label'); },
+        get hint() { return t('auth.twoFactor.tabs.app.hint'); },
         icon: 'bi bi-shield-lock',
     },
     telegram: {
         label: 'Telegram',
-        hint: 'Code in chat',
+        get hint() { return t('auth.twoFactor.tabs.telegram.hint'); },
         icon: 'bi bi-telegram',
     },
 };
@@ -87,18 +90,18 @@ const submit = () => {
 
 <template>
     <GuestLayout>
-        <Head title="Two-Factor Verification" />
+        <Head :title="t('auth.twoFactor.headTitle')" />
 
         <div class="space-y-6">
             <div class="space-y-2">
                 <p class="font-mono text-xs uppercase tracking-[0.32em] text-emerald-300/80">
-                    Two-factor auth
+                    {{ t('auth.twoFactor.eyebrow') }}
                 </p>
                 <h2 class="text-2xl font-semibold tracking-tight text-slate-50">
-                    Verify your login
+                    {{ t('auth.twoFactor.title') }}
                 </h2>
                 <p class="text-sm leading-6 text-slate-300">
-                    Choose a tab and complete sign in using {{ methodLabel }}.
+                    {{ t('auth.twoFactor.subtitle', { method: methodLabel }) }}
                 </p>
             </div>
 
@@ -129,23 +132,23 @@ const submit = () => {
 
             <div class="rounded-xl border border-white/10 bg-white/[0.04] px-4 py-3 text-sm text-slate-300">
                 <p v-if="activeMethod === 'google_auth_app'">
-                    Open your authenticator app and enter the 6-digit code.
+                    {{ t('auth.twoFactor.appHint') }}
                 </p>
                 <p v-else-if="activeMethod === 'telegram'">
-                    We sent a 6-digit code to your Telegram account.
+                    {{ t('auth.twoFactor.telegramHint') }}
                 </p>
                 <p v-else>
-                    We sent a 6-digit code to {{ maskedDestination || 'your configured destination' }}.
+                    {{ t('auth.twoFactor.emailHint', { destination: maskedDestination || t('auth.twoFactor.defaultDestination') }) }}
                 </p>
                 <p class="mt-1 text-xs text-slate-400">
-                    The code expires in {{ expiresIn }} minute{{ expiresIn === 1 ? '' : 's' }}.
+                    {{ expiresIn === 1 ? t('auth.twoFactor.expiresOne') : t('auth.twoFactor.expires', { count: expiresIn }) }}
                 </p>
             </div>
 
             <form class="space-y-5" @submit.prevent="submit">
                 <div>
                     <label for="code" class="mb-2 block text-sm font-medium text-slate-200">
-                        Verification Code
+                        {{ t('auth.twoFactor.code') }}
                     </label>
                     <TextInput
                         id="code"
@@ -166,7 +169,7 @@ const submit = () => {
                         :href="route('login')"
                         class="rounded-md text-sm text-slate-300 underline decoration-white/30 underline-offset-4 transition hover:text-slate-100 hover:decoration-emerald-300"
                     >
-                        Back to login
+                        {{ t('auth.twoFactor.back') }}
                     </Link>
 
                     <div class="flex items-center gap-3">
@@ -177,13 +180,13 @@ const submit = () => {
                             as="button"
                             class="rounded-xl border border-white/10 px-4 py-3 text-sm font-medium text-slate-200 transition hover:border-emerald-400/40 hover:bg-white/[0.04]"
                         >
-                            Resend
+                            {{ t('auth.twoFactor.resend') }}
                         </Link>
                         <PrimaryButton
                             type="submit"
                             class="rounded-xl bg-gradient-to-r from-emerald-400 to-cyan-400 px-5 py-3 text-sm font-semibold text-slate-950 shadow-lg shadow-emerald-500/20 transition hover:from-emerald-300 hover:to-cyan-300"
                         >
-                            Verify
+                            {{ t('auth.twoFactor.verify') }}
                         </PrimaryButton>
                     </div>
                 </div>

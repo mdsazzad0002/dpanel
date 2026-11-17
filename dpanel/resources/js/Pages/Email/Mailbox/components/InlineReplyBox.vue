@@ -4,6 +4,9 @@ import RichTextEditor from './RichTextEditor.vue';
 import RecipientInput from './RecipientInput.vue';
 import MailAvatar from './MailAvatar.vue';
 import { avatarColorOf, emailOf, initialsOf, nameOrEmail, sameAddress, splitAddresses, withoutAddress } from './mailAddresses';
+import { useI18n } from 'vue-i18n';
+
+const { t } = useI18n();
 
 // Gmail-style reply that opens under the message instead of a new window.
 // Reply, reply all and forward share it; the arrow menu switches between them.
@@ -40,12 +43,12 @@ const ui = computed(() => (props.isDark
     ? { card: 'border-slate-700 bg-slate-900 shadow-black/40', muted: 'text-slate-400', strong: 'text-slate-100', icon: 'text-slate-400 hover:bg-slate-800 hover:text-slate-100', divider: 'border-slate-800', menu: 'border-slate-700 bg-slate-900 text-slate-200 shadow-black/50', menuItem: 'hover:bg-slate-800', input: 'text-slate-100 placeholder:text-slate-500', dots: 'bg-slate-800 text-slate-300 hover:bg-slate-700', quote: 'border-slate-700 text-slate-400' }
     : { card: 'border-slate-200 bg-white shadow-slate-300/50', muted: 'text-slate-500', strong: 'text-slate-900', icon: 'text-slate-500 hover:bg-slate-100 hover:text-slate-900', divider: 'border-slate-100', menu: 'border-slate-200 bg-white text-slate-800 shadow-slate-900/15', menuItem: 'hover:bg-slate-100', input: 'text-slate-900 placeholder:text-slate-400', dots: 'bg-slate-200/80 text-slate-600 hover:bg-slate-300', quote: 'border-slate-300 text-slate-600' }));
 
-const modes = [
-    { id: 'reply', label: 'Reply', icon: 'bi-reply' },
-    { id: 'reply-all', label: 'Reply all', icon: 'bi-reply-all' },
-    { id: 'forward', label: 'Forward', icon: 'bi-forward' },
-];
-const currentMode = computed(() => modes.find((m) => m.id === props.mode) || modes[0]);
+const modes = computed(() => [
+    { id: 'reply', label: t('email.mailbox.actions.reply'), icon: 'bi-reply' },
+    { id: 'reply-all', label: t('email.mailbox.actions.replyAll'), icon: 'bi-reply-all' },
+    { id: 'forward', label: t('email.mailbox.actions.forward'), icon: 'bi-forward' },
+]);
+const currentMode = computed(() => modes.value.find((m) => m.id === props.mode) || modes.value[0]);
 const fromSelf = computed(() => sameAddress(props.message.from, props.selfEmail));
 
 const escapeHtml = (value) => String(value || '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
@@ -115,7 +118,7 @@ onMounted(() => {
 const recipientSummary = computed(() => {
     const names = [...splitAddresses(to.value), ...splitAddresses(cc.value), ...splitAddresses(bcc.value)].map(nameOrEmail);
 
-    return names.length ? names.join(', ') : 'Recipients';
+    return names.length ? names.join(', ') : t('email.mailbox.composer.recipients');
 });
 
 const hasDraft = computed(() => text.value.trim() !== '' && props.mode !== 'forward');
@@ -129,11 +132,11 @@ const send = async () => {
     if (sending.value) return;
     if (!to.value.trim() && !cc.value.trim() && !bcc.value.trim()) {
         editingRecipients.value = true;
-        emit('notify', 'Add at least one recipient.');
+        emit('notify', t('email.mailbox.composer.needRecipient'));
         return;
     }
     if (text.value.trim() === '' && props.mode !== 'forward') {
-        emit('notify', 'Write a message first.');
+        emit('notify', t('email.mailbox.composer.needBody'));
         editor.value?.focus();
         return;
     }
@@ -152,10 +155,10 @@ const send = async () => {
             reply_folder: quoted ? (props.message.folder || props.folder) : null,
             reply_uid: quoted ? props.message.uid : null,
         }, { headers: { Accept: 'application/json' } });
-        emit('sent', response?.data?.message || 'Message sent.');
+        emit('sent', response?.data?.message || t('email.mailbox.composer.sent'));
     }
     catch (error) {
-        emit('notify', error?.response?.data?.message || error?.message || 'Message could not be sent.');
+        emit('notify', error?.response?.data?.message || error?.message || t('email.mailbox.composer.sendFailed'));
     }
     finally {
         sending.value = false;
@@ -163,7 +166,7 @@ const send = async () => {
 };
 
 const discard = () => {
-    if (hasDraft.value && !confirm('Discard this reply?')) return;
+    if (hasDraft.value && !confirm(t('email.mailbox.composer.discardReply'))) return;
     emit('discard');
 };
 
@@ -186,7 +189,7 @@ const popOut = () => emit('pop-out', {
             class="mt-1 hidden h-10 w-10 shrink-0 text-sm sm:flex"
         />
 
-        <section :class="[ui.card, 'min-w-0 flex-1 rounded-2xl border shadow-lg ring-1 ring-blue-500/10']" aria-label="Reply" @keydown.esc.stop="modeMenu = false">
+        <section :class="[ui.card, 'min-w-0 flex-1 rounded-2xl border shadow-lg ring-1 ring-blue-500/10']" :aria-label="t('email.mailbox.composer.replyLabel')" @keydown.esc.stop="modeMenu = false">
             <!-- Mode + recipients -->
             <div class="flex items-center gap-1 px-3 pt-3">
                 <div class="relative">
@@ -199,18 +202,18 @@ const popOut = () => emit('pop-out', {
                             <i v-if="item.id === mode" class="bi bi-check2 ml-auto text-blue-500"></i>
                         </button>
                         <button type="button" role="menuitem" :class="[ui.menuItem, 'flex w-full items-center gap-3 px-3 py-2 text-left text-sm']" @click="modeMenu = false; editingRecipients = true">
-                            <i class="bi bi-pencil"></i>Edit subject
+                            <i class="bi bi-pencil"></i>{{ t('email.mailbox.composer.editSubject') }}
                         </button>
                     </div>
                 </div>
 
-                <button v-if="!editingRecipients" type="button" :class="[ui.strong, 'min-w-0 flex-1 truncate rounded-md px-2 py-1.5 text-left text-sm hover:bg-black/5 dark:hover:bg-white/5']" title="Edit recipients" @click="editingRecipients = true">
+                <button v-if="!editingRecipients" type="button" :class="[ui.strong, 'min-w-0 flex-1 truncate rounded-md px-2 py-1.5 text-left text-sm hover:bg-black/5 dark:hover:bg-white/5']" :title="t('email.mailbox.composer.editRecipients')" @click="editingRecipients = true">
                     {{ recipientSummary }}
                 </button>
                 <span v-else class="flex-1"></span>
 
-                <span v-if="sandbox" class="rounded bg-amber-100 px-1.5 py-0.5 text-[11px] font-medium text-amber-800" title="Sandbox mode: only recipients on this server receive this message">Sandbox</span>
-                <button type="button" :class="[ui.icon, 'flex h-9 w-9 items-center justify-center rounded-full transition']" title="Pop out reply" @click="popOut">
+                <span v-if="sandbox" class="rounded bg-amber-100 px-1.5 py-0.5 text-[11px] font-medium text-amber-800" :title="t('email.mailbox.composer.sandboxTitle')">{{ t('email.mailbox.composer.sandbox') }}</span>
+                <button type="button" :class="[ui.icon, 'flex h-9 w-9 items-center justify-center rounded-full transition']" :title="t('email.mailbox.composer.popOut')" @click="popOut">
                     <i class="bi bi-box-arrow-up-right"></i>
                 </button>
             </div>
@@ -218,7 +221,7 @@ const popOut = () => emit('pop-out', {
             <!-- Editable recipients and subject -->
             <div v-if="editingRecipients" class="space-y-0.5 px-4 pt-1 text-sm">
                 <div :class="[ui.divider, 'flex items-center gap-3 border-b']">
-                    <label :class="[ui.muted, 'w-12 shrink-0']" for="reply-to">To</label>
+                    <label :class="[ui.muted, 'w-12 shrink-0']" for="reply-to">{{ t('email.mailbox.composer.to') }}</label>
                     <RecipientInput id="reply-to" ref="toInput" v-model="to" :is-dark="isDark" :input-class="[ui.input, 'h-10 w-full border-0 bg-transparent p-0 text-sm outline-none focus:ring-0']" />
                     <button v-if="!showCc" type="button" :class="[ui.muted, 'text-xs font-medium hover:underline']" @click="showCc = true">Cc</button>
                     <button v-if="!showBcc" type="button" :class="[ui.muted, 'text-xs font-medium hover:underline']" @click="showBcc = true">Bcc</button>
@@ -232,7 +235,7 @@ const popOut = () => emit('pop-out', {
                     <RecipientInput id="reply-bcc" v-model="bcc" :is-dark="isDark" :input-class="[ui.input, 'h-10 w-full border-0 bg-transparent p-0 text-sm outline-none focus:ring-0']" />
                 </div>
                 <div :class="[ui.divider, 'flex items-center gap-3 border-b']">
-                    <label :class="[ui.muted, 'w-12 shrink-0']" for="reply-subject">Subject</label>
+                    <label :class="[ui.muted, 'w-12 shrink-0']" for="reply-subject">{{ t('email.mailbox.composer.subject') }}</label>
                     <input id="reply-subject" v-model="subject" type="text" :class="[ui.input, 'h-10 min-w-0 flex-1 border-0 bg-transparent p-0 text-sm outline-none focus:ring-0']">
                 </div>
             </div>
@@ -249,7 +252,7 @@ const popOut = () => emit('pop-out', {
                 @submit="send"
             >
                 <div v-if="mode !== 'forward'" class="px-4 pb-3">
-                    <button type="button" :class="[ui.dots, 'inline-flex h-4 items-center rounded-full px-1.5 text-xs leading-none transition']" :title="showQuote ? 'Hide trimmed content' : 'Show trimmed content'" @click="showQuote = !showQuote">
+                    <button type="button" :class="[ui.dots, 'inline-flex h-4 items-center rounded-full px-1.5 text-xs leading-none transition']" :title="showQuote ? t('email.mailbox.composer.hideTrimmed') : t('email.mailbox.composer.showTrimmed')" @click="showQuote = !showQuote">
                         <i class="bi bi-three-dots"></i>
                     </button>
                     <div v-if="showQuote" :class="[ui.quote, 'mt-2 max-h-64 overflow-y-auto whitespace-pre-wrap break-words border-l-2 pl-3 text-sm']">On {{ originalDate }}, {{ message.from }} wrote:
@@ -265,13 +268,13 @@ const popOut = () => emit('pop-out', {
                     @click="send"
                 >
                     <i v-if="sending" class="bi bi-arrow-repeat animate-spin"></i>
-                    {{ sending ? 'Sending…' : 'Send' }}
+                    {{ sending ? t('email.mailbox.composer.sending') : t('email.mailbox.composer.send') }}
                 </button>
-                <button type="button" :class="[showToolbar ? 'bg-blue-100 text-blue-800 dark:bg-blue-500/20 dark:text-blue-200' : ui.icon, 'flex h-10 w-10 items-center justify-center rounded-full text-sm font-semibold transition']" title="Formatting options" :aria-pressed="showToolbar" @click="showToolbar = !showToolbar">
+                <button type="button" :class="[showToolbar ? 'bg-blue-100 text-blue-800 dark:bg-blue-500/20 dark:text-blue-200' : ui.icon, 'flex h-10 w-10 items-center justify-center rounded-full text-sm font-semibold transition']" :title="t('email.mailbox.composer.formatting')" :aria-pressed="showToolbar" @click="showToolbar = !showToolbar">
                     Aa
                 </button>
-                <span :class="[ui.muted, 'ml-1 hidden text-xs sm:inline']">Ctrl + Enter to send</span>
-                <button type="button" :class="[ui.icon, 'ml-auto flex h-10 w-10 items-center justify-center rounded-full transition hover:!text-rose-600']" title="Discard" aria-label="Discard reply" @click="discard">
+                <span :class="[ui.muted, 'ml-1 hidden text-xs sm:inline']">{{ t('email.mailbox.composer.ctrlEnter') }}</span>
+                <button type="button" :class="[ui.icon, 'ml-auto flex h-10 w-10 items-center justify-center rounded-full transition hover:!text-rose-600']" :title="t('email.mailbox.composer.discard')" :aria-label="t('email.mailbox.composer.discardReplyLabel')" @click="discard">
                     <i class="bi bi-trash3"></i>
                 </button>
             </footer>

@@ -1,4 +1,7 @@
 <script setup>
+import { useI18n } from 'vue-i18n';
+
+const { t } = useI18n();
 defineProps({
     fm: {
         type: Object,
@@ -17,6 +20,7 @@ defineProps({
             <button
                 v-if="fm.isMobile"
                 type="button"
+                :aria-label="t('fileManager.sidebar.close')"
                 class="absolute right-2 top-2 rounded p-1 text-slate-400 hover:bg-slate-100 lg:hidden"
                 @click="fm.closeSidebar()"
             >
@@ -24,12 +28,12 @@ defineProps({
             </button>
 
             <div class="border-b border-slate-200 px-3 py-2 dark:border-slate-800">
-                <p class="text-xs font-semibold uppercase tracking-wider text-slate-500">Folders</p>
+                <p class="text-xs font-semibold uppercase tracking-wider text-slate-500">{{ t('fileManager.sidebar.folders') }}</p>
             </div>
 
             <div class="flex min-h-0 flex-1 flex-col p-2">
                 <div class="mb-2 flex items-center gap-1">
-                    <input v-model="fm.pathInput" type="text" class="flex-1 rounded-md border border-slate-200 bg-slate-50 px-2 py-1.5 text-xs outline-none focus:border-blue-400 dark:border-slate-700 dark:bg-slate-800" placeholder="Go to path..." />
+                    <input v-model="fm.pathInput" type="text" class="flex-1 rounded-md border border-slate-200 bg-slate-50 px-2 py-1.5 text-xs outline-none focus:border-blue-400 dark:border-slate-700 dark:bg-slate-800" :placeholder="t('fileManager.sidebar.goToPath')" />
                     <button type="button" class="shrink-0 rounded-md bg-blue-600 px-2 py-1.5 text-[11px] font-medium text-white hover:bg-blue-700" :disabled="fm.isBusy" @click="fm.goFromPathInput">
                         <i class="bi bi-arrow-right"></i>
                     </button>
@@ -84,16 +88,16 @@ defineProps({
                     type="button"
                     class="mb-1 w-full rounded-md border border-slate-200 px-2 py-1.5 text-xs text-slate-600 hover:bg-slate-50 dark:border-slate-700 dark:text-slate-400 dark:hover:bg-slate-800"
                     :class="fm.moveDragTargetPath === fm.parentPath ? 'border-emerald-400 bg-emerald-50 dark:bg-emerald-900/20' : ''"
-                    title="Drop items here to move them up one level"
+                    :title="t('fileManager.sidebar.dropUp')"
                     @click="fm.goParent"
                     @dragover.prevent.stop="fm.handleFolderTargetDragOver(fm.parentPath, $event)"
                     @dragleave="fm.handleFolderTargetDragLeave(fm.parentPath)"
                     @drop.prevent.stop="fm.handleFolderTargetDrop(fm.parentPath, $event)"
                 >
-                    <i class="bi bi-arrow-up mr-1"></i>Up Directory
+                    <i class="bi bi-arrow-up mr-1"></i>{{ t('fileManager.sidebar.up') }}
                 </button>
                 <button type="button" class="w-full rounded-md border border-slate-200 px-2 py-1.5 text-xs text-slate-600 hover:bg-slate-50 dark:border-slate-700 dark:text-slate-400 dark:hover:bg-slate-800" @click="fm.goRoot">
-                    <i class="bi bi-house-door mr-1"></i>Go to Root
+                    <i class="bi bi-house-door mr-1"></i>{{ t('fileManager.sidebar.root') }}
                 </button>
             </div>
         </aside>

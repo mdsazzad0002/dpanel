@@ -2,6 +2,9 @@
 import { computed, ref } from 'vue';
 import { Head, Link, usePage } from '@inertiajs/vue3';
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
+import { useI18n } from 'vue-i18n';
+
+const { t } = useI18n();
 
 const props = defineProps({
     notification: { type: Object, required: true },
@@ -25,12 +28,12 @@ const pushToast = (message, type = 'success') => {
 
 const statusMeta = computed(() => {
     switch (props.notification.status) {
-        case 'completed': return { label: 'Completed', icon: 'bi-check-circle-fill', class: 'text-emerald-600 bg-emerald-50 dark:bg-emerald-900/20' };
+        case 'completed': return { label: t('notifications.show.status.completed'), icon: 'bi-check-circle-fill', class: 'text-emerald-600 bg-emerald-50 dark:bg-emerald-900/20' };
         case 'blocked':
-        case 'failed': return { label: 'Failed', icon: 'bi-x-circle-fill', class: 'text-red-600 bg-red-50 dark:bg-red-900/20' };
-        case 'warning': return { label: 'Warning', icon: 'bi-exclamation-triangle-fill', class: 'text-amber-600 bg-amber-50 dark:bg-amber-900/20' };
-        case 'processing': return { label: 'Processing', icon: 'bi-arrow-repeat', class: 'text-amber-600 bg-amber-50 dark:bg-amber-900/20' };
-        default: return { label: 'Info', icon: 'bi-info-circle-fill', class: 'text-blue-600 bg-blue-50 dark:bg-blue-900/20' };
+        case 'failed': return { label: t('notifications.show.status.failed'), icon: 'bi-x-circle-fill', class: 'text-red-600 bg-red-50 dark:bg-red-900/20' };
+        case 'warning': return { label: t('notifications.show.status.warning'), icon: 'bi-exclamation-triangle-fill', class: 'text-amber-600 bg-amber-50 dark:bg-amber-900/20' };
+        case 'processing': return { label: t('notifications.show.status.processing'), icon: 'bi-arrow-repeat', class: 'text-amber-600 bg-amber-50 dark:bg-amber-900/20' };
+        default: return { label: t('notifications.show.status.info'), icon: 'bi-info-circle-fill', class: 'text-blue-600 bg-blue-50 dark:bg-blue-900/20' };
     }
 });
 
@@ -49,24 +52,24 @@ const copyDownloadLink = async () => {
     if (!downloadUrl.value) return;
     try {
         await navigator.clipboard.writeText(downloadUrl.value);
-        pushToast('Link copied to clipboard.');
+        pushToast(t('notifications.show.copied'));
     } catch {
-        pushToast('Could not copy the link — copy it manually.', 'error');
+        pushToast(t('notifications.show.copyFailed'), 'error');
     }
 };
 </script>
 
 <template>
-    <Head :title="`Notification - ${notification.title}`" />
+    <Head :title="t('notifications.show.headTitle', { title: notification.title })" />
     <AuthenticatedLayout>
         <template #header>
             <div class="flex items-center justify-between gap-4">
                 <div>
-                    <h1 class="text-lg font-semibold">Notification</h1>
+                    <h1 class="text-lg font-semibold">{{ t('notifications.show.title') }}</h1>
                     <p class="text-sm text-slate-500">{{ notification.time }}</p>
                 </div>
                 <Link :href="panelRoute('dashboard')" class="rounded-lg border px-3 py-2 text-sm dark:border-slate-700">
-                    <i class="bi bi-arrow-left mr-1"></i> Back to dashboard
+                    <i class="bi bi-arrow-left mr-1"></i> {{ t('notifications.show.back') }}
                 </Link>
             </div>
         </template>
@@ -89,26 +92,26 @@ const copyDownloadLink = async () => {
 
                 <div v-if="downloadUrl" class="mt-5 rounded-xl border border-slate-200 p-4 dark:border-slate-700">
                     <div class="flex flex-wrap items-center justify-between gap-3">
-                        <span class="text-sm font-medium text-slate-700 dark:text-slate-200">Export file</span>
+                        <span class="text-sm font-medium text-slate-700 dark:text-slate-200">{{ t('notifications.show.exportFile') }}</span>
                         <div class="flex items-center gap-2">
                             <button
                                 type="button"
                                 class="rounded-lg border border-slate-300 px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50 dark:border-slate-600 dark:text-slate-200 dark:hover:bg-slate-800"
                                 @click="copyDownloadLink"
                             >
-                                <i class="bi bi-clipboard mr-1"></i>Copy link
+                                <i class="bi bi-clipboard mr-1"></i>{{ t('notifications.show.copyLink') }}
                             </button>
                             <button
                                 type="button"
                                 class="rounded-lg bg-violet-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-violet-700"
                                 @click="triggerDownload"
                             >
-                                <i class="bi bi-download mr-1"></i>Download
+                                <i class="bi bi-download mr-1"></i>{{ t('notifications.show.download') }}
                             </button>
                         </div>
                     </div>
                     <a :href="downloadUrl" class="mt-2 block break-all text-xs text-blue-600 hover:underline dark:text-blue-400">{{ downloadUrl }}</a>
-                    <p class="mt-1 text-[11px] text-slate-400">No panel login needed — safe to share with anyone.</p>
+                    <p class="mt-1 text-[11px] text-slate-400">{{ t('notifications.show.shareNote') }}</p>
                 </div>
             </section>
         </div>

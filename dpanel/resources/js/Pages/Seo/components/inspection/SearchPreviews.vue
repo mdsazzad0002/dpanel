@@ -1,6 +1,9 @@
 <script setup>
 import CheckList from '@/Pages/Seo/components/inspection/CheckList.vue';
 import { computed } from 'vue';
+import { useI18n } from 'vue-i18n';
+
+const { t } = useI18n();
 
 // Approximate result snippets as each engine lays them out. Titles are cut by
 // width like the real pages; descriptions by the usual character budget.
@@ -23,13 +26,13 @@ const checks = computed(() => props.report.sections.find((s) => s.key === 'conte
 <template>
     <div class="space-y-4">
         <p v-if="p.description_generated" class="rounded-md border border-amber-200 bg-amber-50 px-4 py-2 text-sm text-amber-800 dark:border-amber-900 dark:bg-amber-900/30 dark:text-amber-300">
-            <i class="bi bi-info-circle mr-1"></i>The page has no meta description, so the snippet below is taken from the page text. Search engines may pick different text.
+            <i class="bi bi-info-circle mr-1"></i>{{ t('seo.search.generated') }}
         </p>
 
         <div class="grid items-start gap-4 xl:grid-cols-2">
             <!-- Google desktop -->
             <section class="overflow-hidden rounded-xl border border-slate-200 dark:border-slate-700">
-                <h3 class="border-b border-slate-200 bg-slate-50 px-4 py-2 text-xs font-semibold uppercase tracking-wide text-slate-500 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-400"><i class="bi bi-google mr-1"></i>Google · desktop</h3>
+                <h3 class="border-b border-slate-200 bg-slate-50 px-4 py-2 text-xs font-semibold uppercase tracking-wide text-slate-500 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-400"><i class="bi bi-google mr-1"></i>{{ t('seo.search.googleDesktop') }}</h3>
                 <div class="overflow-x-auto bg-white p-5" style="font-family: Arial, sans-serif">
                     <div class="max-w-[600px]">
                         <div class="flex items-center gap-3">
@@ -43,14 +46,14 @@ const checks = computed(() => props.report.sections.find((s) => s.key === 'conte
                             </div>
                         </div>
                         <p class="mt-1.5 truncate text-[20px] leading-[26px] text-[#1a0dab] hover:underline">{{ p.title }}</p>
-                        <p class="line-clamp-2 text-[14px] leading-[22px] text-[#4d5156]">{{ cut(p.description, 158) || 'No description available.' }}</p>
+                        <p class="line-clamp-2 text-[14px] leading-[22px] text-[#4d5156]">{{ cut(p.description, 158) || t('seo.search.noDescription') }}</p>
                     </div>
                 </div>
             </section>
 
             <!-- Google mobile -->
             <section class="overflow-hidden rounded-xl border border-slate-200 dark:border-slate-700">
-                <h3 class="border-b border-slate-200 bg-slate-50 px-4 py-2 text-xs font-semibold uppercase tracking-wide text-slate-500 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-400"><i class="bi bi-phone mr-1"></i>Google · mobile</h3>
+                <h3 class="border-b border-slate-200 bg-slate-50 px-4 py-2 text-xs font-semibold uppercase tracking-wide text-slate-500 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-400"><i class="bi bi-phone mr-1"></i>{{ t('seo.search.googleMobile') }}</h3>
                 <div class="flex justify-center bg-[#f1f3f4] p-5" style="font-family: Roboto, Arial, sans-serif">
                     <div class="w-full max-w-[360px] rounded-2xl bg-white p-4 shadow-sm">
                         <div class="flex items-center gap-2.5">
@@ -107,10 +110,10 @@ const checks = computed(() => props.report.sections.find((s) => s.key === 'conte
             </section>
         </div>
 
-        <p class="text-xs text-slate-500 dark:text-slate-400">Previews are approximate. Engines can rewrite titles and snippets per search, and show the favicon only after crawling the home page.</p>
+        <p class="text-xs text-slate-500 dark:text-slate-400">{{ t('seo.search.approx') }}</p>
 
         <section v-if="report.meta?.headings?.length" class="rounded-xl border border-slate-200 bg-white dark:border-slate-700 dark:bg-slate-800">
-            <h2 class="border-b border-slate-100 px-4 py-3 text-sm font-semibold dark:border-slate-700">Heading outline</h2>
+            <h2 class="border-b border-slate-100 px-4 py-3 text-sm font-semibold dark:border-slate-700">{{ t('seo.search.headings') }}</h2>
             <ul class="space-y-1 px-4 py-3 text-sm">
                 <li v-for="(h, i) in report.meta.headings" :key="i" :style="{ paddingLeft: `${(h.level - 1) * 1.25}rem` }" class="flex gap-2">
                     <span class="w-7 shrink-0 rounded bg-slate-100 text-center text-xs font-semibold leading-5 text-slate-500 dark:bg-slate-700 dark:text-slate-300">H{{ h.level }}</span>
@@ -119,6 +122,6 @@ const checks = computed(() => props.report.sections.find((s) => s.key === 'conte
             </ul>
         </section>
 
-        <CheckList title="Title, snippet & content" :checks="checks" />
+        <CheckList :title="t('seo.search.checks')" :checks="checks" />
     </div>
 </template>

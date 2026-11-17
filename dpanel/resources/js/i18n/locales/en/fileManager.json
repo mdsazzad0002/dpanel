@@ -1,0 +1,410 @@
+{
+    "modal": {
+        "creating": "Creating...",
+        "createFile": "Create File",
+        "createFolder": "Create Folder",
+        "selectedItems": "Selected items: {count}",
+        "destinationPlaceholder": "destination folder path (empty = root)",
+        "newNamePlaceholder": "new name"
+    },
+    "rename": {
+        "renaming": "Renaming...",
+        "submit": "Rename"
+    },
+    "move": {
+        "dragHint": "You can also drag selected rows and drop onto sidebar folders.",
+        "moving": "Moving...",
+        "submit": "Move"
+    },
+    "unzip": {
+        "archive": "Archive: {path}",
+        "extractTo": "Extract to folder",
+        "note": "The folder is created if it does not exist. Existing files with the same name are replaced.",
+        "formats": "Supported formats: .zip, .tar, .tar.gz, .tgz, and single-file .gz.",
+        "extracting": "Extracting...",
+        "submit": "Extract Archive"
+    },
+    "copy": {
+        "name": "Name the copy",
+        "note": "The original item is kept in place; a copy is created at the destination.",
+        "copying": "Copying...",
+        "submit": "Copy"
+    },
+    "zip": {
+        "format": "Archive format",
+        "name": "Archive name",
+        "creating": "Creating Archive...",
+        "submit": "Create Archive"
+    },
+    "selection": {
+        "selected": "{count} selected",
+        "clear": "Clear",
+        "move": "Move",
+        "copy": "Copy",
+        "delete": "Delete"
+    },
+    "toast": {
+        "dismiss": "Dismiss"
+    },
+    "upload": {
+        "drop": "Drag and drop files here",
+        "choose": "or choose from your computer",
+        "selected": "{count} file(s) selected",
+        "uploading": "Uploading...",
+        "submit": "Upload File(s)",
+        "complete": "Complete",
+        "uploadingFile": "Uploading {file}..."
+    },
+    "context": {
+        "openFolder": "Open Folder",
+        "openSqlite": "Open in SQLite Viewer",
+        "preview": "Preview",
+        "editFile": "Edit File",
+        "openFile": "Open File",
+        "download": "Download",
+        "rename": "Rename",
+        "permissions": "Permissions",
+        "move": "Move",
+        "copy": "Copy",
+        "zip": "Create Zip",
+        "unzip": "Extract Archive",
+        "delete": "Delete"
+    },
+    "trash": {
+        "intro": "Deleted items are zipped and kept here before being permanently removed.",
+        "empty": "Trash is empty.",
+        "selected": "{count} selected",
+        "selectAll": "Select all",
+        "deleting": "Deleting…",
+        "deleteForeverCount": "Delete Forever ({count})",
+        "from": "From: /{path}",
+        "root": "(root)",
+        "restore": "Restore",
+        "deleteForever": "Delete Forever"
+    },
+    "perm": {
+        "presets": {
+            "owner644": "Owner RW, others R",
+            "owner755": "Owner All, others RX",
+            "group775": "Group writable",
+            "world777": "World writable",
+            "owner600": "Owner only",
+            "group640": "Owner RW, group R",
+            "owner700": "Owner only (exec)",
+            "zero0755": "Leading zero"
+        },
+        "presetsTitle": "Presets",
+        "highRisk": "High risk",
+        "safe": "Safe",
+        "custom": "Custom Permission",
+        "customHint": "Use 3 or 4 digits like `644`, `755`, or `0777`.",
+        "preview": "Live Preview",
+        "symbolic": "Symbolic",
+        "warning": "Warning: this mode is world-writable or otherwise high-risk. Use carefully.",
+        "recursive": "Apply recursively to subdirectories and files",
+        "saving": "Saving...",
+        "saveRecursive": "Save Recursively",
+        "save": "Save Permission"
+    },
+    "sidebar": {
+        "close": "Close sidebar",
+        "folders": "Folders",
+        "goToPath": "Go to path...",
+        "dropUp": "Drop items here to move them up one level",
+        "up": "Up Directory",
+        "root": "Go to Root"
+    },
+    "editor": {
+        "readonly": "Readonly",
+        "saving": "Saving...",
+        "explorer": "Explorer",
+        "file": "File",
+        "folder": "Folder",
+        "lines": "Lines",
+        "tips": "Tips",
+        "tipSave": "Ctrl/Cmd+S to save",
+        "tipFullscreen": "Use full-screen code editing",
+        "tipSplit": "Keep files split by responsibility",
+        "unsaved": "Unsaved changes",
+        "saved": "Saved",
+        "lineCount": "{count} lines",
+        "openFull": "Open full file",
+        "modified": "Modified",
+        "noChanges": "No changes"
+    },
+    "topBar": {
+        "exit": "Exit file manager",
+        "toggleSidebar": "Toggle sidebar",
+        "root": "Go to root",
+        "browse": "Browse {url}",
+        "search": "Search files..."
+    },
+    "table": {
+        "open": "Open",
+        "view": "View",
+        "edit": "Edit",
+        "download": "Download",
+        "name": "Name",
+        "action": "Action",
+        "type": "Type",
+        "size": "Size",
+        "perm": "Perm",
+        "modified": "Modified",
+        "calculate": "Calculate",
+        "calculating": "Calculating…",
+        "noMatch": "No files match your search",
+        "empty": "No files in this directory"
+    },
+    "switcher": {
+        "title": "Switch or browse websites",
+        "search": "Search websites...",
+        "openHere": "Open {domain} files in this tab",
+        "current": "current",
+        "openNew": "Open {domain} files in a new tab",
+        "noMatch": "No websites match “{query}”."
+    },
+    "preview": {
+        "openNewTab": "Open in new tab",
+        "download": "Download",
+        "close": "Close (Esc)",
+        "failed": "This file could not be previewed.",
+        "downloadInstead": "Download instead",
+        "previous": "Previous (←)",
+        "next": "Next (→)"
+    },
+    "index": {
+        "headTitle": "File Manager - {site}",
+        "dropTo": "Drop files to upload to",
+        "items": "{count} items",
+        "openTerminal": "Open terminal",
+        "terminal": "Terminal",
+        "closeTerminal": "Close terminal",
+        "titles": {
+            "createFolder": "Create Folder",
+            "createFile": "Create File",
+            "rename": "Rename Item",
+            "permissions": "Change Permissions",
+            "move": "Move Item",
+            "copy": "Copy Item",
+            "zip": "Create Archive",
+            "unzip": "Extract Archive",
+            "trash": "Trash",
+            "upload": "Upload File"
+        }
+    },
+    "sqlite": {
+        "closeEsc": "Close (Esc)",
+        "ai": {
+            "placeholder": "Ask AI: e.g. last 10 users who signed up this month / list the Gmail users",
+            "writing": "Writing…",
+            "generate": "Generate SQL",
+            "hint": "The SQL goes into the editor below. Check it, then press Run — nothing runs on its own."
+        },
+        "query": {
+            "run": "Run",
+            "editingHint": "Ctrl+Enter · editing is on: INSERT, UPDATE, DELETE, CREATE … run for real",
+            "readOnlyHint": "Ctrl+Enter · read-only: SELECT, WITH, EXPLAIN and read-only PRAGMA",
+            "changed": "{count} row(s) changed",
+            "rows": "{count} row(s) in {ms} ms",
+            "truncated": "showing the first {count}"
+        },
+        "structure": {
+            "dropConfirm": "Delete column \"{column}\" from \"{table}\"? Its data is lost. This cannot be undone.",
+            "dropped": "Column {column} deleted.",
+            "addColumn": "Add column",
+            "column": "Column",
+            "type": "Type",
+            "default": "Default",
+            "key": "Key",
+            "actions": "Actions",
+            "generated": "generated",
+            "edit": "Edit",
+            "deleteColumn": "Delete column",
+            "indexes": "Indexes",
+            "createStatement": "CREATE statement"
+        },
+        "column": {
+            "needDefault": "SQLite needs a default value to add a NOT NULL column to existing rows.",
+            "added": "Column {name} added.",
+            "renamed": "Column renamed to {name}.",
+            "editTitle": "Edit column {name}",
+            "name": "Name",
+            "value": "Value…",
+            "typeLabel": "Type:",
+            "nullable": "nullable",
+            "defaultLabel": "default",
+            "renameOnly": "SQLite can only rename a column in place. To change its type or constraints, rebuild the table with SQL.",
+            "sqlPreview": "SQL that will run",
+            "rename": "Rename"
+        },
+        "grid": {
+            "noRows": "No rows.",
+            "editRow": "Edit row",
+            "deleteRow": "Delete row",
+            "dblClick": "Double-click to edit",
+            "clickCopy": "Click to copy"
+        },
+        "row": {
+            "addTitle": "Add row to {table}",
+            "editTitle": "Edit row {rowid}",
+            "emptyDefault": "Empty fields use the column default",
+            "undo": "Undo changes to this field",
+            "locked": "not loaded in full; change it with SQL.",
+            "auto": "auto",
+            "defaultPlaceholder": "default: {value}",
+            "convert": "Convert / change format",
+            "working": "Working…",
+            "format": "Format…",
+            "changed": "{count} field(s) changed",
+            "insert": "Insert row",
+            "save": "Save changes"
+        },
+        "data": {
+            "savedCell": "Saved {column}.",
+            "deleteRowsConfirm": "Delete {count} row(s) from \"{table}\"? This cannot be undone.",
+            "deletedRows": "Deleted {count} row(s).",
+            "deleteRowConfirm": "Delete row {rowid} from \"{table}\"? This cannot be undone.",
+            "deletedRow": "Deleted row {rowid}.",
+            "rowAdded": "Row added (rowid {rowid}).",
+            "savedFields": "Saved {count} field(s).",
+            "search": "Search all columns",
+            "addRow": "Add row",
+            "deleteCount": "Delete {count}",
+            "matchCount": "{count} row(s) match",
+            "rowCount": "{count} row(s)",
+            "perPage": "{n} / page",
+            "viewReadonly": "Views can't be edited in the grid — use the SQL tab.",
+            "noRowid": "This table has no rowid, so it can't be edited in the grid — use the SQL tab."
+        },
+        "viewer": {
+            "tabData": "Data",
+            "tabStructure": "Structure",
+            "requestFailed": "The request failed.",
+            "aiFailed": "The AI request failed.",
+            "convertFailed": "Conversion failed.",
+            "editing": "Editing",
+            "readOnly": "Read-only",
+            "writeOn": "Writing is on: changes go straight to the database file",
+            "writeOff": "Read-only: turn on to change data",
+            "write": "Write",
+            "opening": "Opening database…",
+            "filter": "Filter tables",
+            "noTables": "No tables.",
+            "showInternal": "Show sqlite_ tables"
+        }
+    },
+    "icons": {
+        "folder": "folder",
+        "file": "file"
+    },
+    "cells": {
+        "blob": "BLOB {bytes} bytes",
+        "emptyBlob": "empty blob",
+        "textCut": "Text cut at {shown} of {total} characters"
+    },
+    "formats": {
+        "errors": {
+            "notNumber": "Not a number.",
+            "notBase64": "Not valid Base64.",
+            "notJson": "Not valid JSON.",
+            "notUnix": "Not a Unix timestamp.",
+            "notDate": "Not a date.",
+            "valueNotNumber": "\"{value}\" is not a number."
+        },
+        "groups": {
+            "type": "Type",
+            "hash": "Hash",
+            "text": "Text",
+            "encode": "Encode",
+            "dateId": "Date & ID"
+        },
+        "items": {
+            "text": "Text",
+            "int": "Integer",
+            "real": "Real (decimal)",
+            "bcrypt": "bcrypt (password)",
+            "argon2id": "Argon2id (password)",
+            "upper": "UPPERCASE",
+            "lower": "lowercase",
+            "trim": "Trim spaces",
+            "slug": "Slug",
+            "empty": "Empty string",
+            "b64e": "Base64 encode",
+            "b64d": "Base64 decode",
+            "urle": "URL encode",
+            "urld": "URL decode",
+            "jsonp": "JSON pretty",
+            "jsonm": "JSON minify",
+            "now": "Now (YYYY-MM-DD HH:MM:SS)",
+            "nowunix": "Now (Unix timestamp)",
+            "unix2date": "Unix timestamp → date",
+            "date2unix": "Date → Unix timestamp",
+            "uuid": "New UUID v4"
+        }
+    },
+    "manager": {
+        "website": "Website",
+        "home": "Home",
+        "pathInside": "Path must stay inside {base}.",
+        "cannotEdit": "Cannot edit \"{filename}\". This file type is not supported for editing.",
+        "largeFileConfirm": "\"{name}\" is {size}. Loading the whole file may slow down the browser. Open the full file?",
+        "sizeFailed": "Failed to calculate folder size.",
+        "trashConfirm": "Move {count} item(s) to trash?",
+        "renamed": "Item renamed.",
+        "renameFailed": "Failed to rename item.",
+        "trashLoadFailed": "Failed to load trash.",
+        "restored": "Item(s) restored.",
+        "restoreFailed": "Failed to restore.",
+        "purgeOneConfirm": "Permanently delete this trash item? This cannot be undone.",
+        "purged": "Permanently deleted.",
+        "deleteFailed": "Failed to delete.",
+        "purgeManyConfirm": "Permanently delete {count} item(s)? This cannot be undone.",
+        "deleteSelectedFailed": "Failed to delete selected item(s).",
+        "extracted": "Archive extracted successfully.",
+        "extractFailed": "Failed to extract archive.",
+        "uploadedMany": "{count} files uploaded successfully.",
+        "uploadedOne": "File uploaded successfully.",
+        "uploadFailed": "Upload failed.",
+        "cacheCleared": "Project cache cleared successfully.",
+        "cacheFailed": "Failed to clear project cache.",
+        "saved": "File saved.",
+        "saveFailed": "Failed to save file.",
+        "owner": "Owner",
+        "group": "Group",
+        "world": "World"
+    },
+    "quick": {
+        "groups": {
+            "create": "Create",
+            "fileOps": "File Ops",
+            "navigation": "Navigation",
+            "danger": "Danger"
+        },
+        "upload": "Upload",
+        "uploadHint": "Add files to this folder",
+        "newFile": "New File",
+        "newFileHint": "Create a blank file",
+        "newFolder": "New Folder",
+        "newFolderHint": "Make a directory",
+        "permissions": "Permissions",
+        "permissionsHint": "Change access mode",
+        "download": "Download",
+        "downloadHint": "Save locally",
+        "zip": "Zip",
+        "zipHint": "Compress selection",
+        "extract": "Extract",
+        "extractHint": "Unpack archive",
+        "clearing": "Clearing...",
+        "clearCache": "Clear Cache",
+        "clearCacheHint": "Run Laravel optimize:clear",
+        "upLevel": "Up Level",
+        "upLevelHint": "Go to parent folder",
+        "hideHidden": "Hide Hidden",
+        "showHidden": "Show Hidden",
+        "hiddenHint": "Toggle dotfiles",
+        "trash": "Trash",
+        "trashHint": "Restore or permanently delete",
+        "delete": "Delete",
+        "deleteHint": "Remove selected item(s)"
+    }
+}

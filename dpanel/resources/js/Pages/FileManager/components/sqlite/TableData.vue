@@ -2,6 +2,9 @@
 import { computed, ref, watch } from 'vue';
 import ResultGrid from './ResultGrid.vue';
 import RowEditor from './RowEditor.vue';
+import { useI18n } from 'vue-i18n';
+
+const { t } = useI18n();
 
 const props = defineProps({
     table: { type: Object, required: true },
@@ -63,7 +66,7 @@ const saveCell = async ({ rowIndex, column, value }) => {
             column,
             value_json: JSON.stringify(value),
         });
-        flash(`Saved ${column}.`);
+        flash(t('fileManager.sqlite.data.savedCell', { column }));
         await load();
     } catch (e) {
         error.value = e.message;
@@ -72,14 +75,14 @@ const saveCell = async ({ rowIndex, column, value }) => {
 
 const deleteSelected = async () => {
     const count = selected.value.length;
-    if (!count || !confirm(`Delete ${count} row(s) from "${props.table.name}"? This cannot be undone.`)) return;
+    if (!count || !confirm(t('fileManager.sqlite.data.deleteRowsConfirm', { count, table: props.table.name }))) return;
     error.value = '';
     try {
         const res = await props.run('delete_rows', {
             table: props.table.name,
             rowids: selected.value.map((r) => result.value.rowids[r]),
         });
-        flash(`Deleted ${res.changes} row(s).`);
+        flash(t('fileManager.sqlite.data.deletedRows', { count: res.changes }));
         await load();
         emit('changed');
     } catch (e) {
@@ -89,12 +92,12 @@ const deleteSelected = async () => {
 
 const deleteRow = async (r) => {
     const rowid = result.value.rowids[r];
-    if (!confirm(`Delete row ${rowid} from "${props.table.name}"? This cannot be undone.`)) return;
+    if (!confirm(t('fileManager.sqlite.data.deleteRowConfirm', { rowid, table: props.table.name }))) return;
     error.value = '';
     try {
         await props.run('delete_rows', { table: props.table.name, rowids: [rowid] });
         editorRow.value = null;
-        flash(`Deleted row ${rowid}.`);
+        flash(t('fileManager.sqlite.data.deletedRow', { rowid }));
         await load();
         emit('changed');
     } catch (e) {
@@ -104,7 +107,7 @@ const deleteRow = async (r) => {
 
 const onRowSaved = async (res) => {
     editorRow.value = null;
-    flash(res.insert ? `Row added (rowid ${res.rowid}).` : `Saved ${res.count} field(s).`);
+    flash(res.insert ? t('fileManager.sqlite.data.rowAdded', { rowid: res.rowid }) : t('fileManager.sqlite.data.savedFields', { count: res.count }));
     await load();
     if (res.insert) emit('changed');
 };
@@ -137,27 +140,27 @@ defineExpose({ load });
         <div class="flex flex-wrap items-center gap-2">
             <div class="relative">
                 <i class="bi bi-search absolute left-2 top-1/2 -translate-y-1/2 text-xs text-slate-400"></i>
-                <input v-model="search" type="text" placeholder="Search all columns"
+                <input v-model="search" type="text" :placeholder="t('fileManager.sqlite.data.search')"
                     class="w-56 rounded-md border border-slate-300 py-1.5 pl-7 pr-2 text-xs dark:border-slate-600 dark:bg-slate-900" />
             </div>
             <template v-if="canEdit">
                 <button type="button" @click="editorRow = -1"
                     class="rounded-md border border-slate-300 px-2 py-1.5 text-xs hover:bg-slate-100 dark:border-slate-600 dark:hover:bg-slate-800">
-                    <i class="bi bi-plus-lg"></i> Add row
+                    <i class="bi bi-plus-lg"></i> {{ t('fileManager.sqlite.data.addRow') }}
                 </button>
                 <button v-if="selected.length" type="button" @click="deleteSelected"
                     class="rounded-md border border-red-300 px-2 py-1.5 text-xs text-red-600 hover:bg-red-50 dark:border-red-700 dark:hover:bg-red-950">
-                    <i class="bi bi-trash"></i> Delete {{ selected.length }}
+                    <i class="bi bi-trash"></i> {{ t('fileManager.sqlite.data.deleteCount', { count: selected.length }) }}
                 </button>
             </template>
             <span class="text-xs text-slate-500">
-                <template v-if="result">{{ result.total.toLocaleString() }} row(s){{ search.trim() ? ' match' : '' }}</template>
+                <template v-if="result">{{ search.trim() ? t('fileManager.sqlite.data.matchCount', { count: result.total.toLocaleString() }) : t('fileManager.sqlite.data.rowCount', { count: result.total.toLocaleString() }) }}</template>
                 <i v-if="loading" class="bi bi-arrow-repeat ml-1 inline-block animate-spin"></i>
             </span>
             <span v-if="notice" class="text-xs text-emerald-600">{{ notice }}</span>
             <div class="ml-auto flex items-center gap-1 text-xs">
                 <select v-model.number="perPage" class="rounded-md border border-slate-300 px-1.5 py-1 dark:border-slate-600 dark:bg-slate-900">
-                    <option v-for="n in [25, 50, 100, 250, 500]" :key="n" :value="n">{{ n }} / page</option>
+                    <option v-for="n in [25, 50, 100, 250, 500]" :key="n" :value="n">{{ t('fileManager.sqlite.data.perPage', { n }) }}</option>
                 </select>
                 <button @click="go(page - 1)" :disabled="page <= 1" class="rounded border border-slate-300 px-2 py-1 disabled:opacity-40 dark:border-slate-600"><i class="bi bi-chevron-left"></i></button>
                 <span class="px-1 text-slate-500">{{ page }} / {{ pages }}</span>
@@ -166,7 +169,7 @@ defineExpose({ load });
         </div>
 
         <p v-if="editing && result && !result.editable" class="text-xs text-amber-600">
-            {{ table.type === 'view' ? 'Views' : 'This table has no rowid, so it' }} can't be edited in the grid — use the SQL tab.
+            {{ table.type === 'view' ? t('fileManager.sqlite.data.viewReadonly') : t('fileManager.sqlite.data.noRowid') }}
         </p>
 
 

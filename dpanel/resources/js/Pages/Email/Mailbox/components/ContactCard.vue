@@ -3,6 +3,9 @@ import { computed, onBeforeUnmount, ref } from 'vue';
 import { useMailContacts } from '../composables/useMailContacts';
 import MailAvatar from './MailAvatar.vue';
 import { avatarColorOf, displayName, emailOf, formatAddress, initialsOf } from './mailAddresses';
+import { useI18n } from 'vue-i18n';
+
+const { t } = useI18n();
 
 // Gmail-style hover card around a sender or recipient: who they are, save
 // them as a contact, or start a message to them.
@@ -52,7 +55,7 @@ const toggleSaved = async () => {
         else await contacts.save(email.value, name.value);
     }
     catch (error) {
-        failed.value = error?.response?.data?.message || error?.message || 'Could not update contacts.';
+        failed.value = error?.response?.data?.message || error?.message || t('email.mailbox.contact.updateFailed');
     }
     finally {
         saving.value = false;
@@ -84,7 +87,7 @@ onBeforeUnmount(() => clearTimeout(timer));
                 v-if="open && email"
                 :class="[ui.card, 'absolute left-0 top-full z-40 mt-2 w-[22rem] max-w-[calc(100vw-2rem)] cursor-default rounded-2xl border p-5 text-left shadow-2xl']"
                 role="dialog"
-                :aria-label="`Contact ${name}`"
+                :aria-label="t('email.mailbox.contact.label', { name })"
                 @mouseenter="show"
                 @mouseleave="hide"
                 @click.stop
@@ -101,29 +104,29 @@ onBeforeUnmount(() => clearTimeout(timer));
                     <div class="min-w-0 flex-1 pt-1">
                         <p :class="[ui.name, 'truncate text-lg font-medium']">{{ name }}</p>
                         <p :class="[ui.muted, 'truncate text-sm']">{{ email }}</p>
-                        <p v-if="saved" class="mt-1 text-xs font-medium text-blue-600 dark:text-blue-400"><i class="bi bi-person-check-fill mr-1"></i>In your contacts</p>
+                        <p v-if="saved" class="mt-1 text-xs font-medium text-blue-600 dark:text-blue-400"><i class="bi bi-person-check-fill mr-1"></i>{{ t('email.mailbox.contact.inContacts') }}</p>
                     </div>
 
                 </div>
                 <p v-if="failed" class="mt-3 text-xs text-rose-600">{{ failed }}</p>
                 <div class="mt-4 flex items-center gap-2">
                     <button type="button" :class="[ui.primary, 'inline-flex h-10 flex-1 items-center justify-center gap-2 rounded-full text-sm font-medium transition']" @click="compose">
-                        <i class="bi bi-envelope"></i> Send mail
+                        <i class="bi bi-envelope"></i> {{ t('email.mailbox.contact.sendMail') }}
                     </button>
                     <button
                         type="button"
                         :class="[saved ? 'border-emerald-300 text-emerald-700 hover:border-rose-300 hover:text-rose-600 dark:border-emerald-800 dark:text-emerald-300' : ui.ghost, 'group/save inline-flex h-10 flex-1 items-center justify-center gap-2 rounded-full border text-sm font-medium transition disabled:opacity-60']"
-                        :title="saved ? 'Remove from contacts' : 'Save to contacts'"
+                        :title="saved ? t('email.mailbox.contact.removeFrom') : t('email.mailbox.contact.saveTo')"
                         :disabled="saving"
                         @click="toggleSaved"
                     >
                         <i :class="['bi', saving ? 'bi-arrow-repeat animate-spin' : saved ? 'bi-person-check-fill group-hover/save:hidden' : 'bi-person-plus']"></i>
                         <i v-if="saved && !saving" class="bi bi-person-dash hidden group-hover/save:inline"></i>
-                        <span v-if="saved" class="group-hover/save:hidden">Saved</span>
-                        <span v-if="saved" class="hidden group-hover/save:inline">Remove</span>
-                        <span v-else>Save contact</span>
+                        <span v-if="saved" class="group-hover/save:hidden">{{ t('email.mailbox.contact.saved') }}</span>
+                        <span v-if="saved" class="hidden group-hover/save:inline">{{ t('email.mailbox.contact.remove') }}</span>
+                        <span v-else>{{ t('email.mailbox.contact.save') }}</span>
                     </button>
-                    <button type="button" :class="[ui.ghost, 'flex h-10 w-10 items-center justify-center rounded-full border transition']" :title="copied ? 'Copied' : 'Copy email address'" @click="copy">
+                    <button type="button" :class="[ui.ghost, 'flex h-10 w-10 items-center justify-center rounded-full border transition']" :title="copied ? t('email.mailbox.contact.copied') : t('email.mailbox.contact.copy')" @click="copy">
                         <i :class="['bi', copied ? 'bi-check2' : 'bi-copy']"></i>
                     </button>
                 </div>

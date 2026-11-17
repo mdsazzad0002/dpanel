@@ -1,6 +1,9 @@
 <script setup>
 import { computed } from 'vue';
 import { folderIcon, folderLabel, formatBytes } from './mailboxFolders';
+import { useI18n } from 'vue-i18n';
+
+const { t } = useI18n();
 
 const props = defineProps({
     folders: {
@@ -99,15 +102,15 @@ const barColor = computed(() => {
                 <img src="/sm_logo.png" alt="" class="h-7 w-7 shrink-0 object-contain" />
                 <div class="min-w-0 leading-tight">
                     <p :class="[ui.strong, 'text-sm font-semibold']">dPanel Mail</p>
-                    <p :class="[ui.muted, 'truncate text-[11px]']">{{ mailbox.domain || 'Webmail' }}</p>
+                    <p :class="[ui.muted, 'truncate text-[11px]']">{{ mailbox.domain || t('email.mailbox.sidebar.webmail') }}</p>
                 </div>
             </div>
 
             <button
                 type="button"
                 :class="[ui.iconButton, 'hidden h-8 w-8 items-center justify-center rounded-md transition md:flex']"
-                :title="compact ? 'Expand sidebar' : 'Collapse sidebar'"
-                :aria-label="compact ? 'Expand sidebar' : 'Collapse sidebar'"
+                :title="compact ? t('email.mailbox.sidebar.expand') : t('email.mailbox.sidebar.collapse')"
+                :aria-label="compact ? t('email.mailbox.sidebar.expand') : t('email.mailbox.sidebar.collapse')"
                 @click="emit('toggle-collapse')"
             >
                 <i :class="['bi text-base', compact ? 'bi-layout-sidebar' : 'bi-layout-sidebar-inset']"></i>
@@ -116,7 +119,7 @@ const barColor = computed(() => {
             <button
                 type="button"
                 :class="[ui.iconButton, 'flex h-8 w-8 items-center justify-center rounded-md transition md:hidden']"
-                aria-label="Close menu"
+                :aria-label="t('email.mailbox.sidebar.closeMenu')"
                 @click="emit('close-mobile')"
             >
                 <i class="bi bi-x-lg text-sm"></i>
@@ -132,18 +135,18 @@ const barColor = computed(() => {
                     isDark ? 'focus-visible:ring-offset-slate-950' : 'focus-visible:ring-offset-white',
                     compact ? 'h-10 w-10' : 'h-10 w-full px-4',
                 ]"
-                :title="compact ? 'Compose' : ''"
-                aria-label="Compose"
+                :title="compact ? t('email.mailbox.compose') : ''"
+                :aria-label="t('email.mailbox.compose')"
                 @click="emit('compose')"
             >
                 <i class="bi bi-pencil-square text-[15px]"></i>
-                <span v-if="!compact">Compose</span>
+                <span v-if="!compact">{{ t('email.mailbox.compose') }}</span>
             </button>
         </div>
 
         <!-- Folders -->
-        <nav class="flex-1 overflow-y-auto px-2 pb-3" aria-label="Folders">
-            <p v-if="!compact" :class="[ui.muted, 'px-3 pb-1.5 pt-1 text-[11px] font-semibold uppercase tracking-wider']">Folders</p>
+        <nav class="flex-1 overflow-y-auto px-2 pb-3" :aria-label="t('email.mailbox.sidebar.folders')">
+            <p v-if="!compact" :class="[ui.muted, 'px-3 pb-1.5 pt-1 text-[11px] font-semibold uppercase tracking-wider']">{{ t('email.mailbox.sidebar.folders') }}</p>
 
             <button
                 v-for="folder in folders"
@@ -181,11 +184,11 @@ const barColor = computed(() => {
                 type="button"
                 :class="['group mb-0.5 flex w-full items-center gap-3 rounded-md text-left text-sm transition', compact ? 'h-10 justify-center' : 'h-9 px-3', contactsActive ? [ui.itemActive, 'font-semibold'] : [ui.item, 'font-medium']]"
                 :aria-current="contactsActive ? 'page' : undefined"
-                :title="compact ? 'Contacts' : ''"
+                :title="compact ? t('email.mailbox.contacts.title') : ''"
                 @click="emit('open-contacts')"
             >
                 <i :class="['bi bi-person-lines-fill shrink-0 text-[15px]', contactsActive ? ui.iconActive : ui.icon]"></i>
-                <span v-if="!compact" class="flex-1 truncate">Contacts</span>
+                <span v-if="!compact" class="flex-1 truncate">{{ t('email.mailbox.contacts.title') }}</span>
             </button>
         </nav>
 
@@ -194,12 +197,12 @@ const barColor = computed(() => {
             <div
                 v-if="!compact"
                 :class="[ui.card, 'rounded-lg border px-3 py-2.5']"
-                :title="'Based on messages in synced folders'"
+                :title="t('email.mailbox.sidebar.storageTitle')"
             >
                 <div class="flex items-center justify-between text-xs">
                     <span :class="[ui.text, 'flex items-center gap-1.5 font-medium']">
                         <i class="bi bi-hdd"></i>
-                        Storage
+                        {{ t('email.mailbox.sidebar.storage') }}
                     </span>
                     <span :class="[ui.muted, 'tabular-nums']">{{ Math.round(usedPercent) }}%</span>
                 </div>
@@ -207,11 +210,11 @@ const barColor = computed(() => {
                     <div :class="[barColor, 'h-full rounded-full transition-[width] duration-500']" :style="{ width: `${Math.max(usedPercent, usedBytes > 0 ? 2 : 0)}%` }"></div>
                 </div>
                 <p :class="[ui.muted, 'mt-1.5 text-[11px] tabular-nums']">
-                    {{ formatBytes(usedBytes) }} of {{ mailbox.quota_mb ? `${mailbox.quota_mb} MB` : 'unlimited' }}
+                    {{ t('email.mailbox.sidebar.usedOf', { used: formatBytes(usedBytes), total: mailbox.quota_mb ? `${mailbox.quota_mb} MB` : t('email.mailbox.sidebar.unlimited') }) }}
                 </p>
             </div>
 
-            <div v-else class="flex justify-center" :title="`Storage: ${formatBytes(usedBytes)} of ${mailbox.quota_mb} MB`">
+            <div v-else class="flex justify-center" :title="t('email.mailbox.sidebar.storageTip', { used: formatBytes(usedBytes), total: `${mailbox.quota_mb} MB` })">
                 <div class="relative h-9 w-9">
                     <svg viewBox="0 0 36 36" class="h-9 w-9 -rotate-90">
                         <circle cx="18" cy="18" r="15" fill="none" stroke-width="3" :class="isDark ? 'stroke-slate-800' : 'stroke-slate-200'" />

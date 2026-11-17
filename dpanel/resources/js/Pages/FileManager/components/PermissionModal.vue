@@ -1,4 +1,7 @@
 <script setup>
+import { useI18n } from 'vue-i18n';
+
+const { t } = useI18n();
 defineProps({
     fm: {
         type: Object,
@@ -11,22 +14,22 @@ defineProps({
     <div v-if="fm.modalType === 'permissions'" class="space-y-3">
         <div class="rounded-lg border border-slate-200 bg-slate-50 p-3 dark:border-slate-700 dark:bg-slate-800/60">
             <div class="mb-2 flex items-center justify-between gap-2">
-                <p class="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Presets</p>
+                <p class="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">{{ t('fileManager.perm.presetsTitle') }}</p>
                 <span v-if="fm.permissionPreview" class="rounded-full px-2 py-0.5 text-[11px]" :class="fm.permissionPreview.dangerous ? 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300' : 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300'">
-                    {{ fm.permissionPreview.dangerous ? 'High risk' : 'Safe' }}
+                    {{ fm.permissionPreview.dangerous ? t('fileManager.perm.highRisk') : t('fileManager.perm.safe') }}
                 </span>
             </div>
             <div class="grid grid-cols-2 gap-2 sm:grid-cols-4">
                 <button
                     v-for="preset in [
-                        { value: '644', note: 'Owner RW, others R' },
-                        { value: '755', note: 'Owner All, others RX' },
-                        { value: '775', note: 'Group writable' },
-                        { value: '777', note: 'World writable' },
-                        { value: '600', note: 'Owner only' },
-                        { value: '640', note: 'Owner RW, group R' },
-                        { value: '700', note: 'Owner only (exec)' },
-                        { value: '0755', note: 'Leading zero' },
+                        { value: '644', note: t('fileManager.perm.presets.owner644') },
+                        { value: '755', note: t('fileManager.perm.presets.owner755') },
+                        { value: '775', note: t('fileManager.perm.presets.group775') },
+                        { value: '777', note: t('fileManager.perm.presets.world777') },
+                        { value: '600', note: t('fileManager.perm.presets.owner600') },
+                        { value: '640', note: t('fileManager.perm.presets.group640') },
+                        { value: '700', note: t('fileManager.perm.presets.owner700') },
+                        { value: '0755', note: t('fileManager.perm.presets.zero0755') },
                     ]"
                     :key="preset.value"
                     type="button"
@@ -45,7 +48,7 @@ defineProps({
         </div>
 
         <div class="space-y-2">
-            <label class="block text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Custom Permission</label>
+            <label class="block text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">{{ t('fileManager.perm.custom') }}</label>
             <input
                 v-model="fm.permissionForm.permissions"
                 type="text"
@@ -55,17 +58,17 @@ defineProps({
                 class="w-full rounded-md border border-slate-300 px-3 py-2 font-mono text-sm tracking-wider dark:border-slate-700 dark:bg-slate-800"
                 @input="fm.sanitizePermissionInput"
             />
-            <p class="text-[11px] text-slate-500 dark:text-slate-400">Use 3 or 4 digits like `644`, `755`, or `0777`.</p>
+            <p class="text-[11px] text-slate-500 dark:text-slate-400">{{ t('fileManager.perm.customHint') }}</p>
         </div>
 
         <div class="rounded-lg border p-3 text-sm" :class="fm.permissionPreviewClass">
             <div class="flex items-center justify-between gap-2">
                 <div>
-                    <p class="text-xs uppercase tracking-wide opacity-80">Live Preview</p>
+                    <p class="text-xs uppercase tracking-wide opacity-80">{{ t('fileManager.perm.preview') }}</p>
                     <p class="font-mono text-lg font-semibold">{{ fm.permissionPreview?.display || '---' }}</p>
                 </div>
                 <div class="text-right">
-                    <p class="text-xs uppercase tracking-wide opacity-80">Symbolic</p>
+                    <p class="text-xs uppercase tracking-wide opacity-80">{{ t('fileManager.perm.symbolic') }}</p>
                     <p class="font-mono text-base font-semibold">{{ fm.permissionPreview?.symbolic || '---------'.slice(0, 9) }}</p>
                 </div>
             </div>
@@ -82,16 +85,16 @@ defineProps({
             </div>
 
             <p v-if="fm.permissionPreview?.dangerous" class="mt-3 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700 dark:border-red-800 dark:bg-red-950/20 dark:text-red-300">
-                Warning: this mode is world-writable or otherwise high-risk. Use carefully.
+                {{ t('fileManager.perm.warning') }}
             </p>
         </div>
 
         <label class="flex items-center gap-2 text-xs text-slate-600 dark:text-slate-300">
             <input v-model="fm.permissionForm.recursive" type="checkbox" class="rounded border-slate-300 text-blue-600 focus:ring-blue-500 dark:border-slate-700 dark:bg-slate-800" />
-            Apply recursively to subdirectories and files
+            {{ t('fileManager.perm.recursive') }}
         </label>
         <button type="button" :disabled="fm.permissionForm.processing || !fm.permissionCanSave" class="rounded-md bg-blue-600 px-4 py-2 text-sm text-white hover:bg-blue-700 disabled:opacity-60" @click="fm.submitPermissions">
-            {{ fm.permissionForm.processing ? 'Saving...' : (fm.permissionForm.recursive ? 'Save Recursively' : 'Save Permission') }}
+            {{ fm.permissionForm.processing ? t('fileManager.perm.saving') : (fm.permissionForm.recursive ? t('fileManager.perm.saveRecursive') : t('fileManager.perm.save')) }}
         </button>
     </div>
 </template>

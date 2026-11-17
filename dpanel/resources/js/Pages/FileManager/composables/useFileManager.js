@@ -6,6 +6,9 @@ import { formatBytes, resolveDisplayPath } from '../helpers/fileUtils';
 import { iconClassForItem, nameClassForItem, typeLabelForItem } from '../helpers/fileIcons';
 import { getPermissionPreview } from '../helpers/permissions';
 import { previewKind } from '../helpers/previewTypes';
+import { i18n } from '@/i18n';
+
+const t = (...args) => i18n.global.t(...args);
 
 export function useFileManager(props) {
     const page = usePage();
@@ -25,10 +28,10 @@ export function useFileManager(props) {
         return params;
     }
 
-    const websiteLabel = computed(() => String(props.website?.domain || props.website?.name || props.website?.id || 'Website'));
+    const websiteLabel = computed(() => String(props.website?.domain || props.website?.name || props.website?.id || t('fileManager.manager.website')));
     const ownerRootLabel = computed(() => {
         const parts = String(props.basePath || '').replace(/\\/g, '/').split('/').filter(Boolean);
-        return parts.at(-1) || 'Home';
+        return parts.at(-1) || t('fileManager.manager.home');
     });
     const modalType = ref('');
     const trashItems = ref([]);
@@ -173,7 +176,7 @@ export function useFileManager(props) {
         } else if (entered.startsWith(`${base}/`)) {
             relative = entered.slice(base.length + 1);
         } else if (entered.startsWith('/')) {
-            pushToast(`Path must stay inside ${base}.`);
+            pushToast(t('fileManager.manager.pathInside', { base }));
             return;
         }
 
@@ -511,7 +514,7 @@ export function useFileManager(props) {
         }
 
         if (!isEditableFile(filename)) {
-            pushToast(`Cannot edit "${filename}". This file type is not supported for editing.`, 'info');
+            pushToast(t('fileManager.manager.cannotEdit', { filename }), 'info');
             return;
         }
 
@@ -526,7 +529,7 @@ export function useFileManager(props) {
         if (!file?.path || !file.partial || !file.can_load_full) return;
 
         const sizeLabel = `${(Number(file.size || 0) / (1024 * 1024)).toFixed(1)}MB`;
-        if (!confirm(`"${file.name}" is ${sizeLabel}. Loading the whole file may slow down the browser. Open the full file?`)) return;
+        if (!confirm(t('fileManager.manager.largeFileConfirm', { name: file.name, size: sizeLabel }))) return;
 
         router.get(panelRoute('websites.filemanager', fileManagerRouteParams({
             path: props.currentPath,
@@ -556,7 +559,7 @@ export function useFileManager(props) {
                 localItems.value = localItems.value.map((entry) => (entry.path === item.path ? { ...entry, size } : entry));
             })
             .catch((error) => {
-                pushToast(error?.response?.data?.message || 'Failed to calculate folder size.', 'error');
+                pushToast(error?.response?.data?.message || t('fileManager.manager.sizeFailed'), 'error');
             })
             .finally(() => {
                 folderSizeLoadingPath.value = '';
@@ -567,7 +570,7 @@ export function useFileManager(props) {
         const paths = selectedPaths.value.length ? selectedPaths.value : (singleSelectedItem.value ? [singleSelectedItem.value.path] : []);
         if (!paths.length) return;
 
-        if (!confirm(`Move ${paths.length} item(s) to trash?`)) return;
+        if (!confirm(t('fileManager.manager.trashConfirm', { count: paths.length }))) return;
 
         deleteForm.item_paths = paths;
         deleteForm.current_path = props.currentPath;
@@ -633,10 +636,10 @@ export function useFileManager(props) {
                 selectionAnchorPath.value = selectionAnchorPath.value === sourcePath ? targetPath : selectionAnchorPath.value;
                 renameForm.new_name = '';
                 closeModal();
-                pushToast(response?.data?.message || 'Item renamed.', 'success');
+                pushToast(response?.data?.message || t('fileManager.manager.renamed'), 'success');
             })
             .catch((error) => {
-                pushToast(error?.response?.data?.message || 'Failed to rename item.', 'error');
+                pushToast(error?.response?.data?.message || t('fileManager.manager.renameFailed'), 'error');
             })
             .finally(() => {
                 renameInProgress.value = false;
@@ -663,7 +666,7 @@ export function useFileManager(props) {
                 trashItems.value = Array.isArray(response?.data?.items) ? response.data.items : [];
             })
             .catch((error) => {
-                pushToast(error?.response?.data?.message || 'Failed to load trash.', 'error');
+                pushToast(error?.response?.data?.message || t('fileManager.manager.trashLoadFailed'), 'error');
             })
             .finally(() => {
                 trashLoading.value = false;
@@ -683,12 +686,12 @@ export function useFileManager(props) {
                 headers: { Accept: 'application/json' },
             })
             .then((response) => {
-                pushToast(response?.data?.message || 'Item(s) restored.', 'success');
+                pushToast(response?.data?.message || t('fileManager.manager.restored'), 'success');
                 trashItems.value = trashItems.value.filter((item) => item.trash_path !== trashPath);
                 router.reload({ only: ['items'] });
             })
             .catch((error) => {
-                pushToast(error?.response?.data?.message || 'Failed to restore.', 'error');
+                pushToast(error?.response?.data?.message || t('fileManager.manager.restoreFailed'), 'error');
             })
             .finally(() => {
                 trashActionId.value = '';
@@ -697,7 +700,7 @@ export function useFileManager(props) {
 
     function destroyTrashItem(trashPath) {
         if (trashActionId.value) return;
-        if (!confirm('Permanently delete this trash item? This cannot be undone.')) return;
+        if (!confirm(t('fileManager.manager.purgeOneConfirm'))) return;
         trashActionId.value = trashPath;
         window.axios
             .delete(panelRoute('websites.filemanager.trash.destroy', fileManagerRouteParams()), {
@@ -705,12 +708,12 @@ export function useFileManager(props) {
                 data: { trash_path: trashPath },
             })
             .then((response) => {
-                pushToast(response?.data?.message || 'Permanently deleted.', 'success');
+                pushToast(response?.data?.message || t('fileManager.manager.purged'), 'success');
                 trashItems.value = trashItems.value.filter((item) => item.trash_path !== trashPath);
                 trashSelectedPaths.value = trashSelectedPaths.value.filter((path) => path !== trashPath);
             })
             .catch((error) => {
-                pushToast(error?.response?.data?.message || 'Failed to delete.', 'error');
+                pushToast(error?.response?.data?.message || t('fileManager.manager.deleteFailed'), 'error');
             })
             .finally(() => {
                 trashActionId.value = '';
@@ -732,7 +735,7 @@ export function useFileManager(props) {
     function destroySelectedTrashItems() {
         if (trashBulkActionLoading.value || !trashSelectedPaths.value.length) return;
         const paths = trashSelectedPaths.value;
-        if (!confirm(`Permanently delete ${paths.length} item(s)? This cannot be undone.`)) return;
+        if (!confirm(t('fileManager.manager.purgeManyConfirm', { count: paths.length }))) return;
 
         trashBulkActionLoading.value = true;
         window.axios
@@ -741,13 +744,13 @@ export function useFileManager(props) {
                 data: { trash_paths: paths },
             })
             .then((response) => {
-                pushToast(response?.data?.message || 'Permanently deleted.', 'success');
+                pushToast(response?.data?.message || t('fileManager.manager.purged'), 'success');
                 const deleted = Array.isArray(response?.data?.deleted) ? response.data.deleted : paths;
                 trashItems.value = trashItems.value.filter((item) => !deleted.includes(item.trash_path));
                 trashSelectedPaths.value = trashSelectedPaths.value.filter((path) => !deleted.includes(path));
             })
             .catch((error) => {
-                pushToast(error?.response?.data?.message || 'Failed to delete selected item(s).', 'error');
+                pushToast(error?.response?.data?.message || t('fileManager.manager.deleteSelectedFailed'), 'error');
             })
             .finally(() => {
                 trashBulkActionLoading.value = false;
@@ -789,7 +792,7 @@ export function useFileManager(props) {
                 },
             })
             .then((response) => {
-                const message = response?.data?.message || 'Archive extracted successfully.';
+                const message = response?.data?.message || t('fileManager.manager.extracted');
                 pushToast(message, 'success');
                 closeModal();
                 router.get(panelRoute('websites.filemanager', fileManagerRouteParams({ path: props.currentPath })), {}, {
@@ -798,7 +801,7 @@ export function useFileManager(props) {
                 });
             })
             .catch((error) => {
-                const message = error?.response?.data?.message || 'Failed to extract archive.';
+                const message = error?.response?.data?.message || t('fileManager.manager.extractFailed');
                 pushToast(message, 'error');
             })
             .finally(() => {
@@ -870,10 +873,10 @@ export function useFileManager(props) {
             uploadTaskComplete.value = true;
             uploadProgress.value = 100;
             uploadForm.uploads = [];
-            pushToast(uploaded > 1 ? `${uploaded} files uploaded successfully.` : 'File uploaded successfully.', 'success');
+            pushToast(uploaded > 1 ? t('fileManager.manager.uploadedMany', { count: uploaded }) : t('fileManager.manager.uploadedOne'), 'success');
         } catch (error) {
             const errors = error?.response?.data?.errors;
-            const message = errors ? Object.values(errors).flat().join(' ') : (error?.response?.data?.message || 'Upload failed.');
+            const message = errors ? Object.values(errors).flat().join(' ') : (error?.response?.data?.message || t('fileManager.manager.uploadFailed'));
             pushToast(`${uploadCurrentFile.value}: ${message}`, 'error');
             uploadForm.uploads = files.slice(uploaded);
         } finally {
@@ -900,10 +903,10 @@ export function useFileManager(props) {
                 },
             })
             .then((response) => {
-                pushToast(response?.data?.message || 'Project cache cleared successfully.', 'success');
+                pushToast(response?.data?.message || t('fileManager.manager.cacheCleared'), 'success');
             })
             .catch((error) => {
-                const message = error?.response?.data?.message || 'Failed to clear project cache.';
+                const message = error?.response?.data?.message || t('fileManager.manager.cacheFailed');
                 pushToast(message, 'error');
             })
             .finally(() => {
@@ -926,11 +929,11 @@ export function useFileManager(props) {
             })
             .then((response) => {
                 originalEditorContent.value = saveForm.content;
-                const message = response?.data?.message || 'File saved.';
+                const message = response?.data?.message || t('fileManager.manager.saved');
                 pushToast(message, 'success');
             })
             .catch((error) => {
-                const message = error?.response?.data?.message || 'Failed to save file.';
+                const message = error?.response?.data?.message || t('fileManager.manager.saveFailed');
                 pushToast(message, 'error');
             })
             .finally(() => {
@@ -1080,35 +1083,35 @@ export function useFileManager(props) {
 
     const quickActionsGroups = computed(() => ([
         {
-            label: 'Create',
+            label: t('fileManager.quick.groups.create'),
             items: [
-                { label: 'Upload', hint: 'Add files to this folder', icon: 'bi-cloud-arrow-up', className: 'text-blue-500', action: () => openModal('upload'), visible: true },
-                { label: 'New File', hint: 'Create a blank file', icon: 'bi-file-earmark-plus', className: 'text-emerald-500', action: () => openModal('create-file'), visible: true },
-                { label: 'New Folder', hint: 'Make a directory', icon: 'bi-folder-plus', className: 'text-amber-500', action: () => openModal('create-folder'), visible: true },
+                { label: t('fileManager.quick.upload'), hint: t('fileManager.quick.uploadHint'), icon: 'bi-cloud-arrow-up', className: 'text-blue-500', action: () => openModal('upload'), visible: true },
+                { label: t('fileManager.quick.newFile'), hint: t('fileManager.quick.newFileHint'), icon: 'bi-file-earmark-plus', className: 'text-emerald-500', action: () => openModal('create-file'), visible: true },
+                { label: t('fileManager.quick.newFolder'), hint: t('fileManager.quick.newFolderHint'), icon: 'bi-folder-plus', className: 'text-amber-500', action: () => openModal('create-folder'), visible: true },
             ],
         },
         {
-            label: 'File Ops',
+            label: t('fileManager.quick.groups.fileOps'),
             items: [
-                { label: 'Permissions', hint: 'Change access mode', icon: 'bi-shield-lock', className: 'text-purple-500', action: () => openPermissionsForSelection(), visible: !!singleSelectedItem.value },
-                { label: 'Download', hint: 'Save locally', icon: 'bi-download', className: 'text-slate-500', action: () => downloadSelected(), visible: !!singleSelectedItem.value && singleSelectedItem.value.type === 'file' },
-                { label: 'Zip', hint: 'Compress selection', icon: 'bi-file-earmark-zip', className: 'text-amber-500', action: () => openZipForSelection(), visible: !!singleSelectedItem.value || selectedCount.value > 0 },
-                { label: 'Extract', hint: 'Unpack archive', icon: 'bi-file-earmark-arrow-up', className: 'text-green-500', action: () => openUnzipForSelection(), visible: isSupportedArchiveSelected.value },
-                { label: cacheClearInProgress.value ? 'Clearing...' : 'Clear Cache', hint: 'Run Laravel optimize:clear', icon: 'bi-lightning-charge', className: 'text-orange-500', action: () => clearProjectCache(), disabled: cacheClearInProgress.value, visible: !!props.hasProjectArtisan },
+                { label: t('fileManager.quick.permissions'), hint: t('fileManager.quick.permissionsHint'), icon: 'bi-shield-lock', className: 'text-purple-500', action: () => openPermissionsForSelection(), visible: !!singleSelectedItem.value },
+                { label: t('fileManager.quick.download'), hint: t('fileManager.quick.downloadHint'), icon: 'bi-download', className: 'text-slate-500', action: () => downloadSelected(), visible: !!singleSelectedItem.value && singleSelectedItem.value.type === 'file' },
+                { label: t('fileManager.quick.zip'), hint: t('fileManager.quick.zipHint'), icon: 'bi-file-earmark-zip', className: 'text-amber-500', action: () => openZipForSelection(), visible: !!singleSelectedItem.value || selectedCount.value > 0 },
+                { label: t('fileManager.quick.extract'), hint: t('fileManager.quick.extractHint'), icon: 'bi-file-earmark-arrow-up', className: 'text-green-500', action: () => openUnzipForSelection(), visible: isSupportedArchiveSelected.value },
+                { label: cacheClearInProgress.value ? t('fileManager.quick.clearing') : t('fileManager.quick.clearCache'), hint: t('fileManager.quick.clearCacheHint'), icon: 'bi-lightning-charge', className: 'text-orange-500', action: () => clearProjectCache(), disabled: cacheClearInProgress.value, visible: !!props.hasProjectArtisan },
             ],
         },
         {
-            label: 'Navigation',
+            label: t('fileManager.quick.groups.navigation'),
             items: [
-                { label: 'Up Level', hint: 'Go to parent folder', icon: 'bi-arrow-up', className: 'text-slate-500', action: () => goParent(), visible: !!props.currentPath },
-                { label: hiddenEnabled.value ? 'Hide Hidden' : 'Show Hidden', hint: 'Toggle dotfiles', icon: hiddenEnabled.value ? 'bi-eye-slash' : 'bi-eye', className: 'text-slate-500', action: () => toggleHidden(), visible: true },
-                { label: 'Trash', hint: 'Restore or permanently delete', icon: 'bi-trash3', className: 'text-slate-500', action: () => openTrash(), visible: true },
+                { label: t('fileManager.quick.upLevel'), hint: t('fileManager.quick.upLevelHint'), icon: 'bi-arrow-up', className: 'text-slate-500', action: () => goParent(), visible: !!props.currentPath },
+                { label: hiddenEnabled.value ? t('fileManager.quick.hideHidden') : t('fileManager.quick.showHidden'), hint: t('fileManager.quick.hiddenHint'), icon: hiddenEnabled.value ? 'bi-eye-slash' : 'bi-eye', className: 'text-slate-500', action: () => toggleHidden(), visible: true },
+                { label: t('fileManager.quick.trash'), hint: t('fileManager.quick.trashHint'), icon: 'bi-trash3', className: 'text-slate-500', action: () => openTrash(), visible: true },
             ],
         },
         {
-            label: 'Danger',
+            label: t('fileManager.quick.groups.danger'),
             items: [
-                { label: 'Delete', hint: 'Remove selected item(s)', icon: 'bi-trash', className: 'text-red-500', action: () => deleteSelected(), danger: true, visible: !!singleSelectedItem.value || selectedCount.value > 0 },
+                { label: t('fileManager.quick.delete'), hint: t('fileManager.quick.deleteHint'), icon: 'bi-trash', className: 'text-red-500', action: () => deleteSelected(), danger: true, visible: !!singleSelectedItem.value || selectedCount.value > 0 },
             ],
         },
     ]).map((group) => ({
@@ -1198,9 +1201,9 @@ export function useFileManager(props) {
     const permissionMatrix = computed(() => {
         if (!permissionPreview.value) return [];
         return [
-            { key: 'owner', label: 'Owner', ...permissionPreview.value.owner },
-            { key: 'group', label: 'Group', ...permissionPreview.value.group },
-            { key: 'world', label: 'World', ...permissionPreview.value.world },
+            { key: 'owner', label: t('fileManager.manager.owner'), ...permissionPreview.value.owner },
+            { key: 'group', label: t('fileManager.manager.group'), ...permissionPreview.value.group },
+            { key: 'world', label: t('fileManager.manager.world'), ...permissionPreview.value.world },
         ];
     });
     const permissionCanSave = computed(() => permissionDigits.value.length === 3);

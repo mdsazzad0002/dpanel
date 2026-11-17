@@ -1,0 +1,29 @@
+{
+    "show": {
+        "status": {
+            "completed": "已完成",
+            "failed": "失败",
+            "warning": "警告",
+            "processing": "处理中",
+            "info": "信息"
+        },
+        "copied": "链接已复制到剪贴板。",
+        "copyFailed": "无法复制链接——请手动复制。",
+        "headTitle": "通知 - {title}",
+        "title": "通知",
+        "back": "返回仪表盘",
+        "exportFile": "导出文件",
+        "copyLink": "复制链接",
+        "download": "下载",
+        "shareNote": "无需登录面板——可以安全地分享给任何人。"
+    },
+    "index": {
+        "clearConfirm": "清除所有通知？此操作无法撤销。",
+        "title": "通知",
+        "unread": "{count} 条未读",
+        "markAll": "全部标为已读",
+        "clearAll": "全部清除",
+        "copy": "复制",
+        "empty": "暂无通知"
+    }
+}

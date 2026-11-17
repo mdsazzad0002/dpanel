@@ -2,6 +2,9 @@
 import ApplicationLogo from '@/Components/ApplicationLogo.vue';
 import { Link, usePage } from '@inertiajs/vue3';
 import { computed } from 'vue';
+import { useI18n } from 'vue-i18n';
+
+const { t } = useI18n();
 
 defineProps({
     title: { type: String, required: true },
@@ -22,12 +25,12 @@ const appName = computed(() => page.props.app?.name ?? 'dPanel');
                     <ApplicationLogo class="h-8 fill-current text-emerald-400" />
                     <span class="font-mono text-xs uppercase tracking-[0.3em] text-emerald-200/80">{{ appName }}</span>
                 </Link>
-                <Link href="/" class="text-sm text-slate-300 hover:text-white">← Back</Link>
+                <Link href="/" class="text-sm text-slate-300 hover:text-white">← {{ t('ui.legal.back') }}</Link>
             </header>
 
             <main class="flex-1 rounded-2xl border border-white/10 bg-white/[0.04] p-6 shadow-[0_30px_100px_rgba(0,0,0,0.45)] backdrop-blur-xl sm:p-10">
                 <h1 class="text-2xl font-semibold tracking-tight text-slate-50 sm:text-3xl">{{ title }}</h1>
-                <p v-if="updatedAt" class="mt-2 text-sm text-slate-400">Last updated: {{ updatedAt }}</p>
+                <p v-if="updatedAt" class="mt-2 text-sm text-slate-400">{{ t('ui.legal.updated', { date: updatedAt }) }}</p>
 
                 <div class="legal-content mt-8 space-y-6 text-sm leading-7 text-slate-300 sm:text-base">
                     <slot />
@@ -35,9 +38,9 @@ const appName = computed(() => page.props.app?.name ?? 'dPanel');
             </main>
 
             <footer class="mt-8 flex flex-wrap items-center justify-center gap-x-4 gap-y-1 text-xs text-slate-500">
-                <Link href="/privacy-policy" class="hover:text-slate-300">Privacy Policy</Link>
+                <Link href="/privacy-policy" class="hover:text-slate-300">{{ t('ui.legal.privacy') }}</Link>
                 <span>·</span>
-                <Link href="/terms-and-conditions" class="hover:text-slate-300">Terms &amp; Conditions</Link>
+                <Link href="/terms-and-conditions" class="hover:text-slate-300">{{ t('ui.legal.terms') }}</Link>
                 <span>·</span>
                 <span>&copy; {{ new Date().getFullYear() }} {{ appName }}</span>
             </footer>

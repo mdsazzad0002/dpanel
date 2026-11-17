@@ -1,0 +1,9 @@
+{
+    "turnOn": "通配符 SSL",
+    "turnOff": "通配符 SSL：已开启",
+    "working": "处理中...",
+    "help": "一张证书覆盖 {domain} 及所有 *.{domain} 子域名。该域名的 DNS 必须在本服务器或 Cloudflare 上。",
+    "confirmOn": "为 {domain} 和 *.{domain} 签发通配符证书？CA 验证期间会向域名 DNS 添加一条 TXT 记录。这可能需要几分钟。",
+    "confirmOff": "停止覆盖 *.{domain}？{domain} 将获得普通证书，没有自己证书的子域名将失去 HTTPS。",
+    "failed": "通配符 SSL 失败。"
+}

@@ -3,6 +3,9 @@ import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
 import axios from 'axios';
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
 import { Head, Link, useForm } from '@inertiajs/vue3';
+import { useI18n } from 'vue-i18n';
+
+const { t } = useI18n();
 
 const props = defineProps({
     // Server-wide storage/SCP/schedule settings are shown to admins only.
@@ -75,14 +78,14 @@ const runBackup = async () => {
         backupCanvasOpen.value = false;
         if (data.queued) startBatchPolling();
     } catch (error) {
-        showError(error, 'Backup could not be completed.');
+        showError(error, t('backups.index.runFailed'));
     } finally {
         runForm.processing = false;
     }
 };
 
 const deleteRun = async (runName) => {
-    if (!confirm(`Delete backup run "${runName}"?`)) return;
+    if (!confirm(t('backups.index.deleteConfirm', { name: runName }))) return;
     deletingRun.value = runName;
     try {
         const { data } = await axios.delete(route('backups.destroy', runName), { headers: { Accept: 'application/json' } });
@@ -90,7 +93,7 @@ const deleteRun = async (runName) => {
         responseOk.value = true;
         responseMessage.value = data.message;
     } catch (error) {
-        showError(error, 'Backup run could not be deleted.');
+        showError(error, t('backups.index.deleteFailed'));
     } finally {
         deletingRun.value = '';
     }
@@ -99,28 +102,28 @@ const deleteRun = async (runName) => {
 // Restore runs on the heavy queue; these mirror the steps dRust reports
 // (see RestoreProgress in drust/src/api/website.rs) so a failure names the
 // step it died in instead of just "500".
-const restoreSteps = [
-    { key: 'queued', label: 'Queued' },
-    { key: 'validating', label: 'Validate' },
-    { key: 'inspecting', label: 'Inspect archive' },
-    { key: 'disk_check', label: 'Disk space' },
-    { key: 'extracting', label: 'Extract' },
-    { key: 'reading_manifest', label: 'Metadata' },
-    { key: 'account', label: 'System user' },
-    { key: 'files', label: 'Copy files' },
-    { key: 'databases', label: 'Databases' },
-    { key: 'permissions', label: 'Permissions' },
-    { key: 'finalizing', label: 'Panel records' },
-];
+const restoreSteps = computed(() => [
+    { key: 'queued', label: t('backups.index.step.queued') },
+    { key: 'validating', label: t('backups.index.step.validating') },
+    { key: 'inspecting', label: t('backups.index.step.inspecting') },
+    { key: 'disk_check', label: t('backups.index.step.disk_check') },
+    { key: 'extracting', label: t('backups.index.step.extracting') },
+    { key: 'reading_manifest', label: t('backups.index.step.reading_manifest') },
+    { key: 'account', label: t('backups.index.step.account') },
+    { key: 'files', label: t('backups.index.step.files') },
+    { key: 'databases', label: t('backups.index.step.databases') },
+    { key: 'permissions', label: t('backups.index.step.permissions') },
+    { key: 'finalizing', label: t('backups.index.step.finalizing') },
+]);
 const RESTORE_STORAGE_KEY = 'dpanel.backups.activeRestore';
 const restore = ref(null);
 let restorePoll = null;
 
 const restoreStepIndex = computed(() => {
     const step = restore.value?.stage === 'failed' ? restore.value?.failed_step : restore.value?.step;
-    if (restore.value?.stage === 'completed') return restoreSteps.length;
+    if (restore.value?.stage === 'completed') return restoreSteps.value.length;
 
-    return Math.max(0, restoreSteps.findIndex((item) => item.key === step));
+    return Math.max(0, restoreSteps.value.findIndex((item) => item.key === step));
 });
 const restoreStepState = (index) => {
     if (restore.value?.stage === 'completed' || index < restoreStepIndex.value) return 'done';
@@ -128,7 +131,7 @@ const restoreStepState = (index) => {
 
     return 'pending';
 };
-const restoreStepLabel = (key) => restoreSteps.find((item) => item.key === key)?.label || key || 'unknown step';
+const restoreStepLabel = (key) => restoreSteps.value.find((item) => item.key === key)?.label || key || t('backups.index.unknownStep');
 
 const rememberRestore = (value) => {
     try {
@@ -152,7 +155,7 @@ const pollRestore = async () => {
         restore.value = { ...restore.value, ...data, id };
     } catch (error) {
         if (error.response?.status === 404) {
-            restore.value = { ...restore.value, stage: 'failed', message: 'Restore job status expired or was not found.' };
+            restore.value = { ...restore.value, stage: 'failed', message: t('backups.index.statusExpired') };
         }
         return;
     }
@@ -163,7 +166,7 @@ const pollRestore = async () => {
         responseOk.value = restore.value.stage === 'completed';
         responseMessage.value = restore.value.stage === 'completed'
             ? restore.value.message
-            : `Restore failed at "${restoreStepLabel(restore.value.failed_step)}": ${restore.value.message}`;
+            : t('backups.index.restoreFailedAt', { step: restoreStepLabel(restore.value.failed_step), message: restore.value.message });
     }
 };
 
@@ -174,7 +177,7 @@ const startRestorePolling = () => {
 };
 
 const restoreBackup = async (runName, file) => {
-    if (!confirm(`Restore ${file.label || file.name}? Current website files and database data will be replaced.`)) return;
+    if (!confirm(t('backups.index.restoreConfirm', { name: file.label || file.name }))) return;
     restoringFile.value = `${runName}:${file.name}`;
     responseMessage.value = '';
     try {
@@ -184,7 +187,7 @@ const restoreBackup = async (runName, file) => {
         startRestorePolling();
     } catch (error) {
         restoringFile.value = '';
-        showError(error, 'Backup restore could not be started.');
+        showError(error, t('backups.index.restoreStartFailed'));
     }
 };
 
@@ -200,7 +203,7 @@ const loadRuns = async () => {
         }
         if (['completed', 'failed'].includes(batch.value?.stage)) stopBatchPolling();
     } catch (error) {
-        showError(error, 'Backup list could not be loaded.');
+        showError(error, t('backups.index.listFailed'));
     } finally {
         runsLoading.value = false;
     }
@@ -229,6 +232,12 @@ onMounted(async () => {
         // ignore unreadable saved state
     }
 });
+const contentOptions = computed(() => [
+    { value: 'all', label: t('backups.index.content.all'), hint: t('backups.index.content.allHint'), icon: 'bi-archive' },
+    { value: 'files', label: t('backups.index.content.files'), hint: t('backups.index.content.filesHint'), icon: 'bi-folder2-open' },
+    { value: 'database', label: t('backups.index.content.database'), hint: t('backups.index.content.databaseHint'), icon: 'bi-database' },
+]);
+const stageLabel = (stage) => (['queued', 'running', 'completed', 'failed'].includes(stage) ? t(`backups.index.stage.${stage}`) : stage);
 onBeforeUnmount(() => {
     stopBatchPolling();
     stopRestorePolling();
@@ -237,19 +246,19 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-    <Head title="Backups" />
+    <Head :title="t('backups.index.title')" />
 
     <AuthenticatedLayout>
         <template #header>
             <div>
-                <h1 class="text-lg font-semibold">Backups</h1>
-                <p class="text-sm text-slate-500 dark:text-slate-400">Create portable, cPanel-style migration backups.</p>
+                <h1 class="text-lg font-semibold">{{ t('backups.index.title') }}</h1>
+                <p class="text-sm text-slate-500 dark:text-slate-400">{{ t('backups.index.subtitle') }}</p>
             </div>
         </template>
 
         <div class="space-y-4">
             <Link v-if="resticKeyAtRisk" :href="route('backups.incremental')" class="block rounded-md border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-800 dark:border-amber-800 dark:bg-amber-950 dark:text-amber-200">
-                <i class="bi bi-key-fill mr-2"></i><strong>Save the incremental backup key.</strong> Without it nobody can read the backups. Open Incremental backups to download it.
+                <i class="bi bi-key-fill mr-2"></i><strong>{{ t('backups.index.keyTitle') }}</strong> {{ t('backups.index.keyHelp') }}
             </Link>
             <div v-if="responseMessage" :class="responseOk ? 'border-emerald-200 bg-emerald-50 text-emerald-700' : 'border-red-200 bg-red-50 text-red-700'" class="rounded-md border px-4 py-3 text-sm whitespace-pre-line">
                 {{ responseMessage }}
@@ -259,39 +268,39 @@ onBeforeUnmount(() => {
             <section class="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
                 <div class="rounded-xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900">
                     <div class="flex items-center justify-between">
-                        <p class="text-xs uppercase tracking-wide text-slate-500">Total Runs</p>
+                        <p class="text-xs uppercase tracking-wide text-slate-500">{{ t('backups.index.totalRuns') }}</p>
                         <i class="itc bi bi-archive text-slate-400"></i>
                     </div>
                     <p class="mt-2 text-3xl font-semibold leading-none">{{ totals.runs }}</p>
                 </div>
                 <div class="rounded-xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900">
                     <div class="flex items-center justify-between">
-                        <p class="text-xs uppercase tracking-wide text-slate-500">Total Files</p>
+                        <p class="text-xs uppercase tracking-wide text-slate-500">{{ t('backups.index.totalFiles') }}</p>
                         <i class="itc bi bi-files text-slate-400"></i>
                     </div>
                     <p class="mt-2 text-3xl font-semibold leading-none">{{ totals.files }}</p>
                 </div>
                 <div class="rounded-xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900">
                     <div class="flex items-center justify-between">
-                        <p class="text-xs uppercase tracking-wide text-slate-500">Total Size</p>
+                        <p class="text-xs uppercase tracking-wide text-slate-500">{{ t('backups.index.totalSize') }}</p>
                         <i class="itc bi bi-hdd-stack text-slate-400"></i>
                     </div>
                     <p class="mt-2 text-3xl font-semibold leading-none">{{ bytesToLabel(totals.size) }}</p>
                 </div>
                 <div class="rounded-xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900">
                     <div class="flex items-center justify-between">
-                        <p class="text-xs uppercase tracking-wide text-slate-500">Retention</p>
+                        <p class="text-xs uppercase tracking-wide text-slate-500">{{ t('backups.index.retention') }}</p>
                         <i class="itc bi bi-calendar-check text-slate-400"></i>
                     </div>
-                    <p class="mt-2 text-3xl font-semibold leading-none">{{ retentionDays }} days</p>
+                    <p class="mt-2 text-3xl font-semibold leading-none">{{ t('backups.index.days', { n: retentionDays }) }}</p>
                 </div>
             </section>
 
             <Link :href="route('backups.incremental')" class="group flex items-center gap-4 rounded-xl border border-slate-200 bg-white p-4 shadow-sm transition hover:border-teal-300 hover:shadow-md dark:border-slate-800 dark:bg-slate-900 dark:hover:border-teal-800">
                 <span class="grid h-11 w-11 shrink-0 place-items-center rounded-xl bg-teal-100 text-lg text-teal-600 transition group-hover:bg-teal-600 group-hover:text-white dark:bg-teal-950"><i class="itc bi bi-clock-history"></i></span>
                 <div class="min-w-0 flex-1">
-                    <h2 class="font-semibold">Incremental backups</h2>
-                    <p class="mt-1 text-sm text-slate-500">Encrypted restore points with restic: only what changed is stored each time.</p>
+                    <h2 class="font-semibold">{{ t('backups.index.incremental') }}</h2>
+                    <p class="mt-1 text-sm text-slate-500">{{ t('backups.index.incrementalHelp') }}</p>
                 </div>
                 <i class="itc bi bi-chevron-right shrink-0 text-slate-400 transition group-hover:translate-x-0.5 group-hover:text-teal-600"></i>
             </Link>
@@ -301,12 +310,12 @@ onBeforeUnmount(() => {
                     <span class="grid h-11 w-11 shrink-0 place-items-center rounded-xl bg-indigo-100 text-lg text-indigo-600 transition group-hover:bg-indigo-600 group-hover:text-white dark:bg-indigo-950"><i class="itc bi bi-cloud-arrow-up"></i></span>
                     <div class="min-w-0 flex-1">
                         <div class="flex flex-wrap items-center gap-2">
-                            <h2 class="font-semibold">Backup Storage</h2>
+                            <h2 class="font-semibold">{{ t('backups.storage.index.title') }}</h2>
                             <span :class="remoteUpload?.enabled ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300' : 'bg-slate-100 text-slate-500 dark:bg-slate-800'" class="rounded-full px-2 py-0.5 text-[11px] font-medium">
-                                {{ remoteUpload?.enabled ? 'Enabled' : 'Disabled' }}
+                                {{ remoteUpload?.enabled ? t('backups.scp.enabled') : t('backups.scp.disabled') }}
                             </span>
                         </div>
-                        <p class="mt-1 text-sm capitalize text-slate-500">{{ storageDriver ? storageDriver.replace('_', ' ') : 'No destination' }} · Configure destination and sequential processing.</p>
+                        <p class="mt-1 text-sm capitalize text-slate-500">{{ storageDriver ? storageDriver.replace('_', ' ') : t('backups.index.noDestination') }} · {{ t('backups.index.storageHelp') }}</p>
                     </div>
                     <i class="itc bi bi-chevron-right shrink-0 text-slate-400 transition group-hover:translate-x-0.5 group-hover:text-indigo-600"></i>
             </Link>
@@ -314,66 +323,66 @@ onBeforeUnmount(() => {
             <section class="flex min-h-24 items-center gap-4 rounded-xl border border-slate-200 bg-white p-4 shadow-sm transition hover:border-blue-300 hover:shadow-md dark:border-slate-800 dark:bg-slate-900 dark:hover:border-blue-800">
                     <span class="grid h-11 w-11 shrink-0 place-items-center rounded-xl bg-blue-100 text-lg text-blue-600 dark:bg-blue-950"><i class="itc bi bi-archive"></i></span>
                     <div class="min-w-0 flex-1">
-                        <h2 class="font-semibold">Create a Backup</h2>
-                        <p class="mt-1 text-sm text-slate-500">Choose backup scope and content.</p>
+                        <h2 class="font-semibold">{{ t('backups.index.createA') }}</h2>
+                        <p class="mt-1 text-sm text-slate-500">{{ t('backups.index.createAHelp') }}</p>
                     </div>
                 <button type="button" class="shrink-0 rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-blue-700" @click="backupCanvasOpen = true">
-                    <i class="itc bi bi-plus-circle mr-1"></i> New Backup
+                    <i class="itc bi bi-plus-circle mr-1"></i> {{ t('backups.index.new') }}
                 </button>
             </section>
             </div>
 
-            <div v-if="backupCanvasOpen" class="fixed inset-0 z-[100]" role="dialog" aria-modal="true" aria-label="Create backup">
-                <button type="button" class="absolute inset-0 h-full w-full bg-slate-950/50 backdrop-blur-[1px]" aria-label="Close backup drawer" @click="backupCanvasOpen = false"></button>
+            <div v-if="backupCanvasOpen" class="fixed inset-0 z-[100]" role="dialog" aria-modal="true" :aria-label="t('backups.index.createLabel')">
+                <button type="button" class="absolute inset-0 h-full w-full bg-slate-950/50 backdrop-blur-[1px]" :aria-label="t('backups.index.closeDrawer')" @click="backupCanvasOpen = false"></button>
                 <aside class="absolute right-0 top-0 flex h-full w-full max-w-xl flex-col bg-white shadow-2xl dark:bg-slate-900">
                     <div class="flex items-start justify-between border-b border-slate-200 px-5 py-4 dark:border-slate-800">
                         <div>
-                            <h2 class="text-lg font-semibold">Create Backup</h2>
-                            <p class="text-xs text-slate-500">Configure a dRust backup job.</p>
+                            <h2 class="text-lg font-semibold">{{ t('backups.index.createTitle') }}</h2>
+                            <p class="text-xs text-slate-500">{{ t('backups.index.createHelp') }}</p>
                         </div>
-                        <button type="button" class="grid h-9 w-9 place-items-center rounded-lg text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800" aria-label="Close" @click="backupCanvasOpen = false"><i class="itc bi bi-x-lg"></i></button>
+                        <button type="button" class="grid h-9 w-9 place-items-center rounded-lg text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800" :aria-label="t('common.close')" @click="backupCanvasOpen = false"><i class="itc bi bi-x-lg"></i></button>
                     </div>
                     <form class="flex min-h-0 flex-1 flex-col" @submit.prevent="runBackup">
                         <div class="flex-1 space-y-6 overflow-y-auto p-5">
                             <div class="rounded-lg border border-blue-200 bg-blue-50 p-3 text-xs leading-5 text-blue-800 dark:border-blue-900 dark:bg-blue-950/40 dark:text-blue-200">
-                                Full backups create a portable cPanel-style <span class="font-mono">backup-*.tar.gz</span> migration package. All-account backups run in the background, one account at a time.
+                                <i18n-t keypath="backups.index.fullNote" scope="global"><template #file><span class="font-mono">backup-*.tar.gz</span></template></i18n-t>
                             </div>
                     <div>
                         <div class="mb-3">
-                            <h3 class="text-sm font-semibold">1. Backup Filter</h3>
-                            <p class="text-xs text-slate-500">Choose the account scope for this backup.</p>
+                            <h3 class="text-sm font-semibold">{{ t('backups.index.filter') }}</h3>
+                            <p class="text-xs text-slate-500">{{ t('backups.index.filterHelp') }}</p>
                         </div>
                         <div class="grid gap-3 sm:grid-cols-2">
                             <button type="button" :class="runForm.filter === 'all' ? 'border-blue-500 bg-blue-50 ring-2 ring-blue-100 dark:bg-blue-950/40 dark:ring-blue-900' : 'border-slate-200 hover:border-slate-300 dark:border-slate-700'" class="flex items-center gap-3 rounded-xl border p-4 text-left transition" @click="runForm.filter = 'all'; runForm.website_id = ''">
                                 <span class="grid h-10 w-10 place-items-center rounded-lg bg-blue-100 text-blue-600 dark:bg-blue-900/50"><i class="itc bi bi-hdd-stack"></i></span>
-                                <span><span class="block text-sm font-semibold">All Websites</span><span class="block text-xs text-slate-500">One account archive per website</span></span>
+                                <span><span class="block text-sm font-semibold">{{ t('backups.index.allWebsites') }}</span><span class="block text-xs text-slate-500">{{ t('backups.index.allWebsitesHint') }}</span></span>
                                 <i v-if="runForm.filter === 'all'" class="itc bi bi-check-circle-fill ml-auto text-blue-600"></i>
                             </button>
                             <button type="button" :class="runForm.filter === 'website' ? 'border-violet-500 bg-violet-50 ring-2 ring-violet-100 dark:bg-violet-950/40 dark:ring-violet-900' : 'border-slate-200 hover:border-slate-300 dark:border-slate-700'" class="flex items-center gap-3 rounded-xl border p-4 text-left transition" @click="runForm.filter = 'website'">
                                 <span class="grid h-10 w-10 place-items-center rounded-lg bg-violet-100 text-violet-600 dark:bg-violet-900/50"><i class="itc bi bi-globe2"></i></span>
-                                <span><span class="block text-sm font-semibold">Website Wise</span><span class="block text-xs text-slate-500">One main domain only</span></span>
+                                <span><span class="block text-sm font-semibold">{{ t('backups.index.websiteWise') }}</span><span class="block text-xs text-slate-500">{{ t('backups.index.websiteWiseHint') }}</span></span>
                                 <i v-if="runForm.filter === 'website'" class="itc bi bi-check-circle-fill ml-auto text-violet-600"></i>
                             </button>
                         </div>
                     </div>
 
                     <div v-if="runForm.filter === 'website'" class="rounded-xl border border-violet-200 bg-violet-50/60 p-4 dark:border-violet-900 dark:bg-violet-950/20">
-                        <label class="mb-2 block text-sm font-semibold">Select Main Domain</label>
+                        <label class="mb-2 block text-sm font-semibold">{{ t('backups.index.selectDomain') }}</label>
                         <select v-model="runForm.website_id" required :disabled="websites.length === 0" class="w-full rounded-lg border border-violet-200 bg-white px-3 py-2.5 text-sm focus:border-violet-500 focus:ring-violet-500 disabled:cursor-not-allowed disabled:opacity-60 dark:border-violet-800 dark:bg-slate-900">
-                            <option value="" disabled>{{ websites.length ? 'Choose a website' : 'No customer main domain available' }}</option>
+                            <option value="" disabled>{{ websites.length ? t('backups.index.chooseWebsite') : t('backups.index.noDomain') }}</option>
                             <option v-for="website in websites" :key="website.id" :value="website.id">{{ website.domain }}</option>
                         </select>
-                        <p class="mt-2 text-xs text-slate-500">Aliases and subdomains are covered by their parent folder.</p>
+                        <p class="mt-2 text-xs text-slate-500">{{ t('backups.index.aliasNote') }}</p>
                         <p v-if="runForm.errors.website_id" class="mt-1 text-xs text-red-600">{{ runForm.errors.website_id }}</p>
                     </div>
 
                     <div>
                         <div class="mb-3">
-                            <h3 class="text-sm font-semibold">2. Backup Content</h3>
-                            <p class="text-xs text-slate-500">Select what should be included in the archive.</p>
+                            <h3 class="text-sm font-semibold">{{ t('backups.index.content.title') }}</h3>
+                            <p class="text-xs text-slate-500">{{ t('backups.index.content.help') }}</p>
                         </div>
                         <div class="grid gap-3 sm:grid-cols-3">
-                            <button v-for="item in [{ value: 'all', label: 'All', hint: 'Files + database', icon: 'bi-archive' }, { value: 'files', label: 'Files', hint: 'Website or panel files', icon: 'bi-folder2-open' }, { value: 'database', label: 'Database', hint: 'SQL dump only', icon: 'bi-database' }]" :key="item.value" type="button" :class="runForm.content === item.value ? 'border-emerald-500 bg-emerald-50 ring-2 ring-emerald-100 dark:bg-emerald-950/30 dark:ring-emerald-900' : 'border-slate-200 hover:border-slate-300 dark:border-slate-700'" class="relative rounded-xl border p-4 text-left transition" @click="runForm.content = item.value">
+                            <button v-for="item in contentOptions" :key="item.value" type="button" :class="runForm.content === item.value ? 'border-emerald-500 bg-emerald-50 ring-2 ring-emerald-100 dark:bg-emerald-950/30 dark:ring-emerald-900' : 'border-slate-200 hover:border-slate-300 dark:border-slate-700'" class="relative rounded-xl border p-4 text-left transition" @click="runForm.content = item.value">
                                 <i :class="item.icon" class="itc bi text-lg text-emerald-600"></i>
                                 <span class="mt-2 block text-sm font-semibold">{{ item.label }}</span>
                                 <span class="block text-xs text-slate-500">{{ item.hint }}</span>
@@ -384,11 +393,11 @@ onBeforeUnmount(() => {
 
                         </div>
                     <div class="flex flex-wrap items-center justify-between gap-3 border-t border-slate-200 bg-white p-5 dark:border-slate-800 dark:bg-slate-900">
-                        <p class="text-xs text-slate-500"><span class="font-medium text-slate-700 dark:text-slate-200">Selected:</span> {{ runForm.filter === 'all' ? 'All' : 'Website Wise' }} · {{ runForm.content === 'database' ? 'Database' : runForm.content.charAt(0).toUpperCase() + runForm.content.slice(1) }}</p>
+                        <p class="text-xs text-slate-500"><span class="font-medium text-slate-700 dark:text-slate-200">{{ t('backups.index.selected') }}</span> {{ runForm.filter === 'all' ? t('backups.index.content.all') : t('backups.index.websiteWise') }} · {{ contentOptions.find((item) => item.value === runForm.content)?.label || runForm.content }}</p>
                         <div class="flex items-center gap-2">
-                            <Link :href="route('monitoring.index')" class="rounded-lg border border-slate-300 px-4 py-2.5 text-sm hover:bg-slate-100 dark:border-slate-700 dark:hover:bg-slate-800">Monitoring</Link>
+                            <Link :href="route('monitoring.index')" class="rounded-lg border border-slate-300 px-4 py-2.5 text-sm hover:bg-slate-100 dark:border-slate-700 dark:hover:bg-slate-800">{{ t('backups.index.monitoring') }}</Link>
                             <button type="submit" :disabled="runForm.processing || (runForm.filter === 'website' && (!runForm.website_id || websites.length === 0))" class="rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50">
-                                <i class="itc bi bi-play-circle mr-1"></i>{{ runForm.processing ? 'Running Backup...' : 'Run Backup Now' }}
+                                <i class="itc bi bi-play-circle mr-1"></i>{{ runForm.processing ? t('backups.index.running') : t('backups.index.runNow') }}
                             </button>
                         </div>
                     </div>
@@ -399,7 +408,7 @@ onBeforeUnmount(() => {
             <section v-if="restore" class="rounded-xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900">
                 <div class="flex flex-wrap items-center justify-between gap-2">
                     <div class="min-w-0">
-                        <h2 class="font-semibold">Restoring {{ restore.label || restore.file }}</h2>
+                        <h2 class="font-semibold">{{ t('backups.index.restoring', { name: restore.label || restore.file }) }}</h2>
                         <p class="font-mono text-[11px] text-slate-400">{{ restore.run }} / {{ restore.file }}</p>
                     </div>
                     <div class="flex items-center gap-3">
@@ -407,9 +416,9 @@ onBeforeUnmount(() => {
                             'bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300': restore.stage === 'completed',
                             'bg-red-100 text-red-700 dark:bg-red-950 dark:text-red-300': restore.stage === 'failed',
                             'bg-indigo-100 text-indigo-700 dark:bg-indigo-950 dark:text-indigo-300': !['completed', 'failed'].includes(restore.stage),
-                        }" class="rounded-full px-2 py-0.5 text-[11px] font-medium capitalize">{{ restore.stage }}</span>
+                        }" class="rounded-full px-2 py-0.5 text-[11px] font-medium capitalize">{{ stageLabel(restore.stage) }}</span>
                         <span class="text-sm font-semibold tabular-nums">{{ restore.stage === 'completed' ? 100 : (restore.percent || 0) }}%</span>
-                        <button v-if="['completed', 'failed'].includes(restore.stage)" type="button" class="text-slate-400 hover:text-slate-600" aria-label="Dismiss" @click="restore = null"><i class="itc bi bi-x-lg"></i></button>
+                        <button v-if="['completed', 'failed'].includes(restore.stage)" type="button" class="text-slate-400 hover:text-slate-600" :aria-label="t('backups.index.dismiss')" @click="restore = null"><i class="itc bi bi-x-lg"></i></button>
                     </div>
                 </div>
                 <div class="mt-3 h-2 overflow-hidden rounded-full bg-slate-100 dark:bg-slate-800">
@@ -436,11 +445,11 @@ onBeforeUnmount(() => {
                 <table class="min-w-full text-left text-sm">
                     <thead class="bg-slate-50 dark:bg-slate-800">
                         <tr>
-                            <th class="px-4 py-3">Run</th>
-                            <th class="px-4 py-3">Created</th>
-                            <th class="px-4 py-3">Files</th>
-                            <th class="px-4 py-3">Size</th>
-                            <th class="px-4 py-3">Actions</th>
+                            <th class="px-4 py-3">{{ t('backups.index.th.run') }}</th>
+                            <th class="px-4 py-3">{{ t('backups.index.th.created') }}</th>
+                            <th class="px-4 py-3">{{ t('backups.index.th.files') }}</th>
+                            <th class="px-4 py-3">{{ t('backups.index.th.size') }}</th>
+                            <th class="px-4 py-3">{{ t('backups.index.th.actions') }}</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -455,10 +464,10 @@ onBeforeUnmount(() => {
                                         </span>
                                         <span class="text-slate-500">({{ bytesToLabel(file.size_bytes) }})</span>
                                         <a :href="route('backups.download', { run: run.name, encoded: downloadToken(file.name) })" class="rounded border border-slate-300 px-2 py-0.5 hover:bg-slate-100 dark:border-slate-700 dark:hover:bg-slate-800" download>
-                                            Download
+                                            {{ t('backups.index.download') }}
                                         </a>
                                         <button v-if="file.restorable" type="button" :disabled="restoringFile !== ''" class="rounded border border-emerald-300 px-2 py-0.5 text-emerald-700 hover:bg-emerald-50 disabled:opacity-50 dark:border-emerald-800 dark:text-emerald-400" @click="restoreBackup(run.name, file)">
-                                            {{ restoringFile === `${run.name}:${file.name}` ? 'Restoring...' : 'Restore' }}
+                                            {{ restoringFile === `${run.name}:${file.name}` ? t('backups.index.restoringShort') : t('backups.index.restore') }}
                                         </button>
                                     </li>
                                 </ul>
@@ -468,15 +477,15 @@ onBeforeUnmount(() => {
                             <td class="px-4 py-3">{{ bytesToLabel(run.total_size_bytes || 0) }}</td>
                             <td class="px-4 py-3">
                                 <button type="button" :disabled="deletingRun !== ''" class="rounded-md border border-red-300 px-3 py-1.5 text-xs text-red-700 hover:bg-red-50 disabled:opacity-50 dark:border-red-700 dark:text-red-400" @click="deleteRun(run.name)">
-                                    {{ deletingRun === run.name ? 'Deleting...' : 'Delete Run' }}
+                                    {{ deletingRun === run.name ? t('backups.index.deleting') : t('backups.index.deleteRun') }}
                                 </button>
                             </td>
                         </tr>
                         <tr v-if="runsLoading">
-                            <td colspan="5" class="px-4 py-8 text-center text-slate-500"><i class="itc bi bi-arrow-repeat mr-2 animate-spin"></i>Loading backups...</td>
+                            <td colspan="5" class="px-4 py-8 text-center text-slate-500"><i class="itc bi bi-arrow-repeat mr-2 animate-spin"></i>{{ t('backups.index.loading') }}</td>
                         </tr>
                         <tr v-else-if="backupRuns.length === 0">
-                            <td colspan="5" class="px-4 py-8 text-center text-slate-500">No backup runs found.</td>
+                            <td colspan="5" class="px-4 py-8 text-center text-slate-500">{{ t('backups.index.empty') }}</td>
                         </tr>
                     </tbody>
                 </table>

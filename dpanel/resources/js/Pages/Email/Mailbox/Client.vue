@@ -8,6 +8,9 @@ import MailboxComposeWindow from './components/MailboxComposeWindow.vue';
 import MailboxTopbar from './components/MailboxTopbar.vue';
 import ContactsPage from './components/ContactsPage.vue';
 import { provideMailContacts } from './composables/useMailContacts';
+import { useI18n } from 'vue-i18n';
+
+const { t } = useI18n();
 
 const page = usePage();
 const panelToken = page.props.panel?.token;
@@ -114,10 +117,10 @@ const uploadPhoto = async (file) => {
     try {
         const response = await window.axios.post(props.photoEndpoint, data, { headers: { Accept: 'application/json' } });
         photoVersion.value = Date.now();
-        pushToast(response?.data?.message || 'Profile photo updated.', 'success');
+        pushToast(response?.data?.message || t('email.mailbox.client.photoUpdated'), 'success');
     }
     catch (error) {
-        pushToast(error?.response?.data?.errors?.photo?.[0] || error?.response?.data?.message || 'Photo could not be uploaded.');
+        pushToast(error?.response?.data?.errors?.photo?.[0] || error?.response?.data?.message || t('email.mailbox.client.photoUploadFailed'));
     }
 };
 
@@ -126,10 +129,10 @@ const removePhoto = async () => {
     try {
         await window.axios.delete(props.photoEndpoint, { headers: { Accept: 'application/json' } });
         photoVersion.value = 0;
-        pushToast('Profile photo removed.', 'success');
+        pushToast(t('email.mailbox.client.photoRemoved'), 'success');
     }
     catch (error) {
-        pushToast(error?.response?.data?.message || 'Photo could not be removed.');
+        pushToast(error?.response?.data?.message || t('email.mailbox.client.photoRemoveFailed'));
     }
 };
 
@@ -277,13 +280,13 @@ const totalPages = computed(() => Math.max(1, Math.ceil(totalFilteredMessages.va
 
 const currentMessage = computed(() => activeMessage.value || null);
 
-const filterOptions = [
-    { value: 'all', label: 'All mail', hint: 'Show every message' },
-    { value: 'unread', label: 'Unread', hint: 'Only unread messages' },
-    { value: 'read', label: 'Read', hint: 'Only opened messages' },
-];
+const filterOptions = computed(() => [
+    { value: 'all', label: t('email.mailbox.client.filter.all'), hint: t('email.mailbox.client.filter.allHint') },
+    { value: 'unread', label: t('email.mailbox.client.filter.unread'), hint: t('email.mailbox.client.filter.unreadHint') },
+    { value: 'read', label: t('email.mailbox.client.filter.read'), hint: t('email.mailbox.client.filter.readHint') },
+]);
 
-const activeFilterLabel = computed(() => filterOptions.find((item) => item.value === messageFilter.value)?.label || 'All mail');
+const activeFilterLabel = computed(() => filterOptions.value.find((item) => item.value === messageFilter.value)?.label || t('email.mailbox.client.filter.all'));
 const filteredMessageCount = computed(() => filteredMessages.value.length);
 const totalMessageCount = computed(() => messages.value.length);
 const hasSearchQuery = computed(() => searchQuery.value.trim().length > 0);
@@ -301,13 +304,13 @@ const relatedMailboxesToShow = computed(() => {
 
 const folderLabel = (name) => {
     const normalized = normalizeFolderName(name);
-    if (normalized === 'inbox') return 'Inbox';
-    if (normalized.includes('sent')) return 'Sent';
-    if (normalized.includes('draft')) return 'Drafts';
-    if (normalized.includes('spam') || normalized.includes('junk')) return 'Spam';
-    if (normalized.includes('trash') || normalized.includes('bin') || normalized.includes('deleted')) return 'Trash';
-    if (normalized === 'outbox') return 'Outbox';
-    if (normalized === 'all mail') return 'All';
+    if (normalized === 'inbox') return t('email.mailbox.folders.inbox');
+    if (normalized.includes('sent')) return t('email.mailbox.folders.sent');
+    if (normalized.includes('draft')) return t('email.mailbox.folders.drafts');
+    if (normalized.includes('spam') || normalized.includes('junk')) return t('email.mailbox.folders.spam');
+    if (normalized.includes('trash') || normalized.includes('bin') || normalized.includes('deleted')) return t('email.mailbox.folders.trash');
+    if (normalized === 'outbox') return t('email.mailbox.folders.outbox');
+    if (normalized === 'all mail') return t('email.mailbox.folders.allShort');
     return name;
 };
 const activeFolderUnread = computed(() => Number(folders.value.find((f) => f.name === activeFolder.value)?.unread) || 0);
@@ -423,7 +426,7 @@ const loadMailbox = async (folder = activeFolder.value, uid = null, forceSync = 
         }
 
         if (!data.success) {
-            pushToast(data.message || 'Mailbox could not be loaded.');
+            pushToast(data.message || t('email.mailbox.client.mailboxFailed'));
             // The folder is gone (deleted in another app): go back to the Inbox.
             if (data.folder_missing && normalizeFolderName(folder) !== 'inbox') {
                 loadMailbox('INBOX', null, true);
@@ -439,7 +442,7 @@ const loadMailbox = async (folder = activeFolder.value, uid = null, forceSync = 
         }
     }
     catch (error) {
-        pushToast(error?.response?.data?.message || error?.message || 'Mailbox could not be loaded.');
+        pushToast(error?.response?.data?.message || error?.message || t('email.mailbox.client.mailboxFailed'));
         messages.value = [];
         activeMessage.value = null;
     }
@@ -516,7 +519,7 @@ const openMessage = async (uid) => {
 
         const data = response?.data || {};
         if (!data.success || !data.messageData) {
-            pushToast(data.message || 'Message could not be loaded.');
+            pushToast(data.message || t('email.mailbox.message.loadFailed'));
             return;
         }
 
@@ -530,7 +533,7 @@ const openMessage = async (uid) => {
     }
     catch (error) {
         if (requestedUid === uid) {
-            pushToast(error?.response?.data?.message || error?.message || 'Message could not be loaded.');
+            pushToast(error?.response?.data?.message || error?.message || t('email.mailbox.message.loadFailed'));
         }
     }
     finally {
@@ -620,14 +623,14 @@ const submitSend = async () => {
             { headers: { Accept: 'application/json' } },
         );
 
-        pushToast(response?.data?.message || 'Message sent successfully.', 'success');
+        pushToast(response?.data?.message || t('email.mailbox.composer.sent'), 'success');
         composeOpen.value = false;
         clearDraft();
         contacts.load(true);
         refreshInBackground();
     }
     catch (error) {
-        pushToast(error?.response?.data?.message || error?.message || 'Message could not be sent.');
+        pushToast(error?.response?.data?.message || error?.message || t('email.mailbox.composer.sendFailed'));
     }
     finally {
         sending.value = false;
@@ -650,7 +653,7 @@ const selectAll = (checked) => {
 const bulkAction = async (action) => {
     const uids = [...selectedUids.value];
     if (!uids.length || !props.bulkEndpoint || bulkWorking.value) return;
-    if (action === 'delete' && !confirm(`Delete ${uids.length} ${uids.length === 1 ? 'message' : 'messages'}? This cannot be undone.`)) return;
+    if (action === 'delete' && !confirm(uids.length === 1 ? t('email.mailbox.client.deleteOne') : t('email.mailbox.client.deleteMany', { count: uids.length }))) return;
 
     const folder = activeFolder.value;
     bulkWorking.value = true;
@@ -684,10 +687,10 @@ const bulkAction = async (action) => {
             selectedUids.value = [];
         }
 
-        pushToast(response?.data?.message || 'Done.', 'success');
+        pushToast(response?.data?.message || t('email.mailbox.client.done'), 'success');
     }
     catch (error) {
-        pushToast(error?.response?.data?.message || error?.message || 'Action failed.');
+        pushToast(error?.response?.data?.message || error?.message || t('email.mailbox.client.actionFailed'));
     }
     finally {
         bulkWorking.value = false;
@@ -706,7 +709,7 @@ watch(messages, () => {
 });
 
 const deleteMessage = async (uid) => {
-    if (!confirm('Delete this message?')) return;
+    if (!confirm(t('email.mailbox.client.deleteThis'))) return;
 
     deletingUid.value = uid;
     statusMessage.value = '';
@@ -721,11 +724,11 @@ const deleteMessage = async (uid) => {
             { headers: { Accept: 'application/json' } },
         );
 
-        statusMessage.value = response?.data?.message || 'Message deleted.';
+        statusMessage.value = response?.data?.message || t('email.mailbox.client.deleted');
         await loadMailbox(activeFolder.value, null);
     }
     catch (error) {
-        pushToast(error?.response?.data?.message || error?.message || 'Message could not be deleted.');
+        pushToast(error?.response?.data?.message || error?.message || t('email.mailbox.client.deleteFailed'));
     }
     finally {
         deletingUid.value = null;
@@ -785,10 +788,10 @@ const toggleRead = async (message) => {
             activeMessage.value = { ...activeMessage.value, seen };
         }
 
-        pushToast(seen ? 'Marked as read.' : 'Marked as unread.', 'success');
+        pushToast(seen ? t('email.mailbox.client.markedRead') : t('email.mailbox.client.markedUnread'), 'success');
     }
     catch (error) {
-        pushToast(error?.response?.data?.message || 'Could not update message status.');
+        pushToast(error?.response?.data?.message || t('email.mailbox.client.statusFailed'));
     }
 };
 
@@ -844,7 +847,7 @@ watch(() => messageFilter.value, () => {
 </script>
 
 <template>
-    <Head :title="`Mailbox - ${mailbox.email}`" />
+    <Head :title="t('email.mailbox.client.headTitle', { email: mailbox.email })" />
 
     <div :class="isDark ? 'min-h-screen bg-slate-950 text-slate-100' : 'min-h-screen bg-[#f6f8fc] text-slate-900'">
         <!-- Mobile Sidebar Overlay -->
@@ -913,8 +916,8 @@ watch(() => messageFilter.value, () => {
                     : 'shrink-0 border-b border-amber-200 bg-amber-50 px-4 py-2 text-sm text-amber-800'"
             >
                 <i class="bi bi-cone-striped mr-1"></i>
-                <span class="font-medium">Sandbox mode.</span>
-                Mail you send reaches mailboxes on this server only; nothing goes to outside addresses.
+                <span class="font-medium">{{ t('email.mailbox.client.sandboxTitle') }}</span>
+                {{ t('email.mailbox.client.sandboxHelp') }}
             </div>
 
             <div v-if="statusMessage" :class="isDark

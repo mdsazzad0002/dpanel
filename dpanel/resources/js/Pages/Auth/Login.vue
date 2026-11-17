@@ -9,6 +9,9 @@ import { Head, Link, useForm } from '@inertiajs/vue3';
 import axios from 'axios';
 import { ref } from 'vue';
 import { readDeviceLocation } from '@/composables/deviceLocation';
+import { useI18n } from 'vue-i18n';
+
+const { t } = useI18n();
 
 const props = defineProps({
     canResetPassword: {
@@ -67,7 +70,7 @@ const submit = async () => {
         await new Promise((resolve) => setTimeout(resolve, 700));
         const target = response?.data?.redirect;
         if (typeof target !== 'string' || target === '') {
-            form.setError('email', 'Login succeeded but no redirect was returned. Please try again.');
+            form.setError('email', t('auth.login.noRedirect'));
             return;
         }
         window.location.assign(target);
@@ -86,18 +89,18 @@ const submit = async () => {
 
 <template>
     <GuestLayout>
-        <Head title="Log in" />
+        <Head :title="t('auth.login.headTitle')" />
 
         <section class="space-y-6">
             <div class="space-y-2">
                 <p class="font-mono text-xs uppercase tracking-[0.32em] text-emerald-300/80">
-                    Admin portal
+                    {{ t('auth.login.portal') }}
                 </p>
                 <h2 class="text-2xl font-semibold tracking-tight text-slate-50 sm:text-3xl">
-                    Sign in to dPanel
+                    {{ t('auth.login.title') }}
                 </h2>
                 <p class="text-sm leading-6 text-slate-300">
-                    Use your administrative credentials to continue.
+                    {{ t('auth.login.subtitle') }}
                 </p>
             </div>
 
@@ -110,7 +113,7 @@ const submit = async () => {
 
             <form class="space-y-5" @submit.prevent="submit">
                 <div>
-                    <InputLabel for="email" value="Admin Email" class="text-slate-200" />
+                    <InputLabel for="email" :value="t('auth.login.email')" class="text-slate-200" />
                     <TextInput
                         id="email"
                         type="email"
@@ -125,7 +128,7 @@ const submit = async () => {
                 </div>
 
                 <div>
-                    <InputLabel for="password" value="Access Key" class="text-slate-200" />
+                    <InputLabel for="password" :value="t('auth.login.password')" class="text-slate-200" />
                     <TextInput
                         id="password"
                         type="password"
@@ -133,7 +136,7 @@ const submit = async () => {
                         v-model="form.password"
                         required
                         autocomplete="current-password"
-                        placeholder="Enter secure credential"
+                        :placeholder="t('auth.login.passwordPlaceholder')"
                     />
                     <InputError class="mt-2" :message="form.errors.password" />
                 </div>
@@ -141,14 +144,14 @@ const submit = async () => {
                 <div class="flex items-center justify-between">
                     <label class="flex cursor-pointer items-center">
                         <Checkbox name="remember" v-model:checked="form.remember" />
-                        <span class="ms-2 text-sm text-slate-300">Persist session</span>
+                        <span class="ms-2 text-sm text-slate-300">{{ t('auth.login.remember') }}</span>
                     </label>
                     <Link
                         v-if="canResetPassword"
                         :href="route('password.request')"
                         class="text-sm font-medium text-emerald-300 transition hover:text-emerald-200"
                     >
-                        Forgot password?
+                        {{ t('auth.login.forgot') }}
                     </Link>
                 </div>
 
@@ -156,8 +159,8 @@ const submit = async () => {
                     <p class="flex items-start gap-2 text-xs leading-5 text-slate-400">
                         <i class="bi bi-geo-alt mt-0.5 text-emerald-300"></i>
                         <span>
-                            Your device location is recorded with each sign-in for the security audit. The browser will ask for permission.
-                            <template v-if="locationRequired"> Signing in needs it.</template>
+                            {{ t('auth.login.location') }}
+                            <template v-if="locationRequired"> {{ t('auth.login.locationRequired') }}</template>
                         </span>
                     </p>
                     <InputError :message="form.errors.location" />
@@ -169,7 +172,7 @@ const submit = async () => {
                     :class="{ 'opacity-25': form.processing }"
                     :disabled="form.processing"
                 >
-                    {{ locating ? 'GETTING LOCATION...' : (form.processing ? 'AUTHENTICATING...' : 'LOGIN TO SERVER') }}
+                    {{ locating ? t('auth.login.locating') : (form.processing ? t('auth.login.authenticating') : t('auth.login.submit')) }}
                 </PrimaryButton>
             </form>
         </section>

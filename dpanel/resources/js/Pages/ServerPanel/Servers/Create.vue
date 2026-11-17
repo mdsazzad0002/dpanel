@@ -3,6 +3,9 @@ import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
 import PrimaryButton from '@/Components/PrimaryButton.vue';
 import ServerFormFields from '@/Components/ServerPanel/ServerFormFields.vue';
 import { Head, useForm } from '@inertiajs/vue3';
+import { useI18n } from 'vue-i18n';
+
+const { t } = useI18n();
 
 const props = defineProps({
     server: { type: Object, default: null },
@@ -33,22 +36,22 @@ const submit = () => {
 </script>
 
 <template>
-    <Head :title="editing ? 'Edit Server' : 'Add Server'" />
+    <Head :title="editing ? t('serverPanel.servers.form.edit') : t('serverPanel.servers.form.add')" />
     <AuthenticatedLayout>
         <template #header>
-            <h1 class="text-lg font-semibold">{{ editing ? 'Edit Server' : 'Add Server' }}</h1>
+            <h1 class="text-lg font-semibold">{{ editing ? t('serverPanel.servers.form.edit') : t('serverPanel.servers.form.add') }}</h1>
         </template>
 
         <div class="mx-auto max-w-3xl rounded-xl border border-slate-200 bg-white p-6">
             <p class="mb-4 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-700">
-                Credentials are encrypted and never shown again.
+                {{ t('serverPanel.servers.form.encrypted') }}
             </p>
 
             <form class="grid gap-4 md:grid-cols-2" @submit.prevent="submit">
                 <ServerFormFields :form="form" />
 
                 <div class="md:col-span-2 flex justify-end">
-                    <PrimaryButton :disabled="form.processing">{{ editing ? 'Update Server' : 'Save Server' }}</PrimaryButton>
+                    <PrimaryButton :disabled="form.processing">{{ editing ? t('serverPanel.servers.form.update') : t('serverPanel.servers.form.save') }}</PrimaryButton>
                 </div>
             </form>
         </div>

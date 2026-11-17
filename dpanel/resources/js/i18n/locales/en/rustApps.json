@@ -1,0 +1,54 @@
+{
+    "card": {
+        "badge": {
+            "running": "Running",
+            "error": "Failed",
+            "stopped": "Stopped",
+            "starting": "Building…"
+        },
+        "port": "Port",
+        "user": "User",
+        "publicOn": "Public on",
+        "notPublic": "Not public. {link}.",
+        "publishLink": "Publish it from Rules → Port Share",
+        "listening": "port listening",
+        "notListening": "port not listening",
+        "start": "Start",
+        "stop": "Stop",
+        "restart": "Restart",
+        "status": "Status",
+        "edit": "Edit",
+        "delete": "Delete",
+        "runtime": "Runtime",
+        "cargoRelease": "Cargo release",
+        "command": "Command",
+        "cargoBinary": "Cargo binary",
+        "building": "Building with cargo in the background, then starting. The first build can take a few minutes."
+    },
+    "index": {
+        "title": "Rust Apps",
+        "subtitle": "Builds Cargo projects and runs them as your site user. Publish them from Rules → Port Share.",
+        "new": "New Rust app",
+        "empty": "No Rust apps yet",
+        "noHome": "No home directory available",
+        "emptyHelp": "Create one, then publish it from Rules → Port Share.",
+        "noHomeHelp": "Apps run inside a website user's home. Create a website first."
+    },
+    "form": {
+        "editTitle": "Edit {name}",
+        "newTitle": "New Rust app",
+        "subtitle": "Builds the Cargo project and runs it as the home's Linux user. Publish it from Rules → Port Share.",
+        "name": "App name",
+        "home": "Home directory",
+        "workdir": "Working directory",
+        "workdirHelp": "The folder with Cargo.toml. Leave blank to use the home directory.",
+        "optional": "(optional)",
+        "port": "Port",
+        "auto": "Auto",
+        "startAfter": "Start after creating",
+        "portNote": "Port {port}. A running app restarts with the new settings.",
+        "create": "Create app",
+        "args": "Arguments",
+        "argsHelp": "Each start runs {build} and starts the Cargo binary with these plain arguments, without a shell. To run another file, start with its path, e.g. {example}. The app reads its port from the {env} environment variable and must listen on 127.0.0.1."
+    }
+}

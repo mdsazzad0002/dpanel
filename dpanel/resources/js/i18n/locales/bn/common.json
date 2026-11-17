@@ -1,0 +1,12 @@
+{
+    "language": "ভাষা",
+    "refresh": "রিফ্রেশ",
+    "loading": "লোড হচ্ছে…",
+    "sessionExpired": "আপনার session শেষ হয়ে গেছে। Page reload করে আবার চেষ্টা করুন।",
+    "search": "খুঁজুন",
+    "save": "সংরক্ষণ",
+    "cancel": "বাতিল",
+    "close": "বন্ধ",
+    "none": "নেই",
+    "back": "Manage-এ ফিরুন"
+}

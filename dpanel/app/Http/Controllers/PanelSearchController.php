@@ -47,6 +47,12 @@ class PanelSearchController extends Controller
         $actor = $request->user();
         $token = (string) ($request->hasSession() ? $request->session()->get('panel_session_token', '') : '');
 
+        // Every panel link needs the dpt token. Without one (e.g. a logged-in
+        // session on a non-panel page) there's nothing linkable to offer.
+        if ($actor === null || $token === '') {
+            return [];
+        }
+
         $items = array_merge(
             $this->buildNavigationItems($actor, $token),
             $this->buildWebsiteItems($actor, $token, $query),

@@ -1,0 +1,49 @@
+{
+    "card": {
+        "running": "Running",
+        "stopped": "Stopped",
+        "port": "Port",
+        "user": "User",
+        "default": "default",
+        "runs": "Runs",
+        "publicOn": "Public on",
+        "notPublic": "Not public. {link}.",
+        "publishLink": "Publish it from Rules → Port Share",
+        "listening": "port listening",
+        "notListening": "port not listening",
+        "start": "Start",
+        "stop": "Stop",
+        "restart": "Restart",
+        "status": "Status",
+        "edit": "Edit",
+        "delete": "Delete"
+    },
+    "index": {
+        "title": "Node.js Apps",
+        "subtitle": "Next.js, Express, Nest… run from any folder of your home directory.",
+        "new": "New Node.js app",
+        "empty": "No Node.js apps yet",
+        "noHome": "No home directory available",
+        "emptyHelp": "Create one, then publish it from Rules → Port Share.",
+        "noHomeHelp": "Apps run inside a website user's home. Create a website first."
+    },
+    "form": {
+        "editTitle": "Edit {name}",
+        "newTitle": "New Node.js app",
+        "subtitle": "Runs as the home's Linux user from any folder you choose. Publish it from Rules → Port Share.",
+        "name": "App name",
+        "home": "Home directory",
+        "workdir": "Working directory",
+        "workdirHelp": "Any folder in the home (where package.json lives). Empty runs from the home itself.",
+        "optional": "(optional)",
+        "port": "Port",
+        "auto": "Auto",
+        "startAfter": "Start after creating",
+        "portNote": "Port {port}. A running app restarts with the new settings.",
+        "create": "Create app",
+        "overrides": "Overrides {cmd}. The app must listen on 127.0.0.1 and {port}.",
+        "startCommand": "Start command",
+        "entry": "Entry file",
+        "version": "Node.js version"
+    }
+}

@@ -1,4 +1,7 @@
 import { parseMongo } from './mongoJson';
+import { i18n } from '@/i18n';
+
+const t = (...args) => i18n.global.t(...args);
 
 // A JSON array, one document, or one document per line (mongoexport's default).
 export function readImportFile(text) {
@@ -18,7 +21,7 @@ export function readImportFile(text) {
         try {
             return JSON.parse(line);
         } catch {
-            throw new Error(`Line ${index + 1} is not valid JSON.`);
+            throw new Error(t('databases.mongoAdmin.import.lineInvalid', { line: index + 1 }));
         }
     });
 }
@@ -30,7 +33,7 @@ export function readImportFile(text) {
  */
 export async function importDocuments(run, db, collection, docs, progress = () => {}) {
     if (!docs.length || docs.some((doc) => !doc || typeof doc !== 'object' || Array.isArray(doc))) {
-        throw new Error('The file must hold JSON documents (objects).');
+        throw new Error(t('databases.mongoAdmin.import.notDocuments'));
     }
     let done = 0;
     let batch = [];
@@ -52,7 +55,7 @@ export async function importDocuments(run, db, collection, docs, progress = () =
         }
         await flush();
     } catch (e) {
-        throw new Error(`Import stopped after ${done.toLocaleString()} documents: ${e.message}`);
+        throw new Error(t('databases.mongoAdmin.import.stopped', { count: done.toLocaleString(), error: e.message }));
     }
     return done;
 }

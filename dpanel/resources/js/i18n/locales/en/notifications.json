@@ -1,0 +1,29 @@
+{
+    "show": {
+        "status": {
+            "completed": "Completed",
+            "failed": "Failed",
+            "warning": "Warning",
+            "processing": "Processing",
+            "info": "Info"
+        },
+        "copied": "Link copied to clipboard.",
+        "copyFailed": "Could not copy the link — copy it manually.",
+        "headTitle": "Notification - {title}",
+        "title": "Notification",
+        "back": "Back to dashboard",
+        "exportFile": "Export file",
+        "copyLink": "Copy link",
+        "download": "Download",
+        "shareNote": "No panel login needed — safe to share with anyone."
+    },
+    "index": {
+        "clearConfirm": "Clear all notifications? This cannot be undone.",
+        "title": "Notifications",
+        "unread": "{count} unread",
+        "markAll": "Mark all read",
+        "clearAll": "Clear all",
+        "copy": "Copy",
+        "empty": "No notifications"
+    }
+}

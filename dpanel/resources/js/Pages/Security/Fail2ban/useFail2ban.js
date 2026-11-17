@@ -1,6 +1,9 @@
 import { computed, ref } from 'vue';
 import { usePage } from '@inertiajs/vue3';
 import axios from 'axios';
+import { i18n } from '@/i18n';
+
+const t = (...args) => i18n.global.t(...args);
 
 /**
  * Status, actions and SSH history shared by the SSH Login History,
@@ -27,7 +30,7 @@ export function useFail2ban(clientIp = '') {
             const { data } = await axios.get(panelRoute('security.fail2ban.status'));
             status.value = data.data;
         } catch (e) {
-            loadError.value = e.response?.data?.message || 'Could not load fail2ban status.';
+            loadError.value = e.response?.data?.message || t('security.fail2ban.actions.loadStatusFailed');
         } finally {
             loading.value = false;
             busy.value = '';
@@ -48,7 +51,7 @@ export function useFail2ban(clientIp = '') {
             history.value = data.data.events || [];
             historyHidden.value = data.data.hidden || 0;
         } catch (e) {
-            historyError.value = e.response?.data?.message || 'Could not load SSH login history.';
+            historyError.value = e.response?.data?.message || t('security.fail2ban.actions.loadHistoryFailed');
         } finally {
             historyLoading.value = false;
         }
@@ -62,7 +65,7 @@ export function useFail2ban(clientIp = '') {
             status.value = data.data;
             message.value = { type: 'success', text: data.message };
         } catch (e) {
-            message.value = { type: 'error', text: e.response?.data?.message || 'Request failed.' };
+            message.value = { type: 'error', text: e.response?.data?.message || t('security.fail2ban.actions.requestFailed') };
         } finally {
             busy.value = '';
         }
@@ -70,18 +73,16 @@ export function useFail2ban(clientIp = '') {
 
     const unban = (ip) => act(() => axios.post(panelRoute('security.fail2ban.unban'), { ip }), ip);
     const ban = (ip) => {
-        const warning = ip === clientIp ? ' This is your own IP: you will lose SSH access until you unblock it here.' : '';
-        if (!confirm(`Block ${ip} from SSH permanently?${warning}`)) return;
+        if (!confirm(t(ip === clientIp ? 'security.fail2ban.actions.banConfirmSelf' : 'security.fail2ban.actions.banConfirm', { ip }))) return;
         act(() => axios.post(panelRoute('security.fail2ban.ban'), { ip }), ip);
     };
     const bulk = (action, ips) => {
         if (!ips.length) return;
-        const count = `${ips.length} IP${ips.length === 1 ? '' : 's'}`;
+        const count = t(ips.length === 1 ? 'security.fail2ban.actions.oneIp' : 'security.fail2ban.actions.manyIps', { count: ips.length });
         if (action === 'ban') {
-            const warning = ips.includes(clientIp) ? ' Your own IP is in the selection: you will lose SSH access until you unblock it.' : '';
-            if (!confirm(`Block ${count} from SSH permanently?${warning}`)) return;
+            if (!confirm(t(ips.includes(clientIp) ? 'security.fail2ban.actions.bulkBanConfirmSelf' : 'security.fail2ban.actions.bulkBanConfirm', { count }))) return;
         }
-        if (action === 'whitelist_add' && !confirm(`Whitelist ${count}? fail2ban will never block them, and any current block is lifted.`)) return;
+        if (action === 'whitelist_add' && !confirm(t('security.fail2ban.actions.bulkWhitelistConfirm', { count }))) return;
         act(() => axios.post(panelRoute('security.fail2ban.bulk'), { action, ips }), 'bulk');
     };
     // History changes return no fail2ban status, so they reload the history instead.
@@ -93,25 +94,25 @@ export function useFail2ban(clientIp = '') {
             message.value = { type: 'success', text: data.message };
             await loadHistory();
         } catch (e) {
-            message.value = { type: 'error', text: e.response?.data?.message || 'Request failed.' };
+            message.value = { type: 'error', text: e.response?.data?.message || t('security.fail2ban.actions.requestFailed') };
         } finally {
             busy.value = '';
         }
     };
     const deleteHistory = (ips) => {
         if (!ips.length) return;
-        if (!confirm(`Delete the login history of ${ips.length} IP${ips.length === 1 ? '' : 's'}? Blocks and the whitelist stay as they are, and new attempts from these IPs still show.`)) return;
+        if (!confirm(t('security.fail2ban.actions.deleteHistoryConfirm', { count: t(ips.length === 1 ? 'security.fail2ban.actions.oneIp' : 'security.fail2ban.actions.manyIps', { count: ips.length }) }))) return;
         changeHistory('delete', { ips });
     };
     const clearHistory = () => {
-        if (!confirm('Clear the whole SSH login history? Blocks and the whitelist stay as they are; only logins after now will show.')) return;
+        if (!confirm(t('security.fail2ban.actions.clearHistoryConfirm'))) return;
         changeHistory('clear');
     };
     const restoreHistory = () => changeHistory('restore');
     const savePolicy = (maxRetry) => act(() => axios.post(panelRoute('security.fail2ban.policy'), { max_retry: maxRetry }), 'policy');
     const whitelistAdd = (ip) => act(() => axios.post(panelRoute('security.fail2ban.whitelist.store'), { ip }), ip);
     const whitelistRemove = (ip) => {
-        if (!confirm(`Remove ${ip} from the whitelist? It can be blocked again after failed logins.`)) return;
+        if (!confirm(t('security.fail2ban.actions.whitelistRemoveConfirm', { ip }))) return;
         act(() => axios.delete(panelRoute('security.fail2ban.whitelist.destroy'), { data: { ip } }), ip);
     };
 

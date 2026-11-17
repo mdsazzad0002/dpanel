@@ -1,0 +1,49 @@
+{
+    "card": {
+        "running": "চলছে",
+        "stopped": "বন্ধ",
+        "port": "Port",
+        "user": "User",
+        "default": "default",
+        "runs": "চালায়",
+        "publicOn": "Public ঠিকানা",
+        "notPublic": "Public নয়। {link}।",
+        "publishLink": "Rules → Port Share থেকে publish করুন",
+        "listening": "port listen করছে",
+        "notListening": "port listen করছে না",
+        "start": "চালু",
+        "stop": "বন্ধ",
+        "restart": "Restart",
+        "status": "Status",
+        "edit": "সম্পাদনা",
+        "delete": "মুছুন"
+    },
+    "index": {
+        "title": "Node.js app",
+        "subtitle": "Next.js, Express, Nest… আপনার home directory-র যেকোনো folder থেকে চালান।",
+        "new": "নতুন Node.js app",
+        "empty": "এখনও কোনো Node.js app নেই",
+        "noHome": "কোনো home directory নেই",
+        "emptyHelp": "একটি তৈরি করুন, তারপর Rules → Port Share থেকে publish করুন।",
+        "noHomeHelp": "App চলে website user-এর home-এর ভেতরে। আগে একটি website তৈরি করুন।"
+    },
+    "form": {
+        "editTitle": "{name} সম্পাদনা",
+        "newTitle": "নতুন Node.js app",
+        "subtitle": "আপনার বেছে নেওয়া যেকোনো folder থেকে home-এর Linux user হিসেবে চলে। Rules → Port Share থেকে publish করুন।",
+        "name": "App-এর নাম",
+        "home": "Home directory",
+        "workdir": "Working directory",
+        "workdirHelp": "Home-এর যেকোনো folder (যেখানে package.json আছে)। খালি রাখলে home থেকেই চলবে।",
+        "optional": "(ঐচ্ছিক)",
+        "port": "Port",
+        "auto": "স্বয়ংক্রিয়",
+        "startAfter": "তৈরির পর চালু করুন",
+        "portNote": "Port {port}। চালু থাকা app নতুন setting নিয়ে restart হবে।",
+        "create": "App তৈরি করুন",
+        "overrides": "{cmd}-এর বদলে চলে। App-কে 127.0.0.1 ও {port}-এ listen করতে হবে।",
+        "startCommand": "Start command",
+        "entry": "Entry file",
+        "version": "Node.js version"
+    }
+}

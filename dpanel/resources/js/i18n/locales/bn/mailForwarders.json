@@ -1,0 +1,23 @@
+{
+    "title": "Forwarder ও Catch-all",
+    "subtitle": "শুধু forward করা address, আর অজানা address-এর mail কোথায় যায়",
+    "add": "Forwarder যোগ করুন",
+    "address": "Address",
+    "domain": "Domain",
+    "destinations": "যেখানে পাঠাবে",
+    "goesTo": "যায়",
+    "formHelp": "কোনো mailbox বানানো হয় না: এই address-এর mail সরাসরি চলে যায়। একাধিক address কমা দিয়ে আলাদা করুন।",
+    "addButton": "যোগ করুন",
+    "list": "Forwarder",
+    "empty": "এখনও কোনো forwarder নেই।",
+    "remove": "সরান",
+    "removeConfirm": "{address}-এর forward বন্ধ করবেন? এর mail ফেরত যাবে।",
+    "addFailed": "Forwarder যোগ হয়নি।",
+    "removeFailed": "Forwarder সরানো যায়নি।",
+    "catchAll": "Catch-all",
+    "catchAllHelp": "Domain-এর যে address-এর mailbox বা forwarder নেই, তার mail এখানে আসে। খালি রাখলে ফেরত যায়।",
+    "catchAllOff": "বন্ধ: অজানা address-এর mail ফেরত যায়",
+    "save": "Save",
+    "catchAllFailed": "Catch-all save হয়নি।",
+    "noDomains": "আপনার এখনও কোনো website বা mailbox-এর domain নেই।"
+}

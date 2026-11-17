@@ -5,6 +5,9 @@ import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
 import { Head } from '@inertiajs/vue3';
 import UsageMeter from './components/UsageMeter.vue';
 import UsageHistory from './components/UsageHistory.vue';
+import { useI18n } from 'vue-i18n';
+
+const { t } = useI18n();
 
 const props = defineProps({
     scope: { type: String, default: 'Your account' },
@@ -17,7 +20,7 @@ const onlyAlerts = ref(false);
 const open = ref(null);
 
 const columns = ['disk', 'bandwidth', 'memory', 'cpu'];
-const labels = { disk: 'Disk', bandwidth: 'Bandwidth (month)', memory: 'Memory', cpu: 'CPU' };
+const labels = computed(() => ({ disk: t('usage.cols.disk'), bandwidth: t('usage.cols.bandwidth'), memory: t('usage.cols.memory'), cpu: t('usage.cols.cpu') }));
 const resource = (account, key) => account.resources.find((row) => row.key === key);
 const highest = (account) => Math.max(0, ...account.resources.map((row) => row.percent ?? 0));
 
@@ -32,28 +35,27 @@ const nearCount = computed(() => props.accounts.filter((account) => highest(acco
 </script>
 
 <template>
-    <Head title="Usage & Limits" />
+    <Head :title="t('usage.title')" />
 
     <AuthenticatedLayout>
         <template #header>
             <div>
-                <h1 class="text-lg font-semibold text-slate-900 dark:text-white">Usage &amp; Limits</h1>
-                <p class="text-sm text-slate-500 dark:text-slate-400">{{ scope }} · use against the package, newest reading</p>
+                <h1 class="text-lg font-semibold text-slate-900 dark:text-white">{{ t('usage.title') }}</h1>
+                <p class="text-sm text-slate-500 dark:text-slate-400">{{ scope }} · {{ t('usage.subtitle') }}</p>
             </div>
         </template>
 
         <div class="space-y-4">
             <div v-if="unassignedWebsites > 0" class="rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900 dark:border-amber-800 dark:bg-amber-500/10 dark:text-amber-200">
                 <i class="bi bi-info-circle"></i>
-                {{ unassignedWebsites }} {{ unassignedWebsites === 1 ? 'website has' : 'websites have' }} no owner, so {{ unassignedWebsites === 1 ? 'its' : 'their' }} use is not counted here.
-                Give {{ unassignedWebsites === 1 ? 'it' : 'them' }} an owner from the website's Manage page.
-                <a :href="route('websites.list')" class="font-semibold underline">Websites</a>
+                {{ unassignedWebsites === 1 ? t('usage.unassignedOne') : t('usage.unassignedMany', { count: unassignedWebsites }) }}
+                <a :href="route('websites.list')" class="font-semibold underline">{{ t('usage.websites') }}</a>
             </div>
             <div v-if="accounts.length > 1" class="flex flex-wrap items-center gap-3">
-                <input v-model="search" type="search" placeholder="Search account or package…" class="w-full max-w-xs rounded-md border border-slate-300 px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-800" />
+                <input v-model="search" type="search" :placeholder="t('usage.search')" class="w-full max-w-xs rounded-md border border-slate-300 px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-800" />
                 <label class="inline-flex items-center gap-2 text-sm">
                     <input v-model="onlyAlerts" type="checkbox" class="rounded border-slate-300" />
-                    Only at 80% or more ({{ nearCount }})
+                    {{ t('usage.onlyAlerts', { count: nearCount }) }}
                 </label>
             </div>
 
@@ -61,7 +63,7 @@ const nearCount = computed(() => props.accounts.filter((account) => highest(acco
                 <table class="min-w-full text-sm">
                     <thead class="bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500 dark:bg-slate-950/50">
                         <tr>
-                            <th class="px-4 py-2">Account</th>
+                            <th class="px-4 py-2">{{ t('usage.account') }}</th>
                             <th v-for="key in columns" :key="key" class="px-4 py-2">{{ labels[key] }}</th>
                             <th class="px-4 py-2"></th>
                         </tr>
@@ -76,12 +78,12 @@ const nearCount = computed(() => props.accounts.filter((account) => highest(acco
                                 <td v-for="key in columns" :key="key" class="px-4 py-3">
                                     <UsageMeter :resource="resource(account, key)" />
                                     <p v-if="account.alerts[key]" class="mt-1 text-xs" :class="account.alerts[key] >= 100 ? 'text-red-600' : 'text-amber-600'">
-                                        <i class="bi bi-bell-fill"></i> {{ account.alerts[key] }}% alert sent
+                                        <i class="bi bi-bell-fill"></i> {{ t('usage.alertSent', { percent: account.alerts[key] }) }}
                                     </p>
                                 </td>
                                 <td class="px-4 py-3 text-right">
                                     <button type="button" class="rounded-md px-2 py-1 text-xs font-medium text-emerald-700 hover:bg-emerald-50 dark:text-emerald-300 dark:hover:bg-emerald-400/10" @click="open = open === account.id ? null : account.id">
-                                        <i class="bi" :class="open === account.id ? 'bi-chevron-up' : 'bi-graph-up'"></i> 7 days
+                                        <i class="bi" :class="open === account.id ? 'bi-chevron-up' : 'bi-graph-up'"></i> {{ t('usage.sevenDays') }}
                                     </button>
                                 </td>
                             </tr>
@@ -95,13 +97,12 @@ const nearCount = computed(() => props.accounts.filter((account) => highest(acco
                 </table>
                 <div v-if="rows.length === 0" class="p-10 text-center text-slate-500">
                     <i class="bi bi-speedometer2 text-3xl"></i>
-                    <p class="mt-2 font-medium">{{ accounts.length ? 'No account matches.' : 'No account has a website or a package yet.' }}</p>
+                    <p class="mt-2 font-medium">{{ accounts.length ? t('usage.noMatch') : t('usage.empty') }}</p>
                 </div>
             </div>
 
             <p class="text-xs text-slate-500">
-                Disk is measured hourly and bandwidth every 15 minutes for every account with a website; CPU and memory every five minutes, only when the package limits them.
-                A notice goes to the account at 80% and at 100% of a limit, once until use falls back.
+                {{ t('usage.footnote') }}
             </p>
         </div>
     </AuthenticatedLayout>

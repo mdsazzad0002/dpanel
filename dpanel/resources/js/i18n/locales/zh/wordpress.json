@@ -1,0 +1,100 @@
+{
+    "title": "WordPress",
+    "subtitle": "您管理的所有 WordPress 站点：更新、预发布副本和安全检查。",
+    "loadFailed": "无法加载 WordPress 详情。",
+    "none": "在您的网站中未找到 WordPress 站点。",
+    "finding": "正在查找 WordPress 站点…",
+    "selectAll": "全选",
+    "selected": "已选择 {count} 个站点",
+    "bulkConfirm": "现在更新 {count} 个站点？站点将依次更新。",
+    "updateEverything": "更新核心、插件和主题",
+    "updatePlugins": "仅更新插件",
+    "updateFailed": "更新失败。",
+    "updated": "已更新。",
+    "core": "核心",
+    "coreUpdate": "版本 {version} 可用。",
+    "upToDate": "已是最新。",
+    "updateCore": "更新 WordPress",
+    "plugins": "插件",
+    "themes": "主题",
+    "updateAll": "全部更新（{count}）",
+    "updateTo": "更新到 {version}",
+    "updateHelp": "更新时会为该命令关闭插件和主题，因此损坏的插件无法阻止自身更新。大版本更新前请先创建预发布副本。",
+    "tabs": {
+        "updates": "更新",
+        "staging": "预发布",
+        "security": "安全"
+    },
+    "securityHelp": "将核心文件与 wordpress.org 比对，并检查插件文件、管理员名称、开放注册、调试模式和文件编辑。",
+    "runCheck": "运行检查",
+    "checkAgain": "再次检查",
+    "checkFailed": "检查无法运行。",
+    "fixFailed": "无法应用修复。",
+    "score": "{total} 项检查中通过 {passed} 项",
+    "reinstallConfirm": "在当前文件上重新下载 WordPress 核心？内容、插件和主题不受影响。",
+    "checks": {
+        "core_files": {
+            "pass": "核心文件与 wordpress.org 一致",
+            "issue": "部分核心文件被修改或不应存在"
+        },
+        "plugin_files": {
+            "pass": "插件文件与 wordpress.org 一致",
+            "issue": "部分插件的文件被修改"
+        },
+        "admin_names": {
+            "pass": "没有管理员使用容易猜测的名称",
+            "issue": "有管理员使用容易猜测的名称"
+        },
+        "registration": {
+            "pass": "“任何人都可以注册”已关闭",
+            "issue": "任何人都可以注册账户"
+        },
+        "debug": {
+            "pass": "调试模式已关闭",
+            "issue": "调试模式已开启，可能向访客显示错误"
+        },
+        "file_edit": {
+            "pass": "主题和插件文件编辑器已关闭",
+            "issue": "管理员可以在 wp-admin 中编辑 PHP 文件"
+        },
+        "core_update": {
+            "pass": "WordPress 已是最新",
+            "issue": "有一个 WordPress 更新待安装"
+        },
+        "plugin_updates": {
+            "pass": "所有插件均为最新",
+            "issue": "部分插件需要更新"
+        }
+    },
+    "fixes": {
+        "disallow_file_edit": "关闭编辑器",
+        "disable_debug": "关闭调试",
+        "close_registration": "关闭注册",
+        "reinstall_core": "恢复核心文件"
+    },
+    "stagingHelp": "将此站点与您的另一个站点配对作为其预发布副本。复制会替换另一个站点的文件和数据库（先移入回收站），并改写站点地址。",
+    "stagingSite": "预发布站点",
+    "pickSite": "选择站点…",
+    "noFreeSite": "请先创建另一个网站用作预发布",
+    "useAsStaging": "用作预发布",
+    "unlink": "取消配对",
+    "unlinkConfirm": "取消这些站点的配对？两个站点都不会被修改。",
+    "stagingFailed": "预发布操作失败。",
+    "lastCopy": "上次复制到预发布",
+    "lastDeploy": "上次部署",
+    "never": "从未",
+    "copyToStaging": "复制到预发布",
+    "deploy": "将预发布部署到正式站点",
+    "copyConfirm": "将 {from} 复制覆盖到 {to}？{to} 当前的文件和数据库会先移入回收站。",
+    "deployConfirm": "将 {from} 部署覆盖正式站点 {to}？正式站点的文件和数据库会先移入回收站。",
+    "stage": {
+        "queued": "等待开始…",
+        "copying": "正在复制文件和数据库…",
+        "rewriting": "正在改写站点地址…",
+        "testing": "正在更新并测试预发布副本…",
+        "updating": "预发布测试通过；正在更新此站点…"
+    },
+    "safeUpdate": "安全更新",
+    "safeHelp": "将此站点复制到其预发布站点，更新副本，只有副本仍能无错误加载时才更新此站点。需要已关联的预发布站点。",
+    "safeStarted": "安全更新已开始。请在“预发布”标签页查看进度。"
+}

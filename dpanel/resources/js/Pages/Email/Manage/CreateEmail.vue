@@ -5,6 +5,9 @@ import { computed, ref, watch } from 'vue';
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
 import SearchableSelect from '@/Components/SearchableSelect.vue';
 import { Head, Link, useForm } from '@inertiajs/vue3';
+import { useI18n } from 'vue-i18n';
+
+const { t } = useI18n();
 
 const page = usePage();
 const panelToken = page.props.panel?.token;
@@ -44,7 +47,7 @@ const submit = async () => {
         );
 
         responseOk.value = true;
-        responseMessage.value = response.data?.message || 'Mailbox created successfully.';
+        responseMessage.value = response.data?.message || t('email.create.created');
         form.reset('mailbox', 'password', 'forwarding_to');
     } catch (error) {
         const data = error.response?.data;
@@ -55,7 +58,7 @@ const submit = async () => {
         });
 
         responseOk.value = false;
-        responseMessage.value = data?.message || 'Mailbox could not be created.';
+        responseMessage.value = data?.message || t('email.create.failed');
     } finally {
         form.processing = false;
     }
@@ -86,20 +89,20 @@ watch(
 </script>
 
 <template>
-    <Head title="Create Email" />
+    <Head :title="t('email.create.title')" />
 
     <AuthenticatedLayout>
         <template #header>
             <div>
-                <h1 class="text-lg font-semibold">Create Email</h1>
-                <p class="text-sm text-slate-500 dark:text-slate-400">Create a new mailbox account.</p>
+                <h1 class="text-lg font-semibold">{{ t('email.create.title') }}</h1>
+                <p class="text-sm text-slate-500 dark:text-slate-400">{{ t('email.create.subtitle') }}</p>
             </div>
         </template>
 
         <div class="space-y-4">
             <div class="flex justify-end">
                 <Link :href="panelToken ? route('emails.list', { token: panelToken }) : route('emails.list')" class="rounded-md border border-slate-300 px-3 py-2 text-sm hover:bg-slate-100 dark:border-slate-700 dark:hover:bg-slate-800">
-                    List Emails
+                    {{ t('email.create.list') }}
                 </Link>
             </div>
 
@@ -112,30 +115,30 @@ watch(
                     {{ responseMessage }}
                 </div>
                 <div class="md:col-span-2">
-                    <label class="mb-1 block text-sm">Website Domain</label>
+                    <label class="mb-1 block text-sm">{{ t('email.form.domain') }}</label>
                     <SearchableSelect
                         v-model="form.domain"
                         :options="websiteDomainOptions"
-                        placeholder="Select domain"
-                        search-placeholder="Search domains…"
+                        :placeholder="t('email.form.selectDomain')"
+                        :search-placeholder="t('email.create.searchDomains')"
                     />
                     <p v-if="form.errors.domain" class="mt-1 text-xs text-red-600">{{ form.errors.domain }}</p>
                 </div>
                 <div v-if="mailIps.length" class="md:col-span-2">
-                    <label class="mb-1 block text-sm">Sending IP</label>
+                    <label class="mb-1 block text-sm">{{ t('email.create.sendingIp') }}</label>
                     <select v-model="form.mail_ip_id" class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-800">
-                        <option v-for="mailIp in mailIps" :key="mailIp.id" :value="mailIp.id">{{ mailIp.ip }} — {{ mailIp.hostname || 'no hostname' }}{{ mailIp.is_default ? ' (default)' : '' }}</option>
+                        <option v-for="mailIp in mailIps" :key="mailIp.id" :value="mailIp.id">{{ mailIp.ip }} — {{ mailIp.hostname || t('email.create.noHostname') }}{{ mailIp.is_default ? t('email.create.default') : '' }}</option>
                     </select>
-                    <p class="mt-1 text-xs text-slate-500">Applies to the whole domain: MX and SPF must then use this IP and hostname (see Mail DNS Guide).</p>
+                    <p class="mt-1 text-xs text-slate-500">{{ t('email.create.ipHelp') }}</p>
                     <p v-if="form.errors.mail_ip_id" class="mt-1 text-xs text-red-600">{{ form.errors.mail_ip_id }}</p>
                 </div>
                 <div>
-                    <label class="mb-1 block text-sm">Mailbox</label>
+                    <label class="mb-1 block text-sm">{{ t('email.form.mailbox') }}</label>
                     <input v-model="form.mailbox" type="text" placeholder="support" class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-800" />
                     <p v-if="form.errors.mailbox" class="mt-1 text-xs text-red-600">{{ form.errors.mailbox }}</p>
                 </div>
                 <div>
-                    <label class="mb-1 block text-sm">Password</label>
+                    <label class="mb-1 block text-sm">{{ t('email.form.password') }}</label>
                     <div class="flex gap-2">
                         <input v-model="form.password" type="text" class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-800" />
                         <button
@@ -143,38 +146,38 @@ watch(
                             class="rounded-md border border-slate-300 px-3 py-2 text-xs font-medium hover:bg-slate-100 dark:border-slate-700 dark:hover:bg-slate-800"
                             @click="generatePassword"
                         >
-                            Auto Generate
+                            {{ t('email.create.generate') }}
                         </button>
                     </div>
                     <p v-if="form.errors.password" class="mt-1 text-xs text-red-600">{{ form.errors.password }}</p>
                 </div>
                 <div>
-                    <label class="mb-1 block text-sm">Quota (MB)</label>
+                    <label class="mb-1 block text-sm">{{ t('email.form.quota') }}</label>
                     <input v-model.number="form.quota_mb" type="number" min="1" max="102400" class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-800" />
                     <p v-if="form.errors.quota_mb" class="mt-1 text-xs text-red-600">{{ form.errors.quota_mb }}</p>
                 </div>
                 <div>
-                    <label class="mb-1 block text-sm">Forward To (Optional)</label>
+                    <label class="mb-1 block text-sm">{{ t('email.form.forward') }}</label>
                     <input v-model="form.forwarding_to" type="email" placeholder="admin@example.com" class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-800" />
                     <p v-if="form.errors.forwarding_to" class="mt-1 text-xs text-red-600">{{ form.errors.forwarding_to }}</p>
                 </div>
                 <div class="md:col-span-2">
-                    <span class="mb-1 block text-sm">Delivery Mode</span>
+                    <span class="mb-1 block text-sm">{{ t('email.form.mode') }}</span>
                     <div class="grid gap-2 sm:grid-cols-2">
                         <label class="flex cursor-pointer items-start gap-2 rounded-md border p-3 text-sm" :class="form.delivery_mode === 'live' ? 'border-emerald-500 bg-emerald-50 dark:bg-emerald-950/30' : 'border-slate-300 dark:border-slate-700'">
                             <input v-model="form.delivery_mode" type="radio" value="live" class="mt-0.5" />
-                            <span><span class="font-medium">Live</span><span class="block text-xs text-slate-500 dark:text-slate-400">Real mail: delivered to any address, inside or outside this server.</span></span>
+                            <span><span class="font-medium">{{ t('email.form.live') }}</span><span class="block text-xs text-slate-500 dark:text-slate-400">{{ t('email.form.liveHelp') }}</span></span>
                         </label>
                         <label class="flex cursor-pointer items-start gap-2 rounded-md border p-3 text-sm" :class="form.delivery_mode === 'sandbox' ? 'border-amber-500 bg-amber-50 dark:bg-amber-950/30' : 'border-slate-300 dark:border-slate-700'">
                             <input v-model="form.delivery_mode" type="radio" value="sandbox" class="mt-0.5" />
-                            <span><span class="font-medium">Sandbox (test)</span><span class="block text-xs text-slate-500 dark:text-slate-400">Mail reaches mailboxes on this server only. Nothing is sent outside.</span></span>
+                            <span><span class="font-medium">{{ t('email.form.sandbox') }}</span><span class="block text-xs text-slate-500 dark:text-slate-400">{{ t('email.form.sandboxHelp') }}</span></span>
                         </label>
                     </div>
                     <p v-if="form.errors.delivery_mode" class="mt-1 text-xs text-red-600">{{ form.errors.delivery_mode }}</p>
                 </div>
                 <div class="md:col-span-2">
                     <button type="submit" :disabled="form.processing" class="rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-60">
-                        Create Mailbox
+                        {{ t('email.create.submit') }}
                     </button>
                 </div>
             </form>

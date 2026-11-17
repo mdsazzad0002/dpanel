@@ -1,6 +1,9 @@
 <script setup>
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
 import { Head, Link, usePage } from '@inertiajs/vue3';
+import { useI18n } from 'vue-i18n';
+
+const { t } = useI18n();
 
 defineProps({ whmcsReady: Boolean });
 
@@ -9,13 +12,13 @@ const panelRoute = (name, params = {}) => route(name, { token: page.props.panel?
 </script>
 
 <template>
-    <Head title="Billing System" />
+    <Head :title="t('billing.index.title')" />
 
     <AuthenticatedLayout>
         <template #header>
             <div>
-                <h1 class="text-lg font-semibold">Billing System</h1>
-                <p class="text-sm text-slate-500 dark:text-slate-400">Connect an external billing platform to automate customer accounts.</p>
+                <h1 class="text-lg font-semibold">{{ t('billing.index.title') }}</h1>
+                <p class="text-sm text-slate-500 dark:text-slate-400">{{ t('billing.index.subtitle') }}</p>
             </div>
         </template>
 
@@ -26,15 +29,15 @@ const panelRoute = (name, params = {}) => route(name, { token: page.props.panel?
                         <i class="bi bi-arrow-left-right"></i>
                     </div>
                     <span :class="whmcsReady ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300' : 'bg-amber-100 text-amber-700 dark:bg-amber-950 dark:text-amber-300'" class="rounded-full px-2.5 py-1 text-xs font-medium">
-                        {{ whmcsReady ? 'Configured' : 'Setup required' }}
+                        {{ whmcsReady ? t('billing.index.configured') : t('billing.index.setupRequired') }}
                     </span>
                 </div>
-                <h2 class="mt-5 text-lg font-semibold">Billing with WHMCS</h2>
+                <h2 class="mt-5 text-lg font-semibold">{{ t('billing.whmcs.title') }}</h2>
                 <p class="mt-2 text-sm leading-6 text-slate-600 dark:text-slate-400">
-                    Securely provision plans, change packages, suspend accounts and create one-time panel login links from WHMCS.
+                    {{ t('billing.index.whmcsHelp') }}
                 </p>
                 <Link :href="panelRoute('billing.whmcs')" class="mt-5 inline-flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700">
-                    Open setup guide <i class="bi bi-arrow-right"></i>
+                    {{ t('billing.index.openGuide') }} <i class="bi bi-arrow-right"></i>
                 </Link>
             </article>
         </div>

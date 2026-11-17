@@ -2,6 +2,9 @@
 import { computed, onBeforeUnmount, ref, watch } from 'vue';
 import { displayName, emailOf, sameAddress, splitAddresses } from './mailAddresses';
 import ContactCard from './ContactCard.vue';
+import { useI18n } from 'vue-i18n';
+
+const { t } = useI18n();
 
 // Gmail's "to me ▾": who the message went to, and a popover with the header
 // details (from, to, date, mailed-by, signed-by, encryption). The details
@@ -38,11 +41,12 @@ const cc = computed(() => headerValue('cc'));
 
 // "to me", "to me, Alice +2", "to Bob" — Gmail's short recipient line.
 const shortLabel = computed(() => {
-    const names = recipients.value.map((item) => (props.selfEmail && sameAddress(item, props.selfEmail) ? 'me' : displayName(item) || emailOf(item)));
-    if (!names.length) return 'to (no recipient)';
-    const ordered = names.includes('me') ? ['me', ...names.filter((n) => n !== 'me')] : names;
+    const me = t('email.mailbox.message.me');
+    const names = recipients.value.map((item) => (props.selfEmail && sameAddress(item, props.selfEmail) ? me : displayName(item) || emailOf(item)));
+    if (!names.length) return t('email.mailbox.details.toNobody');
+    const ordered = names.includes(me) ? [me, ...names.filter((n) => n !== me)] : names;
 
-    return `to ${ordered.slice(0, 2).join(', ')}${ordered.length > 2 ? ` +${ordered.length - 2}` : ''}`;
+    return t('email.mailbox.message.to', { to: `${ordered.slice(0, 2).join(', ')}${ordered.length > 2 ? ` +${ordered.length - 2}` : ''}` });
 });
 
 const domainOf = (value) => emailOf(value).split('@')[1] || '';
@@ -52,8 +56,8 @@ const security = computed(() => {
     if (!props.analysis || props.analysis.tls === null || props.analysis.tls === undefined) return null;
 
     return props.analysis.tls
-        ? { icon: 'bi-lock-fill', text: 'Standard encryption (TLS)', tone: '' }
-        : { icon: 'bi-unlock', text: 'Not encrypted on every hop', tone: 'text-amber-600' };
+        ? { icon: 'bi-lock-fill', text: t('email.mailbox.details.tls'), tone: '' }
+        : { icon: 'bi-unlock', text: t('email.mailbox.details.noTls'), tone: 'text-amber-600' };
 });
 
 const formattedDate = computed(() => {
@@ -98,10 +102,10 @@ onBeforeUnmount(() => {
                 v-if="open"
                 :class="[ui.pop, 'absolute left-0 top-full z-40 mt-1.5 w-[34rem] max-w-[calc(100vw-2rem)] rounded-xl border px-5 py-4 text-[13px] shadow-2xl']"
                 role="dialog"
-                aria-label="Message details"
+                :aria-label="t('email.mailbox.details.title')"
             >
                 <dl class="grid grid-cols-[6.5rem_1fr] gap-x-4 gap-y-2">
-                    <dt :class="[ui.label, 'text-right']">from:</dt>
+                    <dt :class="[ui.label, 'text-right']">{{ t('email.mailbox.details.label.from') }}</dt>
                     <dd class="min-w-0 break-words">
                         <ContactCard :address="message.from" :is-dark="isDark" :avatar-endpoint="avatarEndpoint" @compose="emit('compose-to', $event)">
                             <span :class="[ui.strong, 'cursor-pointer font-semibold hover:underline']">{{ displayName(message.from) || emailOf(message.from) }}</span>
@@ -110,11 +114,11 @@ onBeforeUnmount(() => {
                     </dd>
 
                     <template v-if="analysis?.summary?.reply_to && !sameAddress(analysis.summary.reply_to, message.from)">
-                        <dt :class="[ui.label, 'text-right']">reply-to:</dt>
+                        <dt :class="[ui.label, 'text-right']">{{ t('email.mailbox.details.label.replyTo') }}</dt>
                         <dd :class="[ui.value, 'min-w-0 break-words']">{{ analysis.summary.reply_to }}</dd>
                     </template>
 
-                    <dt :class="[ui.label, 'text-right']">to:</dt>
+                    <dt :class="[ui.label, 'text-right']">{{ t('email.mailbox.details.label.to') }}</dt>
                     <dd :class="[ui.value, 'min-w-0 break-words']">
                         <template v-if="recipients.length">
                             <span v-for="(address, i) in recipients" :key="address" class="inline">
@@ -123,49 +127,49 @@ onBeforeUnmount(() => {
                                 </ContactCard><template v-if="i < recipients.length - 1">, </template>
                             </span>
                         </template>
-                        <template v-else>(no recipient)</template>
+                        <template v-else>{{ t('email.mailbox.details.noRecipient') }}</template>
                     </dd>
 
                     <template v-if="cc">
-                        <dt :class="[ui.label, 'text-right']">cc:</dt>
+                        <dt :class="[ui.label, 'text-right']">{{ t('email.mailbox.details.label.cc') }}</dt>
                         <dd :class="[ui.value, 'min-w-0 break-words']">{{ cc }}</dd>
                     </template>
 
-                    <dt :class="[ui.label, 'text-right']">date:</dt>
+                    <dt :class="[ui.label, 'text-right']">{{ t('email.mailbox.details.label.date') }}</dt>
                     <dd :class="[ui.value, 'min-w-0']">{{ formattedDate }}</dd>
 
-                    <dt :class="[ui.label, 'text-right']">subject:</dt>
-                    <dd :class="[ui.value, 'min-w-0 break-words']">{{ message.subject || '(no subject)' }}</dd>
+                    <dt :class="[ui.label, 'text-right']">{{ t('email.mailbox.details.label.subject') }}</dt>
+                    <dd :class="[ui.value, 'min-w-0 break-words']">{{ message.subject || t('email.mailbox.details.noSubject') }}</dd>
 
                     <template v-if="analysis">
                         <template v-if="mailedBy">
-                            <dt :class="[ui.label, 'text-right']">mailed-by:</dt>
+                            <dt :class="[ui.label, 'text-right']">{{ t('email.mailbox.details.label.mailedBy') }}</dt>
                             <dd :class="[ui.value, 'min-w-0 break-words']">{{ mailedBy }}</dd>
                         </template>
                         <template v-if="signedBy">
-                            <dt :class="[ui.label, 'text-right']">signed-by:</dt>
+                            <dt :class="[ui.label, 'text-right']">{{ t('email.mailbox.details.label.signedBy') }}</dt>
                             <dd :class="[ui.value, 'min-w-0 break-words']">{{ signedBy }}</dd>
                         </template>
                         <template v-if="security">
-                            <dt :class="[ui.label, 'text-right']">security:</dt>
+                            <dt :class="[ui.label, 'text-right']">{{ t('email.mailbox.details.label.security') }}</dt>
                             <dd :class="[ui.value, security.tone, 'min-w-0']"><i :class="['bi mr-1 text-xs', security.icon]"></i>{{ security.text }}</dd>
                         </template>
                     </template>
                 </dl>
 
                 <p v-if="loading && !analysis" :class="[ui.label, 'mt-3 text-xs']">
-                    <i class="bi bi-arrow-repeat mr-1 inline-block animate-spin"></i> Checking mailed-by, signature and encryption…
+                    <i class="bi bi-arrow-repeat mr-1 inline-block animate-spin"></i> {{ t('email.mailbox.details.checking') }}
                 </p>
                 <p v-else-if="error && !analysis" class="mt-3 text-xs text-rose-600">
                     {{ error }}
-                    <button type="button" class="ml-2 underline" @click="emit('load')">Retry</button>
+                    <button type="button" class="ml-2 underline" @click="emit('load')">{{ t('email.mailbox.message.retry') }}</button>
                 </p>
 
                 <div v-if="analysis" :class="[ui.divider, 'mt-3 flex flex-wrap items-center gap-4 border-t pt-3 text-xs']">
                     <button type="button" :class="[ui.link, 'font-medium hover:underline']" :aria-expanded="showAllHeaders" @click="showAllHeaders = !showAllHeaders">
-                        {{ showAllHeaders ? 'Hide' : 'Show' }} all headers ({{ analysis.headers.length }})
+                        {{ showAllHeaders ? t('email.mailbox.details.hideHeaders', { count: analysis.headers.length }) : t('email.mailbox.details.showHeaders', { count: analysis.headers.length }) }}
                     </button>
-                    <button type="button" :class="[ui.link, 'font-medium hover:underline']" @click="open = false; emit('show-original')">Show original</button>
+                    <button type="button" :class="[ui.link, 'font-medium hover:underline']" @click="open = false; emit('show-original')">{{ t('email.mailbox.details.showOriginal') }}</button>
                 </div>
                 <div v-if="showAllHeaders && analysis" class="mt-2 max-h-72 overflow-y-auto">
                     <table class="w-full table-fixed text-xs">

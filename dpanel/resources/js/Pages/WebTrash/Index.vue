@@ -2,6 +2,9 @@
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
 import { Head } from '@inertiajs/vue3';
 import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue';
+import { useI18n } from 'vue-i18n';
+
+const { t } = useI18n();
 
 const props = defineProps({
     accounts: { type: Array, default: () => [] },
@@ -59,7 +62,7 @@ const loadStats = async (account) => {
         if (!response.ok) throw new Error(payload.message || `HTTP ${response.status}`);
         applyStats(account.id, payload);
     } catch (error) {
-        stats[account.id] = { ...current, loading: false, error: error?.message || 'Failed to read folders.' };
+        stats[account.id] = { ...current, loading: false, error: error?.message || t('webTrash.readFailed') };
     }
 };
 
@@ -75,7 +78,7 @@ const refreshAll = async () => {
     refreshingAll.value = false;
 };
 
-const categoryLabel = (key) => (key === 'all' ? 'all folders' : props.categories.find((c) => c.key === key)?.label || key);
+const categoryLabel = (key) => (key === 'all' ? t('webTrash.allFoldersLower') : props.categories.find((c) => c.key === key)?.label || key);
 
 const amountOf = (account, key) => {
     const s = stats[account.id];
@@ -87,7 +90,7 @@ const amountOf = (account, key) => {
 
 const clearFolder = async (account, key) => {
     const { size, items } = amountOf(account, key);
-    if (!confirm(`Permanently delete ${items ?? 'all'} item(s) (${formatSize(size)}) from ${categoryLabel(key)} of ${account.domain}? This cannot be undone.`)) return;
+    if (!confirm(t('webTrash.clearConfirm', { items: items ?? t('webTrash.all'), size: formatSize(size), folder: categoryLabel(key), domain: account.domain }))) return;
     await runClear(account, key, true);
 };
 
@@ -144,10 +147,10 @@ const bulkAmount = computed(() => props.accounts
 const bulkClear = async () => {
     const targets = props.accounts.filter((a) => selected.value.includes(a.id) && Number(amountOf(a, bulkCategory.value).items || 0) > 0);
     if (targets.length === 0) {
-        flash('Nothing to clear in the selected accounts.', 'error');
+        flash(t('webTrash.nothing'), 'error');
         return;
     }
-    if (!confirm(`Permanently delete ${bulkAmount.value.items} item(s) (${formatSize(bulkAmount.value.size)}) from ${categoryLabel(bulkCategory.value)} of ${targets.length} account(s)? This cannot be undone.`)) return;
+    if (!confirm(t('webTrash.bulkConfirm', { items: bulkAmount.value.items, size: formatSize(bulkAmount.value.size), folder: categoryLabel(bulkCategory.value), count: targets.length }))) return;
 
     bulkRunning.value = true;
     bulkProgress.value = { done: 0, total: targets.length };
@@ -158,7 +161,7 @@ const bulkClear = async () => {
     }
     bulkRunning.value = false;
     selected.value = [];
-    flash(failed ? `Cleared ${targets.length - failed} account(s), ${failed} failed.` : `Cleared ${targets.length} account(s).`, failed ? 'error' : 'success');
+    flash(failed ? t('webTrash.clearedSome', { ok: targets.length - failed, failed }) : t('webTrash.clearedAll', { count: targets.length }), failed ? 'error' : 'success');
 };
 
 const runClear = async (account, key, notify) => {
@@ -172,12 +175,12 @@ const runClear = async (account, key, notify) => {
         });
         const payload = await response.json().catch(() => ({}));
         if (payload.categories) applyStats(account.id, payload); // only this row updates
-        if (!response.ok) throw new Error(payload.message || `Clear failed with HTTP ${response.status}.`);
-        if (notify) flash(`${account.domain}: ${payload.message || 'Cleared.'}`);
+        if (!response.ok) throw new Error(payload.message || t('webTrash.clearHttp', { status: response.status }));
+        if (notify) flash(`${account.domain}: ${payload.message || t('webTrash.cleared')}`);
         return true;
     } catch (error) {
-        if (notify) flash(error?.message || 'Clear failed.', 'error');
-        else if (stats[account.id]) stats[account.id].error = error?.message || 'Clear failed.';
+        if (notify) flash(error?.message || t('webTrash.clearFailed'), 'error');
+        else if (stats[account.id]) stats[account.id].error = error?.message || t('webTrash.clearFailed');
         return false;
     } finally {
         delete busy[account.id];
@@ -231,17 +234,17 @@ onBeforeUnmount(() => clearTimeout(noticeTimer));
 </script>
 
 <template>
-    <Head title="Web Trash" />
+    <Head :title="t('webTrash.title')" />
     <AuthenticatedLayout>
         <template #header>
             <div class="flex items-center justify-between gap-4">
                 <div>
-                    <h1 class="text-lg font-semibold">Web Trash</h1>
-                    <p class="text-sm text-slate-500 dark:text-slate-400">Trash, leftover migration uploads and caches the panel creates in each account home.</p>
+                    <h1 class="text-lg font-semibold">{{ t('webTrash.title') }}</h1>
+                    <p class="text-sm text-slate-500 dark:text-slate-400">{{ t('webTrash.subtitle') }}</p>
                 </div>
                 <button type="button" :disabled="refreshingAll" class="inline-flex shrink-0 items-center gap-2 rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-700 disabled:opacity-60 dark:bg-white dark:text-slate-900" @click="refreshAll">
                     <i class="bi bi-arrow-clockwise" :class="refreshingAll ? 'animate-spin' : ''"></i>
-                    {{ refreshingAll ? 'Refreshing...' : 'Refresh All' }}
+                    {{ refreshingAll ? t('webTrash.refreshing') : t('webTrash.refreshAll') }}
                 </button>
             </div>
         </template>
@@ -253,36 +256,36 @@ onBeforeUnmount(() => clearTimeout(noticeTimer));
         <div class="space-y-5">
             <section class="flex flex-col gap-3 rounded-xl border border-slate-200 bg-white p-4 sm:flex-row sm:flex-wrap sm:items-end dark:border-slate-800 dark:bg-slate-900">
                 <div class="min-w-[200px] flex-1">
-                    <label class="mb-1 block text-xs font-medium text-slate-500">Search</label>
-                    <input v-model="search" type="search" placeholder="Domain or account..." class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-800" />
+                    <label class="mb-1 block text-xs font-medium text-slate-500">{{ t('common.search') }}</label>
+                    <input v-model="search" type="search" :placeholder="t('webTrash.searchPh')" class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-800" />
                 </div>
                 <div class="sm:w-56">
-                    <label class="mb-1 block text-xs font-medium text-slate-500">User</label>
+                    <label class="mb-1 block text-xs font-medium text-slate-500">{{ t('webTrash.user') }}</label>
                     <select v-model="filterUser" class="w-full rounded-lg border border-slate-300 py-2 pl-3 pr-8 text-sm dark:border-slate-700 dark:bg-slate-800">
-                        <option value="">All users</option>
-                        <option v-if="userOptions.hasNone" :value="NONE">Unassigned</option>
+                        <option value="">{{ t('webTrash.allUsers') }}</option>
+                        <option v-if="userOptions.hasNone" :value="NONE">{{ t('webTrash.unassigned') }}</option>
                         <option v-for="option in userOptions.list" :key="option.value" :value="option.value">{{ option.label }}</option>
                     </select>
                 </div>
                 <div class="sm:w-56">
-                    <label class="mb-1 block text-xs font-medium text-slate-500">Package</label>
+                    <label class="mb-1 block text-xs font-medium text-slate-500">{{ t('webTrash.package') }}</label>
                     <select v-model="filterPackage" class="w-full rounded-lg border border-slate-300 py-2 pl-3 pr-8 text-sm dark:border-slate-700 dark:bg-slate-800">
-                        <option value="">All packages</option>
-                        <option v-if="packageOptions.hasNone" :value="NONE">No package</option>
+                        <option value="">{{ t('webTrash.allPackages') }}</option>
+                        <option v-if="packageOptions.hasNone" :value="NONE">{{ t('webTrash.noPackage') }}</option>
                         <option v-for="option in packageOptions.list" :key="option.value" :value="option.value">{{ option.label }}</option>
                     </select>
                 </div>
                 <div class="flex items-center gap-3 text-sm text-slate-500">
-                    <span>{{ filteredAccounts.length }} / {{ accounts.length }} account(s)</span>
-                    <button v-if="filtersActive" type="button" class="font-medium text-red-600 hover:underline" @click="resetFilters">Reset</button>
+                    <span>{{ t('webTrash.accountsCount', { shown: filteredAccounts.length, total: accounts.length }) }}</span>
+                    <button v-if="filtersActive" type="button" class="font-medium text-red-600 hover:underline" @click="resetFilters">{{ t('webTrash.reset') }}</button>
                 </div>
             </section>
 
             <section class="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
                 <div class="rounded-xl border border-slate-200 bg-white p-5 dark:border-slate-800 dark:bg-slate-900">
-                    <p class="text-xs font-medium uppercase tracking-wide text-slate-500">Reclaimable</p>
+                    <p class="text-xs font-medium uppercase tracking-wide text-slate-500">{{ t('webTrash.reclaimable') }}</p>
                     <p class="mt-2 text-2xl font-semibold">{{ formatSize(totals.size) }}</p>
-                    <p class="mt-1 text-xs text-slate-400">{{ totals.items }} item(s)</p>
+                    <p class="mt-1 text-xs text-slate-400">{{ t('webTrash.items', { n: totals.items }) }}</p>
                 </div>
                 <div v-for="category in categories" :key="category.key" class="rounded-xl border border-slate-200 bg-white p-5 dark:border-slate-800 dark:bg-slate-900" :title="category.hint">
                     <p class="text-xs font-medium uppercase tracking-wide text-slate-500">{{ category.label }}</p>
@@ -293,37 +296,37 @@ onBeforeUnmount(() => clearTimeout(noticeTimer));
 
             <div v-if="selected.length" class="flex flex-col gap-3 rounded-xl border border-red-200 bg-red-50 px-4 py-3 sm:flex-row sm:items-center sm:justify-between dark:border-red-900 dark:bg-red-950/40">
                 <p class="text-sm font-medium text-red-700 dark:text-red-300">
-                    {{ selected.length }} account(s) selected · {{ bulkAmount.items }} item(s) · {{ formatSize(bulkAmount.size) }}
-                    <span v-if="bulkRunning"> · clearing {{ bulkProgress.done }}/{{ bulkProgress.total }}</span>
+                    {{ t('webTrash.selected', { count: selected.length }) }} · {{ t('webTrash.items', { n: bulkAmount.items }) }} · {{ formatSize(bulkAmount.size) }}
+                    <span v-if="bulkRunning"> · {{ t('webTrash.progress', { done: bulkProgress.done, total: bulkProgress.total }) }}</span>
                 </p>
                 <div class="flex flex-wrap items-center gap-2">
                     <select v-model="bulkCategory" :disabled="bulkRunning" class="rounded-lg border border-slate-300 py-2 pl-3 pr-8 text-sm dark:border-slate-700 dark:bg-slate-800">
-                        <option value="all">All folders</option>
+                        <option value="all">{{ t('webTrash.allFolders') }}</option>
                         <option v-for="category in categories" :key="category.key" :value="category.key">{{ category.label }}</option>
                     </select>
                     <button type="button" :disabled="bulkRunning" class="inline-flex items-center gap-2 rounded-lg bg-red-600 px-4 py-2 text-sm font-semibold text-white hover:bg-red-700 disabled:opacity-60" @click="bulkClear">
                         <i :class="bulkRunning ? 'bi bi-arrow-repeat animate-spin' : 'bi bi-x-octagon'"></i>
-                        {{ bulkRunning ? 'Clearing...' : 'Clear Selected' }}
+                        {{ bulkRunning ? t('webTrash.clearing') : t('webTrash.clearSelected') }}
                     </button>
-                    <button type="button" :disabled="bulkRunning" class="rounded-lg px-3 py-2 text-sm font-medium text-slate-600 hover:bg-white disabled:opacity-60 dark:text-slate-300 dark:hover:bg-slate-800" @click="selected = []">Cancel</button>
+                    <button type="button" :disabled="bulkRunning" class="rounded-lg px-3 py-2 text-sm font-medium text-slate-600 hover:bg-white disabled:opacity-60 dark:text-slate-300 dark:hover:bg-slate-800" @click="selected = []">{{ t('common.cancel') }}</button>
                 </div>
             </div>
 
             <div class="overflow-x-auto rounded-xl border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900">
                 <div v-if="accounts.length === 0" class="px-6 py-14 text-center">
                     <i class="bi bi-trash2 text-3xl text-slate-300"></i>
-                    <p class="mt-3 font-medium">No websites</p>
-                    <p class="mt-1 text-sm text-slate-500">Accounts appear here once you have hosted websites.</p>
+                    <p class="mt-3 font-medium">{{ t('webTrash.noWebsites') }}</p>
+                    <p class="mt-1 text-sm text-slate-500">{{ t('webTrash.noWebsitesHelp') }}</p>
                 </div>
                 <table v-else class="w-full min-w-[860px] text-sm">
                     <thead class="bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500 dark:bg-slate-800/50">
                         <tr>
                             <th class="w-10 py-3 pl-4">
-                                <input type="checkbox" :checked="allSelected" :indeterminate="selected.length > 0 && !allSelected" :disabled="bulkRunning" class="rounded border-slate-300 text-red-600 focus:ring-red-500" title="Select all" @change="toggleAll" />
+                                <input type="checkbox" :checked="allSelected" :indeterminate="selected.length > 0 && !allSelected" :disabled="bulkRunning" class="rounded border-slate-300 text-red-600 focus:ring-red-500" :title="t('webTrash.selectAll')" @change="toggleAll" />
                             </th>
                             <th class="px-4 py-3">
                                 <button type="button" class="inline-flex items-center gap-1 font-semibold uppercase hover:text-slate-900 dark:hover:text-white" @click="setSort('domain')">
-                                    Account <i :class="sortIcon('domain')"></i>
+                                    {{ t('webTrash.account') }} <i :class="sortIcon('domain')"></i>
                                 </button>
                             </th>
                             <th v-for="category in categories" :key="category.key" class="px-4 py-3" :title="category.hint">
@@ -333,10 +336,10 @@ onBeforeUnmount(() => clearTimeout(noticeTimer));
                             </th>
                             <th class="px-4 py-3">
                                 <button type="button" class="inline-flex items-center gap-1 font-semibold uppercase hover:text-slate-900 dark:hover:text-white" @click="setSort('total')">
-                                    Total <i :class="sortIcon('total')"></i>
+                                    {{ t('webTrash.total') }} <i :class="sortIcon('total')"></i>
                                 </button>
                             </th>
-                            <th class="px-4 py-3 text-right">Actions</th>
+                            <th class="px-4 py-3 text-right">{{ t('webTrash.actions') }}</th>
                         </tr>
                     </thead>
                     <tbody class="divide-y divide-slate-200 dark:divide-slate-800">
@@ -352,48 +355,48 @@ onBeforeUnmount(() => clearTimeout(noticeTimer));
                                 </div>
                                 <p class="mt-1 truncate text-xs text-slate-500">{{ account.home }}</p>
                                 <div class="mt-1 flex flex-wrap gap-1 text-xs">
-                                    <span class="rounded bg-slate-100 px-1.5 py-0.5 text-slate-600 dark:bg-slate-800 dark:text-slate-300"><i class="bi bi-person"></i> {{ account.user_name || 'Unassigned' }}</span>
-                                    <span class="rounded bg-slate-100 px-1.5 py-0.5 text-slate-600 dark:bg-slate-800 dark:text-slate-300"><i class="bi bi-box"></i> {{ account.package_name || 'No package' }}</span>
+                                    <span class="rounded bg-slate-100 px-1.5 py-0.5 text-slate-600 dark:bg-slate-800 dark:text-slate-300"><i class="bi bi-person"></i> {{ account.user_name || t('webTrash.unassigned') }}</span>
+                                    <span class="rounded bg-slate-100 px-1.5 py-0.5 text-slate-600 dark:bg-slate-800 dark:text-slate-300"><i class="bi bi-box"></i> {{ account.package_name || t('webTrash.noPackage') }}</span>
                                 </div>
                                 <p v-if="stats[account.id]?.error" class="mt-1 text-xs text-red-500">{{ stats[account.id].error }}</p>
                             </td>
                             <td v-for="category in categories" :key="category.key" class="px-4 py-3">
                                 <template v-if="!stats[account.id]?.categories">
-                                    <span class="text-xs text-slate-400">{{ stats[account.id]?.loading ? 'Loading...' : '—' }}</span>
+                                    <span class="text-xs text-slate-400">{{ stats[account.id]?.loading ? t('webTrash.loading') : '—' }}</span>
                                 </template>
                                 <div v-else class="flex items-center justify-between gap-2">
                                     <div>
                                         <p class="font-medium">{{ formatSize(stats[account.id].categories[category.key]?.size) }}</p>
-                                        <p class="text-xs text-slate-500">{{ stats[account.id].categories[category.key]?.items ?? 0 }} item(s)</p>
+                                        <p class="text-xs text-slate-500">{{ t('webTrash.items', { n: stats[account.id].categories[category.key]?.items ?? 0 }) }}</p>
                                     </div>
                                     <button type="button" :disabled="Boolean(busy[account.id]) || !stats[account.id].categories[category.key]?.items" class="shrink-0 rounded-md px-2 py-1 text-xs font-semibold text-red-600 hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-30 dark:hover:bg-red-950" @click="clearFolder(account, category.key)">
                                         <i v-if="busy[account.id] === category.key" class="bi bi-arrow-repeat inline-block animate-spin"></i>
-                                        <template v-else>Clear</template>
+                                        <template v-else>{{ t('webTrash.clear') }}</template>
                                     </button>
                                 </div>
                             </td>
                             <td class="px-4 py-3">
                                 <template v-if="stats[account.id]?.categories">
                                     <p class="font-semibold">{{ formatSize(stats[account.id].total_size) }}</p>
-                                    <p class="text-xs text-slate-500">{{ stats[account.id].total_items }} item(s)</p>
+                                    <p class="text-xs text-slate-500">{{ t('webTrash.items', { n: stats[account.id].total_items }) }}</p>
                                 </template>
                                 <span v-else class="text-xs text-slate-400">—</span>
                             </td>
                             <td class="px-4 py-3">
                                 <div class="flex justify-end gap-2">
-                                    <button type="button" :disabled="stats[account.id]?.loading || Boolean(busy[account.id])" class="inline-flex items-center rounded-lg border border-slate-300 px-3 py-2 text-sm hover:bg-slate-50 disabled:opacity-60 dark:border-slate-700 dark:hover:bg-slate-800" title="Refresh this account" @click="loadStats(account)">
+                                    <button type="button" :disabled="stats[account.id]?.loading || Boolean(busy[account.id])" class="inline-flex items-center rounded-lg border border-slate-300 px-3 py-2 text-sm hover:bg-slate-50 disabled:opacity-60 dark:border-slate-700 dark:hover:bg-slate-800" :title="t('webTrash.refreshOne')" @click="loadStats(account)">
                                         <i class="bi bi-arrow-clockwise" :class="stats[account.id]?.loading ? 'animate-spin' : ''"></i>
                                     </button>
                                     <button type="button" :disabled="Boolean(busy[account.id]) || !stats[account.id]?.total_items" class="inline-flex items-center gap-2 whitespace-nowrap rounded-lg bg-red-600 px-3 py-2 text-sm font-semibold text-white hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-40" @click="clearFolder(account, 'all')">
                                         <i :class="busy[account.id] === 'all' ? 'bi bi-arrow-repeat animate-spin' : 'bi bi-x-octagon'"></i>
-                                        {{ busy[account.id] === 'all' ? 'Clearing...' : 'Clear All' }}
+                                        {{ busy[account.id] === 'all' ? t('webTrash.clearing') : t('webTrash.clearAll') }}
                                     </button>
                                 </div>
                             </td>
                         </tr>
                         <tr v-if="sortedAccounts.length === 0">
                             <td :colspan="categories.length + 4" class="px-4 py-10 text-center text-sm text-slate-500">
-                                No accounts match these filters. <button type="button" class="font-medium text-red-600 hover:underline" @click="resetFilters">Reset</button>
+                                {{ t('webTrash.noMatch') }} <button type="button" class="font-medium text-red-600 hover:underline" @click="resetFilters">{{ t('webTrash.reset') }}</button>
                             </td>
                         </tr>
                     </tbody>

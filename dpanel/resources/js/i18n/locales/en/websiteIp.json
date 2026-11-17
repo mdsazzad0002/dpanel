@@ -1,0 +1,11 @@
+{
+    "title": "IP address",
+    "help": "The address this website answers on. Saving points its A/AAAA records at it in the DNS zone this server hosts.",
+    "followsParent": "Answers on {address}, the address of {parent}.",
+    "main": "main",
+    "dedicated": "dedicated",
+    "save": "Change IP",
+    "saving": "Changing…",
+    "loadFailed": "The IP addresses could not be loaded.",
+    "saveFailed": "The IP address could not be changed."
+}

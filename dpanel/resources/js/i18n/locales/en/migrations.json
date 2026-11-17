@@ -1,0 +1,200 @@
+{
+    "index": {
+        "services": {
+            "cyberpanelSsh": {
+                "name": "CyberPanel / HestiaCP / aaPanel / Plesk via SSH",
+                "description": "Connect over SSH and discover websites with their databases. Panel type is auto-detected."
+            },
+            "cpanelFull": {
+                "name": "cPanel Full Backup",
+                "description": "Restore a complete cpmove account or selected resources."
+            },
+            "dpanelFull": {
+                "name": "DPanel to DPanel",
+                "description": "Migrate a complete DPanel backup package to this server."
+            },
+            "cpanelPartial": {
+                "name": "cPanel Partial Backup",
+                "description": "Import Home Directory and MySQL backups downloaded separately from cPanel."
+            },
+            "directadmin": {
+                "name": "DirectAdmin Backup",
+                "description": "Migrate a DirectAdmin user with all or selected domains and databases."
+            },
+            "plesk": {
+                "name": "Plesk Backup Archive",
+                "description": "Import from an uploaded .tar Plesk backup file. For a live Plesk server, use CyberPanel / HestiaCP / aaPanel / Plesk via SSH above instead."
+            },
+            "wordpress": {
+                "name": "WordPress Migration",
+                "description": "Move a WordPress site (files + database) into a website here; its address is updated to the new domain."
+            }
+        },
+        "archives": {
+            "cpanel": {
+                "title": "cPanel Full Backup",
+                "description": "Supports cpmove-USER.tar.gz and Backup Wizard backup-MM.DD.YYYY_HH-MM-SS_USER.tar.gz. After inspection, restore the whole account or select domains, files, and databases independently."
+            },
+            "cpanelPartial": {
+                "title": "cPanel Partial Backup",
+                "description": "Upload the Home Directory backup and any MySQL database backups from cPanel → Backup. Partial backups do not record the account, so enter the system user (and main domain) they should be restored to."
+            },
+            "directadmin": {
+                "title": "DirectAdmin Backup",
+                "description": "Upload a user backup created in DirectAdmin (user.RESELLER.USER.tar.gz or .tar.zst). Domains are restored to /home/USER/domains/DOMAIN/public_html, as on DirectAdmin."
+            },
+            "plesk": {
+                "title": "Plesk Backup Archive",
+                "description": "Upload a backup downloaded from Plesk Backup Manager, made without password protection. Each domain is restored to /home/USER/domains/DOMAIN with the site in httpdocs."
+            }
+        },
+        "title": {
+            "dpanel": "DPanel to DPanel Migration",
+            "cyberpanelSsh": "CyberPanel / HestiaCP / aaPanel / Plesk SSH Migration",
+            "wordpress": "WordPress Migration",
+            "default": "Migration Import"
+        },
+        "chunkProgress": "Uploading DPanel package… {done} / {total} chunks sent.",
+        "uploadComplete": "Upload complete. DPanel package validation is running.",
+        "packageUploadFailed": "DPanel package upload failed.",
+        "uploadFailed": "Upload failed.",
+        "restoreNotStarted": "DPanel restore could not be started.",
+        "restoreFailed": "Restore failed.",
+        "removeConfirm": "Remove {name}?",
+        "chooseService": "Choose migration service",
+        "chooseServiceHelp": "Select where the backup came from and what kind of package you have.",
+        "comingSoon": "Coming soon",
+        "allServices": "All migration services",
+        "wp": {
+            "intro": "Create the website first, then import into it. You need the WordPress files (a .zip or .tar.gz of the folder holding {config}) and a database export (.sql, e.g. from phpMyAdmin or {cmd}).",
+            "step1": "The files replace the website's files; the current ones are kept in its trash first.",
+            "step2": "The database is imported, and {config} is pointed at it.",
+            "step3": "The site address ({a}, {b}) and links in posts move to the new domain.",
+            "target": "Choose the target website",
+            "importHere": "Import WordPress here",
+            "noWebsite": "No website yet. {link} for the domain first.",
+            "createWebsite": "Create the website"
+        },
+        "dpanel": {
+            "title": "DPanel Full Migration",
+            "description": "Upload a full backup package created by DPanel. The package is validated before restoring.",
+            "warningTitle": "Full-panel restore warning:",
+            "warning": "restoring replaces the target server's {env}, {storage} data, and configured panel database with the source backup. This is not a website-only migration. Make a separate target backup first and continue only on the intended target server."
+        },
+        "partial": {
+            "user": "System user",
+            "domain": "Main domain",
+            "domainHelp": "(served from public_html)"
+        },
+        "inspecting": "Inspecting…",
+        "uploadInspect": "Upload & Inspect",
+        "uploading": "Uploading…",
+        "uploaded": "Uploaded migrations",
+        "uploadedHelp": "Continue a full or partial restore from any retained archive.",
+        "fullBackup": "Full DPanel backup",
+        "account": "Account: {account}",
+        "status": {
+            "uploading": "uploading",
+            "inspecting": "inspecting",
+            "ready": "ready",
+            "restoring": "restoring",
+            "completed": "completed",
+            "failed": "failed",
+            "restore_failed": "restore failed",
+            "prepared": "prepared",
+            "expired": "expired",
+            "downloading": "downloading",
+            "downloaded": "downloaded",
+            "download_failed": "download failed"
+        },
+        "remove": "Remove",
+        "connected": "{site} ({framework}) is connected to database {database} with a new login.",
+        "validationDone": "Package validation completed.",
+        "typeRestore": "Type {word} to confirm replacing this DPanel server",
+        "startingRestore": "Starting full restore…",
+        "restoreFull": "Restore full DPanel backup",
+        "fullAccount": "Restore full account",
+        "fullAccountHelp": "All domains, home files, and databases",
+        "type": {
+            "domains": "domains",
+            "files": "files",
+            "databases": "databases"
+        },
+        "clearAll": "Clear all",
+        "selectAll": "Select all",
+        "noneFound": "None found",
+        "restoring": "Restoring…",
+        "restoreSelected": "Restore selected items",
+        "empty": "No migration archive uploaded yet."
+    },
+    "ssh": {
+        "loaded": "Loaded {name}.",
+        "loadFailed": "Could not load the saved SSH connection.",
+        "deleteConfirm": "Delete this saved SSH connection?",
+        "deleted": "Saved SSH connection deleted.",
+        "deleteFailed": "Could not delete the saved SSH connection.",
+        "connected": "Connected to {host}. {count} website(s) found.",
+        "inspectFailed": "Could not inspect the CyberPanel server.",
+        "stepFailed": "Migration step failed. Retry after fixing the reported problem.",
+        "creatingArchive": "Creating remote files archive…",
+        "creatingDump": "Creating remote database dump…",
+        "downloadStarted": "{file} download started.",
+        "downloadFailed": "Selected source could not be downloaded.",
+        "connectTitle": "Connect via SSH",
+        "connectHelp": "CyberPanel, HestiaCP, aaPanel and Plesk are auto-detected. Credentials are used for the current request and stored only when you enable Save SSH access.",
+        "selectSaved": "Select saved panel",
+        "useConnection": "Use connection",
+        "delete": "Delete",
+        "host": "Host",
+        "port": "SSH port",
+        "username": "Username",
+        "auth": "Authentication",
+        "password": "Password",
+        "privateKey": "Private key",
+        "passphrase": "Key passphrase",
+        "optional": "(optional)",
+        "saveAccess": "Save SSH access",
+        "saveAccessHelp": "Not recommended unless necessary. Password/private key will be encrypted in DPanel's database. Never enable this on an untrusted panel installation.",
+        "connectionName": "Connection name",
+        "connectionNamePlaceholder": "Production CyberPanel",
+        "connecting": "Connecting…",
+        "connect": "Connect & discover",
+        "sourceTitle": "Select one migration source",
+        "directories": "{count} directories",
+        "databases": "{count} databases",
+        "domain": "Domain",
+        "optionalHelper": "(optional helper)",
+        "customSelection": "Custom selection",
+        "sourceDatabase": "Source database",
+        "noDatabase": "No database",
+        "sourcePath": "Source file location",
+        "sourcePathHelp": "Type any valid location or select a discovered directory.",
+        "phpVersion": "PHP version",
+        "asSubdomain": "Create as subdomain",
+        "parentDomain": "Parent domain",
+        "parentHelp": "Select an existing parent or type a new one. A missing parent will be created automatically.",
+        "subdomainName": "Subdomain name",
+        "willCreate": "Will create: {domain}",
+        "newDomain": "New DPanel domain",
+        "onlyThis": "Only this file location and this database will be handled. Other websites and databases will not be included.",
+        "preparingFiles": "Preparing files…",
+        "downloadFiles": "Download selected files",
+        "preparingDatabase": "Preparing database…",
+        "downloadDatabase": "Download selected database",
+        "step": {
+            "prepare": "Prepare temp storage",
+            "download": "Download selected source",
+            "website": "Create website account",
+            "restore": "Move files and import database",
+            "verify": "Verify website live"
+        },
+        "stepStatus": {
+            "waiting": "waiting",
+            "running": "running",
+            "completed": "completed",
+            "failed": "failed"
+        },
+        "runningStep": "Running current step…",
+        "migrate": "Create & migrate step by step"
+    }
+}

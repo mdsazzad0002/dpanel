@@ -1,0 +1,180 @@
+{
+    "controlCenter": {
+        "title": "ServerPanel Control Center",
+        "subtitle": "Unified view for servers, commands, and tasks.",
+        "servers": "Servers",
+        "online": "Online",
+        "runningTasks": "Running Tasks",
+        "failedTasks": "Failed Tasks",
+        "terminal": "Terminal",
+        "removed": "Removed",
+        "recentServers": "Recent Servers",
+        "openAll": "Open All",
+        "commandTerminal": "Command Terminal",
+        "terminalRemoved": "SSH terminal and memory-backed command chat have been removed for safety. Use Servers, Tasks, and other management screens instead.",
+        "recentTasks": "Recent Tasks"
+    },
+    "form": {
+        "name": "Name",
+        "host": "Host",
+        "port": "Port",
+        "username": "Username",
+        "authType": "Auth Type",
+        "password": "Password",
+        "privateKey": "Private Key",
+        "passphrase": "Passphrase",
+        "mode": "Mode",
+        "modes": {
+            "setup": "setup",
+            "normal": "normal",
+            "emergency": "emergency"
+        },
+        "notes": "Notes"
+    },
+    "servers": {
+        "form": {
+            "edit": "Edit Server",
+            "add": "Add Server",
+            "encrypted": "Credentials are encrypted and never shown again.",
+            "update": "Update Server",
+            "save": "Save Server"
+        },
+        "show": {
+            "title": "Server {name}",
+            "testing": "Testing...",
+            "test": "Test Connection",
+            "scanning": "Scanning...",
+            "scan": "Scan",
+            "openControlCenter": "Open Control Center",
+            "settings": "Settings",
+            "field": {
+                "status": "Status:",
+                "mode": "Mode:",
+                "username": "Username:",
+                "os": "OS:",
+                "kernel": "Kernel:",
+                "architecture": "Architecture:",
+                "cpuCores": "CPU Cores:",
+                "ram": "RAM:",
+                "disk": "Disk:"
+            },
+            "recentCommands": "Recent Commands",
+            "logRemoved": "Terminal log removed",
+            "connectionTests": "Latest Connection Tests"
+        },
+        "index": {
+            "title": "Servers",
+            "subtitle": "Simple server list and quick actions",
+            "online": "Online",
+            "errors": "Errors",
+            "failedCommands": "Failed Commands",
+            "hostAs": "{host} as {user}",
+            "lastConnected": "Last Connected: {time}",
+            "openCommands": "Open Commands",
+            "openDetails": "Open Details",
+            "edit": "Edit"
+        }
+    },
+    "tasks": {
+        "title": "Server Tasks",
+        "create": "Create Task",
+        "taskTitle": "Task title",
+        "taskGoal": "Task goal",
+        "priority": {
+            "critical": "critical",
+            "high": "high",
+            "medium": "medium",
+            "low": "low",
+            "info": "info"
+        },
+        "tasks": "Tasks",
+        "open": "Open Task",
+        "show": {
+            "title": "Task {title}",
+            "start": "Start",
+            "field": {
+                "goal": "Goal:",
+                "status": "Status:",
+                "priority": "Priority:",
+                "server": "Server:"
+            },
+            "aiPlan": "AI Plan Placeholder",
+            "steps": "Task Steps",
+            "detailsRemoved": "Command details removed",
+            "timeline": "Command Timeline"
+        }
+    },
+    "commands": {
+        "show": {
+            "you": "You",
+            "emptyCommand": "(empty command)",
+            "exit": "Exit: {code}",
+            "server": "Server",
+            "summary": "Summary:",
+            "suggestedFix": "Suggested Fix:",
+            "aiAssistant": "AI Assistant",
+            "noAnalysis": "No AI analysis yet.",
+            "event": "Event: {type}",
+            "title": "Command {id}",
+            "heading": "Command Chat History",
+            "retry": "Retry",
+            "report": "Download TXT report",
+            "chatPanel": "Chat Panel",
+            "structure": "Conversation structure",
+            "statusLine": "Status: {status}",
+            "riskLine": "Risk: {risk}",
+            "analysisReady": "Analysis ready",
+            "waitingAnalysis": "Waiting analysis",
+            "meta": "Command Meta",
+            "status": "Status:",
+            "risk": "Risk:",
+            "fixCommands": "Suggested Fix Commands",
+            "runFix": "Run Fix",
+            "open": "Open",
+            "noFixes": "No suggested fix commands.",
+            "approve": "Approve Command"
+        },
+        "index": {
+            "errUsername": "Username is required to build the admin user command.",
+            "errPassword": "Panel password is required to build the admin user command.",
+            "deleteConfirm": "Delete this command log?",
+            "failed": "Command failed.",
+            "empty": "(empty)",
+            "step": "Step {n}",
+            "headTitle": "Terminal Chat Commands",
+            "title": "Terminal Command Chat",
+            "newChat": "New Chat",
+            "search": "Search command",
+            "allStatus": "All Status",
+            "allRisk": "All Risk",
+            "allServers": "All Servers",
+            "filter": "Filter",
+            "markdownHistory": "Markdown History",
+            "noMarkdown": "No markdown history yet.",
+            "upgradeLogs": "System Upgrade Logs",
+            "noUpgradeLogs": "No upgrade logs yet.",
+            "delete": "Delete",
+            "selectHint": "Select a command from left side to open chat history.",
+            "history": "Chat History: {id}",
+            "report": "Report",
+            "endClose": "End & Close",
+            "installerSteps": "Installer Steps",
+            "terminalInput": "Terminal Input",
+            "selectServer": "Select server",
+            "commandPlaceholder": "Type full command (stored for next matching use)",
+            "autoFix": "Auto replay task: if error, run AI safe fix commands automatically",
+            "sending": "Sending...",
+            "send": "Send Command",
+            "helper": {
+                "title": "Admin User Helper",
+                "help": "Builds a {cmd} command for portal access. Shell defaults to {shell}, so the account stays separated from interactive shell users unless you explicitly change it.",
+                "username": "Username",
+                "email": "Panel email",
+                "password": "Panel password",
+                "disableRoot": "Disable SSH root login",
+                "build": "Build Admin User Command",
+                "result": "Result is inserted into the terminal command box, then you can submit it to the selected server."
+            }
+        }
+    }
+}

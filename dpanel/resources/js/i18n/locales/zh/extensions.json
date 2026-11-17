@@ -1,0 +1,160 @@
+{
+    "menu": "扩展",
+    "title": "扩展",
+    "help": "从 dPanel 外部添加功能。扩展运行在自己的服务器或主机名上，只能使用您批准的 API 部分。",
+    "empty": "未安装任何扩展。",
+    "add": "添加或更新扩展",
+    "addHelp": "粘贴扩展的清单（dpanel-extension.json）或选择文件，然后查看它请求的权限。若清单 id 与已安装扩展相同，则会更新该扩展。",
+    "manifestPlaceholder": "在此粘贴清单",
+    "chooseFile": "选择文件",
+    "check": "检查清单",
+    "eventsKnown": "本面板发送的事件：{events}",
+    "problems": "清单存在问题：",
+    "reviewFailed": "无法检查清单。",
+    "needsPanel": "需要 dPanel {range}",
+    "updateFrom": "已安装：{from}。将更新到 {to}。",
+    "asksFor": "它请求",
+    "noScopes": "它不请求任何 API 权限。",
+    "newScope": "新",
+    "scopeHelp": "只勾选您同意的项。扩展会获得仅含这些权限的专用令牌，且不超过您自身的权限。",
+    "page": "管理页面",
+    "webhook": "Webhook",
+    "events": "事件",
+    "install": "安装",
+    "update": "更新",
+    "cancel": "取消",
+    "installFailed": "无法安装扩展。",
+    "shownOnce": "请立即将这些交给 {name}。它们不会再次显示。",
+    "token": "API 令牌",
+    "secret": "Webhook 密钥",
+    "copy": "复制",
+    "copied": "已复制",
+    "credentialsHelp": "扩展使用令牌调用 {api}，并用密钥校验每个 webhook 的 X-Dpanel-Signature 及其页面的 dpanel_context。",
+    "savedThem": "我已将它们交给扩展",
+    "actionFailed": "操作未成功。",
+    "enabled": "已启用",
+    "disabled": "已禁用",
+    "open": "打开",
+    "noGranted": "无 API 权限。",
+    "tokenLine": "令牌 {prefix}",
+    "lastUsed": "上次使用于 {when}",
+    "neverUsed": "从未使用",
+    "eventsLine": "事件：{events}",
+    "lastDelivery": "上次发送于 {when}",
+    "enable": "启用",
+    "disable": "禁用",
+    "disableConfirm": "禁用 {name}？其令牌将失效，在重新启用前不会再收到事件。",
+    "ping": "发送测试事件",
+    "rotate": "新令牌和密钥",
+    "rotateConfirm": "为 {name} 生成新的令牌和密钥？旧的将立即失效。",
+    "uninstall": "卸载",
+    "uninstallConfirm": "卸载 {name}？其令牌和服务账户将被删除。它通过 API 创建的内容会保留。",
+    "frameNote": "{name}，在沙箱中从 {origin} 显示。它无法读取面板或您的会话。",
+    "back": "所有扩展",
+    "docs": {
+        "title": "开发者指南",
+        "subtitle": "扩展的工作方式、清单格式、Webhook 和管理页面",
+        "tabs": {
+            "overview": "概览",
+            "manifest": "清单",
+            "webhooks": "Webhook",
+            "page": "管理页面",
+            "limits": "限制"
+        },
+        "key": "键",
+        "required": "必填",
+        "meaning": "含义",
+        "yes": "是",
+        "no": "否",
+        "event": "事件",
+        "scope": "权限范围",
+        "header": "请求头",
+        "overview": {
+            "intro": "扩展从外部为 dPanel 添加功能：在线监控报告、计费桥接、自定义仪表盘。它运行在自己的服务器或主机名上，只能使用你在安装时批准的 dPanel API 部分。",
+            "how1": "扩展的代码绝不会在面板内部运行。不会加载扩展的任何 PHP、Vue 或 Shell 代码，也没有任何内容以 root 身份运行。",
+            "how2": "安装时，面板会为扩展创建一个服务账户，并附带一个 API 令牌，其权限范围正好是你勾选的那些。该账户无法登录。",
+            "how3": "扩展像其他 API 客户端一样，使用该令牌调用 REST API。它所做的每项更改都会记录在活动日志中。",
+            "how4": "面板可以向扩展发送已签名的 Webhook 事件，例如网站新建或删除。",
+            "how5": "扩展可以有一个管理页面，它会在这里以沙箱框架显示，并从扩展自己的地址加载。",
+            "installTitle": "安装",
+            "install1": "在下方粘贴扩展的清单（或选择文件），然后点击“检查清单”。问题会按字段列出。",
+            "install2": "阅读它请求的内容，只勾选你同意的权限范围。它永远无法获得清单中未请求的权限范围，也无法获得你自己没有的权限范围。",
+            "install3": "点击“安装”。API 令牌和 Webhook 密钥只显示一次：把两者都交给扩展，通常填在它自己的设置或环境变量中。",
+            "install4": "要更新，用同样的方式检查新版本的清单。令牌保持不变；其权限范围变为你此次勾选的那些。",
+            "apiTitle": "调用 API",
+            "apiText": "扩展将令牌作为 Bearer 请求头发送到本面板的 API：",
+            "manageTitle": "管理",
+            "manage": {
+                "disable": {
+                    "label": "停用",
+                    "text": "令牌停止工作，不再发送事件，页面关闭。不会删除任何内容；点击“启用”即可恢复。"
+                },
+                "ping": {
+                    "label": "发送测试事件",
+                    "text": "立即发送一个已签名的 ping 并显示响应。"
+                },
+                "rotate": {
+                    "label": "新令牌和密钥",
+                    "text": "生成新的凭据，只显示一次。旧令牌立即失效。"
+                },
+                "update": {
+                    "label": "更新",
+                    "text": "安装具有相同 id 的新版清单；新增的权限范围会被标出。"
+                },
+                "uninstall": {
+                    "label": "卸载",
+                    "text": "删除扩展、其令牌和服务账户。它通过 API 创建的内容会保留。"
+                }
+            }
+        },
+        "manifest": {
+            "intro": "清单是一个描述扩展的 JSON 文件（通常为 dpanel-extension.json）。复制此示例作为起点：",
+            "keys": {
+                "manifest_version": "始终为 1。",
+                "id": "3-64 个小写字母、数字、点和短横线，例如 acme.uptime。所有版本保持一致。",
+                "name": "显示名称，最多 80 个字符。",
+                "version": "语义化版本，例如 1.2.0。",
+                "description": "向管理员显示，最多 500 个字符。author 的用法相同。",
+                "homepage": "一个 https:// 地址。",
+                "panel": "它兼容的 dPanel 版本：以空格分隔的比较条件，必须全部满足，例如 >=1.0 <2.0。",
+                "scopes": "它请求的 API 权限范围：websites、dns、databases、mail，每项为 :read 或 :write。",
+                "ui_admin_page": "其管理页面的 title（最多 40 个字符）和 url。",
+                "webhook_url": "事件发送的目标地址。设置 events 时必填。",
+                "events": "它需要的事件。每个事件都需要所属领域的 read（或 write）权限范围。"
+            },
+            "urls": "每个地址都必须使用 https://（仅 127.0.0.1 或 localhost 可用 http://），且不能位于面板自身的主机名上。请从其他主机名提供扩展，例如面板在 panel.example.com 上时使用 uptime.example.com。",
+            "strict": "未知的键会被拒绝，因此为更新格式编写的清单绝不会只被读取一半。"
+        },
+        "webhooks": {
+            "intro": "事件以带 JSON 正文的已签名 POST 请求发送到 webhook.url。版本 1 发送：",
+            "pingOnly": "无；仅通过“发送测试事件”发送",
+            "bodyTitle": "正文和请求头",
+            "headers": {
+                "X_Dpanel_Event": "事件名称。",
+                "X_Dpanel_Delivery": "事件 id，每次重试都相同。用它来跳过重复事件。",
+                "X_Dpanel_Timestamp": "本次发送的 Unix 时间。",
+                "X_Dpanel_Signature": "sha256= 后接 timestamp.body 的十六进制 HMAC-SHA256，以 Webhook 密钥为键。"
+            },
+            "verifyTitle": "验证每个请求",
+            "verifyText": "在信任正文中的任何内容之前，先检查签名并确认时间戳在 5 分钟以内：",
+            "retry": "请在 10 秒内返回任意 2xx 状态。其他情况均视为失败：面板最多尝试三次（分别在 10 秒和 60 秒后），并在扩展卡片上显示最后一次错误。不会跟随重定向。事件会进入队列，因此面板的队列进程必须在运行。"
+        },
+        "page": {
+            "intro": "如果清单中有 ui.admin_page，“打开”按钮会在面板内显示该页面。",
+            "point1": "它在不带 referrer 的沙箱框架中加载（仅允许脚本、表单和弹窗）。它运行在不透明源中：无法读取面板的 Cookie、存储或页面，也无法使用自己的 Cookie。",
+            "point2": "面板页面只允许来自你扩展源的框架。",
+            "point3": "请在你的服务器上渲染页面，并通过自己的链接或表单传递状态，因为页面没有 Cookie。",
+            "frameTitle": "允许面板嵌入你的页面",
+            "frameText": "你的页面必须发送一个允许本面板嵌入它的请求头：",
+            "contextTitle": "谁在查看：dpanel_context",
+            "contextText": "面板会在你页面的 URL 中添加 dpanel_context。它包含查看者（id、名称、角色）、语言区域和 5 分钟后的过期时间，并用 Webhook 密钥签名。在显示任何内容之前，请在服务器上验证它："
+        },
+        "limits": {
+            "item1": "dPanel 不运行扩展代码。请自行托管扩展；计划支持在本服务器上运行。",
+            "item2": "一个 UI 位置（管理页面）和两个事件（website.created、website.deleted）。",
+            "item3": "没有应用市场或签名包：由你通过阅读清单来决定信任谁。",
+            "item4": "扩展仅供管理员使用；经销商和用户无法安装。",
+            "more": "完整参考文档位于 dPanel 仓库中的 docs/extensions.md。"
+        }
+    }
+}

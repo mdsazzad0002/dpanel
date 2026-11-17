@@ -1,0 +1,410 @@
+{
+    "modal": {
+        "creating": "جارٍ الإنشاء...",
+        "createFile": "إنشاء ملف",
+        "createFolder": "إنشاء مجلد",
+        "selectedItems": "العناصر المحددة: {count}",
+        "destinationPlaceholder": "مسار مجلد الوجهة (فارغ = الجذر)",
+        "newNamePlaceholder": "الاسم الجديد"
+    },
+    "rename": {
+        "renaming": "جارٍ إعادة التسمية...",
+        "submit": "إعادة التسمية"
+    },
+    "move": {
+        "dragHint": "يمكنك أيضًا سحب الصفوف المحددة وإفلاتها على مجلدات الشريط الجانبي.",
+        "moving": "جارٍ النقل...",
+        "submit": "نقل"
+    },
+    "unzip": {
+        "archive": "الأرشيف: {path}",
+        "extractTo": "فك الضغط إلى مجلد",
+        "note": "يُنشأ المجلد إذا لم يكن موجودًا. تُستبدل الملفات الموجودة التي تحمل الاسم نفسه.",
+        "formats": "الصيغ المدعومة: .zip و.tar و.tar.gz و.tgz و.gz لملف واحد.",
+        "extracting": "جارٍ فك الضغط...",
+        "submit": "فك ضغط الأرشيف"
+    },
+    "copy": {
+        "name": "سمِّ النسخة",
+        "note": "يبقى العنصر الأصلي في مكانه؛ وتُنشأ نسخة في الوجهة.",
+        "copying": "جارٍ النسخ...",
+        "submit": "نسخ"
+    },
+    "zip": {
+        "format": "صيغة الأرشيف",
+        "name": "اسم الأرشيف",
+        "creating": "جارٍ إنشاء الأرشيف...",
+        "submit": "إنشاء الأرشيف"
+    },
+    "selection": {
+        "selected": "{count} محدد",
+        "clear": "مسح",
+        "move": "نقل",
+        "copy": "نسخ",
+        "delete": "حذف"
+    },
+    "toast": {
+        "dismiss": "إغلاق"
+    },
+    "upload": {
+        "drop": "اسحب الملفات وأفلتها هنا",
+        "choose": "أو اختر من جهازك",
+        "selected": "{count} ملف محدد",
+        "uploading": "جارٍ الرفع...",
+        "submit": "رفع الملفات",
+        "complete": "مكتمل",
+        "uploadingFile": "جارٍ رفع {file}..."
+    },
+    "context": {
+        "openFolder": "فتح المجلد",
+        "openSqlite": "فتح في عارض SQLite",
+        "preview": "معاينة",
+        "editFile": "تعديل الملف",
+        "openFile": "فتح الملف",
+        "download": "تنزيل",
+        "rename": "إعادة التسمية",
+        "permissions": "الصلاحيات",
+        "move": "نقل",
+        "copy": "نسخ",
+        "zip": "إنشاء Zip",
+        "unzip": "فك ضغط الأرشيف",
+        "delete": "حذف"
+    },
+    "trash": {
+        "intro": "تُضغط العناصر المحذوفة وتُحفظ هنا قبل إزالتها نهائيًا.",
+        "empty": "سلة المهملات فارغة.",
+        "selected": "{count} محدد",
+        "selectAll": "تحديد الكل",
+        "deleting": "جارٍ الحذف…",
+        "deleteForeverCount": "حذف نهائي ({count})",
+        "from": "من: /{path}",
+        "root": "(الجذر)",
+        "restore": "استعادة",
+        "deleteForever": "حذف نهائي"
+    },
+    "perm": {
+        "presets": {
+            "owner644": "المالك قراءة وكتابة، الآخرون قراءة",
+            "owner755": "المالك الكل، الآخرون قراءة وتنفيذ",
+            "group775": "قابل للكتابة من المجموعة",
+            "world777": "قابل للكتابة من الجميع",
+            "owner600": "المالك فقط",
+            "group640": "المالك قراءة وكتابة، المجموعة قراءة",
+            "owner700": "المالك فقط (تنفيذ)",
+            "zero0755": "صفر بادئ"
+        },
+        "presetsTitle": "إعدادات مسبقة",
+        "highRisk": "خطورة عالية",
+        "safe": "آمن",
+        "custom": "صلاحية مخصصة",
+        "customHint": "استخدم 3 أو 4 أرقام مثل `644` أو `755` أو `0777`.",
+        "preview": "معاينة مباشرة",
+        "symbolic": "رمزي",
+        "warning": "تحذير: هذا الوضع قابل للكتابة من الجميع أو عالي الخطورة بشكل آخر. استخدمه بحذر.",
+        "recursive": "التطبيق بشكل متكرر على الأدلة الفرعية والملفات",
+        "saving": "جارٍ الحفظ...",
+        "saveRecursive": "حفظ بشكل متكرر",
+        "save": "حفظ الصلاحية"
+    },
+    "sidebar": {
+        "close": "إغلاق الشريط الجانبي",
+        "folders": "المجلدات",
+        "goToPath": "الانتقال إلى مسار...",
+        "dropUp": "أفلت العناصر هنا لنقلها مستوى واحدًا لأعلى",
+        "up": "الدليل الأعلى",
+        "root": "الانتقال إلى الجذر"
+    },
+    "editor": {
+        "readonly": "للقراءة فقط",
+        "saving": "جارٍ الحفظ...",
+        "explorer": "المستكشف",
+        "file": "الملف",
+        "folder": "المجلد",
+        "lines": "الأسطر",
+        "tips": "نصائح",
+        "tipSave": "Ctrl/Cmd+S للحفظ",
+        "tipFullscreen": "استخدم تحرير الشيفرة بملء الشاشة",
+        "tipSplit": "قسّم الملفات حسب المسؤولية",
+        "unsaved": "تغييرات غير محفوظة",
+        "saved": "محفوظ",
+        "lineCount": "{count} سطر",
+        "openFull": "فتح الملف كاملًا",
+        "modified": "معدّل",
+        "noChanges": "لا تغييرات"
+    },
+    "topBar": {
+        "exit": "الخروج من مدير الملفات",
+        "toggleSidebar": "إظهار/إخفاء الشريط الجانبي",
+        "root": "الانتقال إلى الجذر",
+        "browse": "تصفح {url}",
+        "search": "ابحث في الملفات..."
+    },
+    "table": {
+        "open": "فتح",
+        "view": "عرض",
+        "edit": "تعديل",
+        "download": "تنزيل",
+        "name": "الاسم",
+        "action": "الإجراء",
+        "type": "النوع",
+        "size": "الحجم",
+        "perm": "الصلاحية",
+        "modified": "آخر تعديل",
+        "calculate": "حساب",
+        "calculating": "جارٍ الحساب…",
+        "noMatch": "لا توجد ملفات تطابق بحثك",
+        "empty": "لا توجد ملفات في هذا الدليل"
+    },
+    "switcher": {
+        "title": "تبديل المواقع أو تصفحها",
+        "search": "ابحث في المواقع...",
+        "openHere": "فتح ملفات {domain} في هذا التبويب",
+        "current": "الحالي",
+        "openNew": "فتح ملفات {domain} في تبويب جديد",
+        "noMatch": "لا توجد مواقع تطابق “{query}”."
+    },
+    "preview": {
+        "openNewTab": "فتح في تبويب جديد",
+        "download": "تنزيل",
+        "close": "إغلاق (Esc)",
+        "failed": "تعذّرت معاينة هذا الملف.",
+        "downloadInstead": "التنزيل بدلًا من ذلك",
+        "previous": "السابق (←)",
+        "next": "التالي (→)"
+    },
+    "index": {
+        "headTitle": "مدير الملفات - {site}",
+        "dropTo": "أفلت الملفات للرفع إلى",
+        "items": "{count} عنصر",
+        "openTerminal": "فتح الطرفية",
+        "terminal": "الطرفية",
+        "closeTerminal": "إغلاق الطرفية",
+        "titles": {
+            "createFolder": "إنشاء مجلد",
+            "createFile": "إنشاء ملف",
+            "rename": "إعادة تسمية العنصر",
+            "permissions": "تغيير الصلاحيات",
+            "move": "نقل العنصر",
+            "copy": "نسخ العنصر",
+            "zip": "إنشاء أرشيف",
+            "unzip": "فك ضغط الأرشيف",
+            "trash": "سلة المهملات",
+            "upload": "رفع ملف"
+        }
+    },
+    "sqlite": {
+        "closeEsc": "إغلاق (Esc)",
+        "ai": {
+            "placeholder": "اسأل الذكاء الاصطناعي: مثلًا آخر 10 مستخدمين سجّلوا هذا الشهر / اعرض مستخدمي Gmail",
+            "writing": "جارٍ الكتابة…",
+            "generate": "توليد SQL",
+            "hint": "يوضع SQL في المحرر أدناه. راجعه، ثم اضغط تشغيل — لا شيء يعمل من تلقاء نفسه."
+        },
+        "query": {
+            "run": "تشغيل",
+            "editingHint": "Ctrl+Enter · التحرير مفعّل: INSERT وUPDATE وDELETE وCREATE … تُنفَّذ فعليًا",
+            "readOnlyHint": "Ctrl+Enter · قراءة فقط: SELECT وWITH وEXPLAIN وأوامر PRAGMA للقراءة فقط",
+            "changed": "تغيّر {count} صف",
+            "rows": "{count} صف في {ms} ms",
+            "truncated": "عرض أول {count}"
+        },
+        "structure": {
+            "dropConfirm": "حذف العمود \"{column}\" من \"{table}\"؟ ستُفقد بياناته. لا يمكن التراجع عن ذلك.",
+            "dropped": "حُذف العمود {column}.",
+            "addColumn": "إضافة عمود",
+            "column": "العمود",
+            "type": "النوع",
+            "default": "الافتراضي",
+            "key": "المفتاح",
+            "actions": "الإجراءات",
+            "generated": "مُولّد",
+            "edit": "تعديل",
+            "deleteColumn": "حذف العمود",
+            "indexes": "الفهارس",
+            "createStatement": "عبارة CREATE"
+        },
+        "column": {
+            "needDefault": "يحتاج SQLite إلى قيمة افتراضية لإضافة عمود NOT NULL إلى صفوف موجودة.",
+            "added": "أُضيف العمود {name}.",
+            "renamed": "أُعيدت تسمية العمود إلى {name}.",
+            "editTitle": "تعديل العمود {name}",
+            "name": "الاسم",
+            "value": "القيمة…",
+            "typeLabel": "النوع:",
+            "nullable": "يقبل القيم الفارغة",
+            "defaultLabel": "افتراضي",
+            "renameOnly": "لا يستطيع SQLite إلا إعادة تسمية العمود في مكانه. لتغيير نوعه أو قيوده، أعد بناء الجدول باستخدام SQL.",
+            "sqlPreview": "SQL الذي سيُنفَّذ",
+            "rename": "إعادة التسمية"
+        },
+        "grid": {
+            "noRows": "لا توجد صفوف.",
+            "editRow": "تعديل الصف",
+            "deleteRow": "حذف الصف",
+            "dblClick": "انقر مرتين للتعديل",
+            "clickCopy": "انقر للنسخ"
+        },
+        "row": {
+            "addTitle": "إضافة صف إلى {table}",
+            "editTitle": "تعديل الصف {rowid}",
+            "emptyDefault": "تستخدم الحقول الفارغة القيمة الافتراضية للعمود",
+            "undo": "التراجع عن تغييرات هذا الحقل",
+            "locked": "لم يُحمَّل بالكامل؛ غيّره باستخدام SQL.",
+            "auto": "تلقائي",
+            "defaultPlaceholder": "الافتراضي: {value}",
+            "convert": "تحويل / تغيير الصيغة",
+            "working": "جارٍ العمل…",
+            "format": "الصيغة…",
+            "changed": "تغيّر {count} حقل",
+            "insert": "إدراج صف",
+            "save": "حفظ التغييرات"
+        },
+        "data": {
+            "savedCell": "حُفظ {column}.",
+            "deleteRowsConfirm": "حذف {count} صف من \"{table}\"؟ لا يمكن التراجع عن ذلك.",
+            "deletedRows": "حُذف {count} صف.",
+            "deleteRowConfirm": "حذف الصف {rowid} من \"{table}\"؟ لا يمكن التراجع عن ذلك.",
+            "deletedRow": "حُذف الصف {rowid}.",
+            "rowAdded": "أُضيف الصف (rowid {rowid}).",
+            "savedFields": "حُفظ {count} حقل.",
+            "search": "ابحث في كل الأعمدة",
+            "addRow": "إضافة صف",
+            "deleteCount": "حذف {count}",
+            "matchCount": "{count} صف مطابق",
+            "rowCount": "{count} صف",
+            "perPage": "{n} / صفحة",
+            "viewReadonly": "لا يمكن تعديل العروض في الشبكة — استخدم تبويب SQL.",
+            "noRowid": "لا يحتوي هذا الجدول على rowid، لذا لا يمكن تعديله في الشبكة — استخدم تبويب SQL."
+        },
+        "viewer": {
+            "tabData": "البيانات",
+            "tabStructure": "البنية",
+            "requestFailed": "فشل الطلب.",
+            "aiFailed": "فشل طلب الذكاء الاصطناعي.",
+            "convertFailed": "فشل التحويل.",
+            "editing": "تحرير",
+            "readOnly": "قراءة فقط",
+            "writeOn": "الكتابة مفعّلة: تذهب التغييرات مباشرة إلى ملف قاعدة البيانات",
+            "writeOff": "قراءة فقط: فعّل الكتابة لتغيير البيانات",
+            "write": "كتابة",
+            "opening": "جارٍ فتح قاعدة البيانات…",
+            "filter": "تصفية الجداول",
+            "noTables": "لا توجد جداول.",
+            "showInternal": "إظهار جداول sqlite_"
+        }
+    },
+    "icons": {
+        "folder": "مجلد",
+        "file": "ملف"
+    },
+    "cells": {
+        "blob": "BLOB {bytes} بايت",
+        "emptyBlob": "blob فارغ",
+        "textCut": "اقتُطع النص عند {shown} من أصل {total} حرف"
+    },
+    "formats": {
+        "errors": {
+            "notNumber": "ليس رقمًا.",
+            "notBase64": "ليس Base64 صالحًا.",
+            "notJson": "ليس JSON صالحًا.",
+            "notUnix": "ليس طابعًا زمنيًا لـ Unix.",
+            "notDate": "ليس تاريخًا.",
+            "valueNotNumber": "\"{value}\" ليس رقمًا."
+        },
+        "groups": {
+            "type": "النوع",
+            "hash": "التجزئة",
+            "text": "النص",
+            "encode": "الترميز",
+            "dateId": "التاريخ والمعرّف"
+        },
+        "items": {
+            "text": "نص",
+            "int": "عدد صحيح",
+            "real": "عدد حقيقي (عشري)",
+            "bcrypt": "bcrypt (كلمة مرور)",
+            "argon2id": "Argon2id (كلمة مرور)",
+            "upper": "أحرف كبيرة",
+            "lower": "أحرف صغيرة",
+            "trim": "إزالة المسافات",
+            "slug": "Slug",
+            "empty": "نص فارغ",
+            "b64e": "ترميز Base64",
+            "b64d": "فك ترميز Base64",
+            "urle": "ترميز URL",
+            "urld": "فك ترميز URL",
+            "jsonp": "تنسيق JSON",
+            "jsonm": "تصغير JSON",
+            "now": "الآن (YYYY-MM-DD HH:MM:SS)",
+            "nowunix": "الآن (طابع Unix الزمني)",
+            "unix2date": "طابع Unix الزمني ← تاريخ",
+            "date2unix": "تاريخ ← طابع Unix الزمني",
+            "uuid": "UUID v4 جديد"
+        }
+    },
+    "manager": {
+        "website": "الموقع",
+        "home": "الدليل الرئيسي",
+        "pathInside": "يجب أن يبقى المسار داخل {base}.",
+        "cannotEdit": "لا يمكن تعديل \"{filename}\". نوع الملف هذا غير مدعوم للتعديل.",
+        "largeFileConfirm": "حجم \"{name}\" هو {size}. قد يؤدي تحميل الملف كاملًا إلى إبطاء المتصفح. فتح الملف كاملًا؟",
+        "sizeFailed": "فشل حساب حجم المجلد.",
+        "trashConfirm": "نقل {count} عنصر إلى سلة المهملات؟",
+        "renamed": "أُعيدت تسمية العنصر.",
+        "renameFailed": "فشلت إعادة تسمية العنصر.",
+        "trashLoadFailed": "فشل تحميل سلة المهملات.",
+        "restored": "تمت استعادة العناصر.",
+        "restoreFailed": "فشلت الاستعادة.",
+        "purgeOneConfirm": "حذف عنصر سلة المهملات هذا نهائيًا؟ لا يمكن التراجع عن ذلك.",
+        "purged": "حُذف نهائيًا.",
+        "deleteFailed": "فشل الحذف.",
+        "purgeManyConfirm": "حذف {count} عنصر نهائيًا؟ لا يمكن التراجع عن ذلك.",
+        "deleteSelectedFailed": "فشل حذف العناصر المحددة.",
+        "extracted": "تم فك ضغط الأرشيف بنجاح.",
+        "extractFailed": "فشل فك ضغط الأرشيف.",
+        "uploadedMany": "تم رفع {count} ملفات بنجاح.",
+        "uploadedOne": "تم رفع الملف بنجاح.",
+        "uploadFailed": "فشل الرفع.",
+        "cacheCleared": "تم مسح ذاكرة المشروع المؤقتة بنجاح.",
+        "cacheFailed": "فشل مسح ذاكرة المشروع المؤقتة.",
+        "saved": "تم حفظ الملف.",
+        "saveFailed": "فشل حفظ الملف.",
+        "owner": "المالك",
+        "group": "المجموعة",
+        "world": "الجميع"
+    },
+    "quick": {
+        "groups": {
+            "create": "إنشاء",
+            "fileOps": "عمليات الملفات",
+            "navigation": "التنقل",
+            "danger": "خطر"
+        },
+        "upload": "رفع",
+        "uploadHint": "إضافة ملفات إلى هذا المجلد",
+        "newFile": "ملف جديد",
+        "newFileHint": "إنشاء ملف فارغ",
+        "newFolder": "مجلد جديد",
+        "newFolderHint": "إنشاء دليل",
+        "permissions": "الصلاحيات",
+        "permissionsHint": "تغيير وضع الوصول",
+        "download": "تنزيل",
+        "downloadHint": "الحفظ محليًا",
+        "zip": "ضغط",
+        "zipHint": "ضغط المحدد",
+        "extract": "فك الضغط",
+        "extractHint": "فك ضغط الأرشيف",
+        "clearing": "جارٍ المسح...",
+        "clearCache": "مسح الذاكرة المؤقتة",
+        "clearCacheHint": "تشغيل Laravel optimize:clear",
+        "upLevel": "مستوى لأعلى",
+        "upLevelHint": "الانتقال إلى المجلد الأب",
+        "hideHidden": "إخفاء المخفي",
+        "showHidden": "إظهار المخفي",
+        "hiddenHint": "إظهار/إخفاء الملفات النقطية",
+        "trash": "سلة المهملات",
+        "trashHint": "استعادة أو حذف نهائي",
+        "delete": "حذف",
+        "deleteHint": "إزالة العناصر المحددة"
+    }
+}

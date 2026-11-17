@@ -1,0 +1,78 @@
+{
+    "enforcement": {
+        "disk": "Over the disk limit",
+        "report": "Report: notify only",
+        "enforce": "Enforce: the server refuses further writes",
+        "diskHelp": "Enforce needs user quotas on the sites filesystem. Disk use is checked every hour.",
+        "bandwidth": "Over the monthly bandwidth limit",
+        "notify": "Notify only",
+        "block": "Block: websites show a 503 page until the month ends",
+        "bandwidthHelp": "0 GB means no limit. Usage resets on the first day of each month.",
+        "emailsHour": "Emails per hour",
+        "emailsDay": "Emails per day",
+        "cpu": "CPU limit (%)",
+        "memory": "Memory limit (MB)",
+        "processes": "Process limit",
+        "phpHelp": "For the account's websites' PHP, all its sites together. 100% CPU is one full core; 0 means no limit. With a limit, the account's PHP runs in its own PHP-FPM, so it cannot slow other accounts down. Needs a Linux server with systemd; applied within five minutes.",
+        "mailHelp": "Outgoing mail from the account's mailboxes and websites, each recipient counted once. 0 means no limit. Over the limit, mail is held back until the hour or day is over (website mail waits in the queue, mail apps are asked to try later) and the account is notified. Needs the Rspamd module."
+    },
+    "create": {
+        "title": "Create Resource Package",
+        "subtitle": "Set hard resource limits for domain users.",
+        "namePh": "e.g. Basic, Pro, Enterprise",
+        "submit": "Create Package"
+    },
+    "form": {
+        "name": "Package Name",
+        "storage": "Max Storage (MB)",
+        "mailboxes": "Max Mailboxes",
+        "websites": "Max Websites",
+        "databases": "Max Databases",
+        "bandwidth": "Bandwidth Limit (GB)",
+        "sortOrder": "Sort Order",
+        "features": "Features",
+        "forwarding": "Allow Email Forwarding",
+        "aliases": "Allow Aliases",
+        "priority": "Priority Support",
+        "back": "Back to Packages"
+    },
+    "edit": {
+        "headTitle": "Edit Package - {name}",
+        "title": "Edit Package: {name}",
+        "subtitle": "Update hard limits applied to assigned domain users.",
+        "usage": "Current Usage",
+        "mailboxes": "Mailboxes:",
+        "unlimited": "unlimited",
+        "storageUsed": "Storage Used:",
+        "submit": "Update Package"
+    },
+    "list": {
+        "deleteConfirm": "Delete this package? It must not have assigned users or mailboxes.",
+        "unlimited": "Unlimited",
+        "title": "Resource Packages",
+        "subtitle": "Manage hard quotas assigned to domain users.",
+        "manageUsers": "Manage Users",
+        "create": "Create Package",
+        "th": {
+            "package": "Package",
+            "owner": "Owner",
+            "storage": "Storage",
+            "mailboxes": "Mailboxes",
+            "features": "Features",
+            "usage": "Usage",
+            "actions": "Actions"
+        },
+        "admin": "Admin",
+        "nMailboxes": "{n} mailboxes",
+        "sitesDbs": "{sites} websites · {dbs} databases",
+        "bandwidth": "{n} GB bandwidth",
+        "forwarding": "Forwarding",
+        "aliases": "Aliases",
+        "priority": "Priority Support",
+        "used": "{size} used",
+        "assigned": "{n} assigned users",
+        "edit": "Edit",
+        "delete": "Delete",
+        "empty": "No packages found. Create one to get started."
+    }
+}

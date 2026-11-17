@@ -1,4 +1,7 @@
 /** Display helpers shared by the Login Audit table, map and detail view. */
+import { i18n } from '@/i18n';
+
+const t = (...args) => i18n.global.t(...args);
 
 export const RESULT_BADGES = {
     success: { label: 'Success', class: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300' },
@@ -18,16 +21,16 @@ export const flag = (code) => (code && code.length === 2
     : '');
 
 export const place = (event) => {
-    if (event.geo_status === 'private') return 'Private network';
-    if (event.geo_status === 'pending') return 'Location pending';
+    if (event.geo_status === 'private') return t('security.loginAudit.format.privateNetwork');
+    if (event.geo_status === 'pending') return t('security.loginAudit.format.locationPending');
     const parts = [event.city, event.region, event.country].filter(Boolean);
-    return parts.length ? [...new Set(parts)].join(', ') : 'Unknown';
+    return parts.length ? [...new Set(parts)].join(', ') : t('security.loginAudit.format.unknown');
 };
 
 /** A rough browser / OS / device read of a user agent; enough for an audit row. */
 export const parseAgent = (agent) => {
     if (!agent) return null;
-    const pick = (rules) => rules.find(([pattern]) => pattern.test(agent))?.[1] || 'Unknown';
+    const pick = (rules) => rules.find(([pattern]) => pattern.test(agent))?.[1] || t('security.loginAudit.format.unknown');
     const version = (pattern) => agent.match(pattern)?.[1] || '';
 
     const browser = pick([
@@ -47,7 +50,7 @@ export const parseAgent = (agent) => {
         [/CrOS/, 'ChromeOS'],
         [/Linux/, 'Linux'],
     ]).trim();
-    const device = /Mobi|iPhone|Android(?!.*Tablet)/.test(agent) ? 'Mobile' : (/iPad|Tablet/.test(agent) ? 'Tablet' : 'Desktop');
+    const device = /Mobi|iPhone|Android(?!.*Tablet)/.test(agent) ? t('security.loginAudit.format.mobile') : (/iPad|Tablet/.test(agent) ? t('security.loginAudit.format.tablet') : t('security.loginAudit.format.desktop'));
 
     return { browser, os, device };
 };

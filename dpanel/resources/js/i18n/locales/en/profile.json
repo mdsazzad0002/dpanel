@@ -1,0 +1,98 @@
+{
+    "edit": {
+        "tabs": {
+            "profile": {
+                "label": "Profile",
+                "hint": "Name and email"
+            },
+            "password": {
+                "label": "Password",
+                "hint": "Change password"
+            },
+            "security": {
+                "label": "Security",
+                "hint": "2FA settings"
+            }
+        },
+        "title": "Profile",
+        "subtitle": "Manage your account settings",
+        "avatar": "Change avatar",
+        "user": "User",
+        "verified": "Verified",
+        "unverified": "Unverified",
+        "twoFaOn": "2FA On",
+        "twoFaOff": "2FA Off",
+        "completion": "Profile Completion",
+        "complete": "Complete",
+        "pending": "Pending",
+        "emailStatus": "Email Status",
+        "enabled": "Enabled",
+        "disabled": "Disabled",
+        "twoFaStatus": "2FA Status",
+        "role": "Role",
+        "infoTitle": "Profile Information",
+        "infoText": "Update your account details",
+        "passwordTitle": "Update Password",
+        "passwordText": "Ensure your account stays secure",
+        "twoFaTitle": "Two-Factor Authentication",
+        "twoFaText": "Add extra security to your account"
+    },
+    "info": {
+        "name": "Full Name",
+        "email": "Email Address",
+        "emailLocked": "Email address cannot be changed from here",
+        "notVerified": "Email not verified",
+        "verifyPrompt": "Please verify your email address to access all features.",
+        "resend": "Resend verification email",
+        "sent": "Verification link sent to your email",
+        "verified": "Email verified",
+        "verifiedText": "Your email address has been verified",
+        "saving": "Saving...",
+        "save": "Save Changes",
+        "saved": "Saved successfully"
+    },
+    "password": {
+        "weak": "Weak",
+        "fair": "Fair",
+        "good": "Good",
+        "strong": "Strong",
+        "current": "Current Password",
+        "new": "New Password",
+        "confirm": "Confirm Password",
+        "strength": "Password strength",
+        "match": "Passwords match",
+        "noMatch": "Passwords do not match",
+        "updating": "Updating...",
+        "submit": "Update Password",
+        "saved": "Password updated successfully"
+    },
+    "twoFactor": {
+        "sendFailed": "Unable to send verification email.",
+        "title": "Security",
+        "subtitle": "Use the verification cards below to manage your two-factor settings.",
+        "emailTitle": "Email Verification",
+        "verified": "Verified",
+        "pending": "Pending",
+        "emailText": "Send a verification email to confirm your account address.",
+        "emailSent": "Verification email sent.",
+        "code": "Confirmation Code",
+        "codePlaceholder": "Enter code",
+        "codeSent": "Code sent to your email address.",
+        "codeHint": "Use the code sent to your email to confirm enable or disable.",
+        "sendEmail": "Send Email",
+        "enable": "Enable",
+        "disable": "Disable",
+        "googleTitle": "Google Authenticator",
+        "enabled": "Enabled",
+        "ready": "Ready",
+        "googleText": "Scan the QR code with Google Authenticator or another TOTP app.",
+        "confirmation": "Confirmation",
+        "appPlaceholder": "Enter authenticator code",
+        "googleRequired": "Scan the QR code, then enter the app code to enable Google Authenticator.",
+        "qr": "QR code",
+        "retry": "Retry",
+        "qrAlt": "Google Authenticator QR code",
+        "qrHint": "Enable Google Authenticator to generate the QR code.",
+        "qrHidden": "Google Authenticator is already enabled, so the QR code is hidden."
+    }
+}

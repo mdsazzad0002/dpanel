@@ -5,6 +5,9 @@ import { Head, Link, router, useForm, usePage } from '@inertiajs/vue3';
 import { computed, onUnmounted, ref } from 'vue';
 import { isClosedRoute } from '@/navigation/panelMenu';
 import DeleteDatabaseModal from './components/DeleteDatabaseModal.vue';
+import { useI18n } from 'vue-i18n';
+
+const { t } = useI18n();
 
 const page = usePage();
 const deleteForm = useForm({});
@@ -40,11 +43,11 @@ const selectedWebsite = ref(String(props.filters?.website || ''));
 const selectedUser = ref(String(props.filters?.user || ''));
 
 const websiteFilterOptions = computed(() => [
-    { value: '', label: 'All websites' },
+    { value: '', label: t('databases.list.allWebsites') },
     ...props.websiteOptions.map((website) => ({ value: website, label: website })),
 ]);
 const userFilterOptions = computed(() => [
-    { value: '', label: 'All users' },
+    { value: '', label: t('databases.list.allUsers') },
     ...props.userOptions.map((user) => ({ value: user.value, label: user.label })),
 ]);
 
@@ -176,7 +179,7 @@ const startExport = async (item) => {
     }
     catch (error) {
         entry.stage = 'failed';
-        entry.message = error?.response?.data?.message || error?.message || 'Export could not be started.';
+        entry.message = error?.response?.data?.message || error?.message || t('databases.list.exportNotStarted');
     }
 };
 
@@ -216,7 +219,7 @@ const pollExports = async () => {
                 if (autoDownload.value) downloadExport(entry);
             }
             else if (data.stage === 'failed') {
-                Object.assign(entry, { stage: 'failed', message: data.message || 'Export failed.' });
+                Object.assign(entry, { stage: 'failed', message: data.message || t('databases.list.exportFailed') });
             }
             else {
                 entry.stage = data.stage || entry.stage;
@@ -238,12 +241,12 @@ const clearFinished = () => {
 };
 
 const exportStageText = (entry) => ({
-    starting: 'Starting…',
-    queued: 'Waiting in the export queue…',
-    zipping: 'Dumping and compressing…',
-    ready: 'Ready',
-    downloaded: 'Downloaded',
-    failed: entry.message || 'Failed',
+    starting: t('databases.list.stage.starting'),
+    queued: t('databases.list.stage.queued'),
+    zipping: t('databases.list.stage.zipping'),
+    ready: t('databases.list.stage.ready'),
+    downloaded: t('databases.list.stage.downloaded'),
+    failed: entry.message || t('databases.list.stage.failed'),
 }[entry.stage] || entry.stage);
 
 const formatSize = (bytes) => {
@@ -257,13 +260,13 @@ onUnmounted(() => window.clearInterval(pollTimer));
 </script>
 
 <template>
-    <Head title="List Databases" />
+    <Head :title="t('databases.list.title')" />
 
     <AuthenticatedLayout>
         <template #header>
             <div>
-                <h1 class="text-lg font-semibold">List Databases</h1>
-                <p class="text-sm text-slate-500 dark:text-slate-400">View and manage database requests.</p>
+                <h1 class="text-lg font-semibold">{{ t('databases.list.title') }}</h1>
+                <p class="text-sm text-slate-500 dark:text-slate-400">{{ t('databases.list.subtitle') }}</p>
             </div>
         </template>
 
@@ -304,38 +307,38 @@ onUnmounted(() => window.clearInterval(pollTimer));
                     type="button"
                     :disabled="selectedIds.length === 0"
                     class="inline-flex items-center gap-1.5 rounded-md border border-slate-300 px-3 py-2 text-sm font-medium hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-50 dark:border-slate-700 dark:hover:bg-slate-800"
-                    :title="selectedIds.length ? 'Each database downloads as soon as its own export is ready' : 'Select databases in the list first'"
+                    :title="selectedIds.length ? t('databases.list.exportSelectedHint') : t('databases.list.selectFirst')"
                     @click="exportSelected"
                 >
                     <i class="bi bi-download"></i>
-                    Export selected{{ selectedIds.length ? ` (${selectedIds.length})` : '' }}
+                    {{ t('databases.list.exportSelected') }}{{ selectedIds.length ? ` (${selectedIds.length})` : '' }}
                 </button>
                 <Link :href="panelRoute('databases.create')" class="rounded-md bg-blue-600 px-3 py-2 text-sm text-white hover:bg-blue-700">
-                    Create Database
+                    {{ t('databases.create.title') }}
                 </Link>
             </div>
 
             <form class="grid gap-3 rounded-xl border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-900 md:grid-cols-2 md:items-end xl:grid-cols-[minmax(0,1.2fr)_minmax(0,1.2fr)_minmax(0,1fr)_auto_auto]" @submit.prevent="applyFilters">
                 <div>
-                    <label for="database-name-search" class="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Name</label>
+                    <label for="database-name-search" class="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">{{ t('databases.list.col.name') }}</label>
                     <input
                         id="database-name-search"
                         v-model="searchedName"
                         type="search"
-                        placeholder="Search database name"
+                        :placeholder="t('databases.list.searchName')"
                         autocomplete="off"
                         class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-800"
                     >
                 </div>
 
                 <div>
-                    <label class="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Website</label>
-                    <SearchableSelect v-model="selectedWebsite" :options="websiteFilterOptions" placeholder="All websites" search-placeholder="Search websites…" />
+                    <label class="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">{{ t('databases.list.website') }}</label>
+                    <SearchableSelect v-model="selectedWebsite" :options="websiteFilterOptions" :placeholder="t('databases.list.allWebsites')" :search-placeholder="t('databases.list.searchWebsites')" />
                 </div>
 
                 <div>
-                    <label class="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">User</label>
-                    <SearchableSelect v-model="selectedUser" :options="userFilterOptions" placeholder="All users" search-placeholder="Search users…" />
+                    <label class="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">{{ t('databases.list.col.user') }}</label>
+                    <SearchableSelect v-model="selectedUser" :options="userFilterOptions" :placeholder="t('databases.list.allUsers')" :search-placeholder="t('databases.list.searchUsers')" />
                 </div>
 
                 <button
@@ -343,29 +346,29 @@ onUnmounted(() => window.clearInterval(pollTimer));
                     class="rounded-md border border-slate-300 px-4 py-2 text-sm hover:bg-slate-50 dark:border-slate-700 dark:hover:bg-slate-800"
                     @click="clearFilters"
                 >
-                    Clear
+                    {{ t('databases.list.clear') }}
                 </button>
 
                 <button
                     type="submit"
                     class="rounded-md bg-slate-900 px-4 py-2 text-sm text-white hover:bg-slate-800 dark:bg-slate-100 dark:text-slate-900 dark:hover:bg-white"
                 >
-                    Apply Filters
+                    {{ t('databases.list.apply') }}
                 </button>
             </form>
 
-            <section v-if="exportsList.length" class="rounded-xl border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-900" aria-label="Database exports">
+            <section v-if="exportsList.length" class="rounded-xl border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-900" :aria-label="t('databases.list.exportsLabel')">
                 <div class="flex flex-wrap items-center justify-between gap-3">
                     <div>
-                        <h2 class="text-sm font-semibold">Exports</h2>
-                        <p class="text-xs text-slate-500 dark:text-slate-400">Each database downloads on its own as soon as it is ready. If the browser asks, allow this site to download multiple files.</p>
+                        <h2 class="text-sm font-semibold">{{ t('databases.list.exports') }}</h2>
+                        <p class="text-xs text-slate-500 dark:text-slate-400">{{ t('databases.list.exportsHelp') }}</p>
                     </div>
                     <div class="flex items-center gap-3 text-xs">
                         <label class="inline-flex items-center gap-1.5">
                             <input v-model="autoDownload" type="checkbox" class="rounded border-slate-300 dark:border-slate-600">
-                            Download automatically
+                            {{ t('databases.list.autoDownload') }}
                         </label>
-                        <button type="button" class="text-slate-500 hover:underline" @click="clearFinished">Clear finished</button>
+                        <button type="button" class="text-slate-500 hover:underline" @click="clearFinished">{{ t('databases.list.clearFinished') }}</button>
                     </div>
                 </div>
                 <ul class="mt-3 divide-y divide-slate-200 dark:divide-slate-800">
@@ -390,7 +393,7 @@ onUnmounted(() => window.clearInterval(pollTimer));
                             class="rounded-md border border-blue-300 px-2 py-1 text-xs text-blue-700 hover:bg-blue-50 dark:border-blue-700 dark:text-blue-300 dark:hover:bg-blue-900/20"
                             @click="downloadExport(entry)"
                         >
-                            {{ entry.stage === 'downloaded' ? 'Download again' : 'Download' }}
+                            {{ entry.stage === 'downloaded' ? t('databases.list.downloadAgain') : t('databases.list.download') }}
                         </button>
                         <button
                             v-if="entry.stage === 'failed'"
@@ -398,7 +401,7 @@ onUnmounted(() => window.clearInterval(pollTimer));
                             class="rounded-md border border-slate-300 px-2 py-1 text-xs hover:bg-slate-100 dark:border-slate-700 dark:hover:bg-slate-800"
                             @click="retryExport(entry)"
                         >
-                            Retry
+                            {{ t('databases.list.retry') }}
                         </button>
                     </li>
                 </ul>
@@ -415,18 +418,18 @@ onUnmounted(() => window.clearInterval(pollTimer));
                                     :checked="allSelected"
                                     :indeterminate="selectedIds.length > 0 && !allSelected"
                                     :disabled="exportableRows.length === 0"
-                                    aria-label="Select all databases"
+                                    :aria-label="t('databases.list.selectAll')"
                                     @change="toggleAll"
                                 >
                             </th>
-                            <th class="px-4 py-3">Attached Website</th>
-                            <th class="px-4 py-3">Owner</th>
-                            <th class="px-4 py-3">Engine</th>
-                            <th class="px-4 py-3">Name</th>
-                            <th class="px-4 py-3">User</th>
-                           <th class="px-4 py-3">Status</th>
-                            <th class="px-4 py-3">Created</th>
-                            <th class="px-4 py-3">Actions</th>
+                            <th class="px-4 py-3">{{ t('databases.list.col.website') }}</th>
+                            <th class="px-4 py-3">{{ t('databases.list.col.owner') }}</th>
+                            <th class="px-4 py-3">{{ t('databases.list.col.engine') }}</th>
+                            <th class="px-4 py-3">{{ t('databases.list.col.name') }}</th>
+                            <th class="px-4 py-3">{{ t('databases.list.col.user') }}</th>
+                           <th class="px-4 py-3">{{ t('databases.list.col.status') }}</th>
+                            <th class="px-4 py-3">{{ t('databases.list.col.created') }}</th>
+                            <th class="px-4 py-3">{{ t('databases.list.col.actions') }}</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -437,29 +440,29 @@ onUnmounted(() => window.clearInterval(pollTimer));
                                     class="rounded border-slate-300 dark:border-slate-600"
                                     :checked="selectedIds.includes(item.id)"
                                     :disabled="item.status !== 'active'"
-                                    :title="item.status !== 'active' ? 'Only active databases can be exported' : ''"
-                                    :aria-label="`Select ${item.database_name}`"
+                                    :title="item.status !== 'active' ? t('databases.list.onlyActive') : ''"
+                                    :aria-label="t('databases.list.selectOne', { name: item.database_name })"
                                     @change="toggleSelect(item.id)"
                                 >
                             </td>
                             <td class="px-4 py-3">
                                 <span class="inline-flex items-center gap-1.5">
                                     <span class="rounded-full bg-blue-100 px-2 py-1 text-xs text-blue-700">
-                                        {{ item.domain || 'Not attached' }}
+                                        {{ item.domain || t('databases.list.notAttached') }}
                                     </span>
                                     <Link
                                         v-if="item.website_id"
                                         :href="panelRoute('websites.manage', { id: item.website_id })"
                                         class="inline-flex h-6 w-6 items-center justify-center rounded-md text-slate-400 hover:bg-slate-100 hover:text-blue-600 dark:hover:bg-slate-800 dark:hover:text-blue-300"
-                                        :title="`Manage ${item.domain}`"
-                                        :aria-label="`Manage ${item.domain}`"
+                                        :title="t('databases.list.manage', { domain: item.domain })"
+                                        :aria-label="t('databases.list.manage', { domain: item.domain })"
                                     >
                                         <i class="bi bi-gear text-xs"></i>
                                     </Link>
                                 </span>
                             </td>
                             <td class="px-4 py-3 text-slate-600 dark:text-slate-300">
-                                {{ item.assigned_user_name || item.assigned_user_email || 'dPanel user' }}
+                                {{ item.assigned_user_name || item.assigned_user_email || t('databases.list.panelUser') }}
                             </td>
                             <td class="px-4 py-3">
                                 <span :class="engineOf(item).badge" class="rounded-full px-2 py-1 text-xs">
@@ -478,40 +481,40 @@ onUnmounted(() => window.clearInterval(pollTimer));
                                 <div class="flex flex-col gap-2">
                                     <div class="flex items-center gap-2">
                                     <Link :href="panelRoute('databases.edit', { id: item.id })" class="rounded-md border border-slate-300 px-2 py-1 text-xs hover:bg-slate-100 dark:border-slate-700 dark:hover:bg-slate-800">
-                                        Edit
+                                        {{ t('databases.list.edit') }}
                                     </Link>
                                     <a
                                         :href="databaseLoginUrl(item)"
                                         target="_blank"
                                         rel="noopener"
                                         class="rounded-md border border-blue-300 px-2 py-1 text-xs text-blue-700 hover:bg-blue-50 dark:border-blue-700 dark:text-blue-300 dark:hover:bg-blue-900/20"
-                                        :title="`Open in ${engineOf(item).tool} (new tab)`"
+                                        :title="t('databases.list.openIn', { tool: engineOf(item).tool })"
                                     >
-                                        DB Login
+                                        {{ t('databases.postgresql.dbLogin') }}
                                     </a>
                                     <button
                                         type="button"
                                         :disabled="item.status !== 'active' || Boolean(exportFor(item.id))"
                                         class="inline-flex items-center gap-1 rounded-md border border-emerald-300 px-2 py-1 text-xs text-emerald-700 hover:bg-emerald-50 disabled:opacity-50 dark:border-emerald-700 dark:text-emerald-300 dark:hover:bg-emerald-900/20"
-                                        :title="item.status === 'active' ? `Export ${item.database_name}` : 'Only active databases can be exported'"
+                                        :title="item.status === 'active' ? t('databases.list.exportOne', { name: item.database_name }) : t('databases.list.onlyActive')"
                                         @click="startExport(item)"
                                     >
                                         <i :class="['bi', exportFor(item.id) ? 'bi-arrow-repeat inline-block animate-spin' : 'bi-download']"></i>
-                                        Export
+                                        {{ t('databases.list.export') }}
                                     </button>
                                     <button
                                         :disabled="deleteForm.processing"
                                         class="rounded-md border border-red-300 px-2 py-1 text-xs text-red-700 hover:bg-red-50 disabled:opacity-50 dark:border-red-700 dark:text-red-400"
                                         @click="deleteRequest(item)"
                                     >
-                                        Delete
+                                        {{ t('databases.delete.button') }}
                                     </button>
                                     </div>
                                 </div>
                             </td>
                         </tr>
                         <tr v-if="props.databaseRequests.length === 0">
-                            <td colspan="9" class="px-4 py-6 text-center text-slate-500">No database requests found.</td>
+                            <td colspan="9" class="px-4 py-6 text-center text-slate-500">{{ t('databases.list.empty') }}</td>
                         </tr>
                     </tbody>
                 </table>

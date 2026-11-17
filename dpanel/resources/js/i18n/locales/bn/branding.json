@@ -1,0 +1,13 @@
+{
+    "title": "Branding",
+    "serverHelp": "সবাই এই নাম, logo ও রং দেখে, যদি না তাদের reseller-এর নিজের থাকে।",
+    "resellerHelp": "আপনি ও আপনার customer এই নাম, logo ও রং দেখেন।",
+    "name": "Panel-এর নাম",
+    "color": "রং",
+    "logo": "Logo",
+    "logoHelp": "PNG, JPG বা WebP, সর্বোচ্চ 512 KB।",
+    "removeLogo": "Logo সরান",
+    "fallback": "খালি রাখা অংশ server-এর branding থেকে আসে, তারপর dPanel-এর নিজের।",
+    "save": "Save",
+    "failed": "Branding save হয়নি।"
+}

@@ -1,6 +1,9 @@
 <script setup>
 import CheckList from '@/Pages/Seo/components/inspection/CheckList.vue';
 import { computed } from 'vue';
+import { useI18n } from 'vue-i18n';
+
+const { t } = useI18n();
 
 const props = defineProps({
     report: { type: Object, required: true },
@@ -18,27 +21,26 @@ const header = 'border-b border-slate-200 bg-slate-50 px-4 py-2 text-xs font-sem
     <div class="space-y-4">
         <div v-if="!manifest" class="rounded-xl border border-dashed border-slate-300 bg-white p-8 text-center text-sm text-slate-500 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-400">
             <i class="bi bi-phone mb-2 block text-2xl"></i>
-            This page links no web app manifest, so it cannot be installed as an app.
-            Add <code class="rounded bg-slate-100 px-1 dark:bg-slate-700">&lt;link rel="manifest" href="/site.webmanifest"&gt;</code> to make it installable.
+            <i18n-t keypath="seo.pwa.noManifest" scope="global"><template #tag><code class="rounded bg-slate-100 px-1 dark:bg-slate-700">&lt;link rel="manifest" href="/site.webmanifest"&gt;</code></template></i18n-t>
         </div>
 
         <div v-if="app" class="grid items-start gap-4 lg:grid-cols-3">
             <!-- Install prompt -->
             <section class="overflow-hidden rounded-xl border border-slate-200 dark:border-slate-700">
-                <h3 :class="header"><i class="bi bi-download mr-1"></i>Install prompt</h3>
+                <h3 :class="header"><i class="bi bi-download mr-1"></i>{{ t('seo.pwa.prompt') }}</h3>
                 <div class="flex justify-center bg-slate-100 p-5 dark:bg-slate-900">
                     <div class="w-full max-w-[300px] rounded-xl bg-white p-4 text-[#202124] shadow-md">
                         <div class="flex items-center gap-3">
                             <img v-if="app.icon" :src="app.icon" alt="" class="h-10 w-10 rounded-lg object-contain" />
                             <span v-else class="flex h-10 w-10 items-center justify-center rounded-lg bg-slate-200 font-semibold text-slate-500">{{ app.name.charAt(0) }}</span>
                             <div class="min-w-0">
-                                <p class="truncate text-sm font-medium">Install {{ app.name }}?</p>
+                                <p class="truncate text-sm font-medium">{{ t('seo.pwa.installQ', { name: app.name }) }}</p>
                                 <p class="truncate text-xs text-[#5f6368]">{{ report.preview.host }}</p>
                             </div>
                         </div>
                         <div class="mt-4 flex justify-end gap-2 text-sm">
-                            <span class="rounded-full px-3 py-1 text-[#1a73e8]">Cancel</span>
-                            <span class="rounded-full bg-[#1a73e8] px-4 py-1 text-white">Install</span>
+                            <span class="rounded-full px-3 py-1 text-[#1a73e8]">{{ t('common.cancel') }}</span>
+                            <span class="rounded-full bg-[#1a73e8] px-4 py-1 text-white">{{ t('seo.pwa.install') }}</span>
                         </div>
                     </div>
                 </div>
@@ -46,7 +48,7 @@ const header = 'border-b border-slate-200 bg-slate-50 px-4 py-2 text-xs font-sem
 
             <!-- Home screen icon, as Android masks it -->
             <section class="overflow-hidden rounded-xl border border-slate-200 dark:border-slate-700">
-                <h3 :class="header"><i class="bi bi-android2 mr-1"></i>Home screen</h3>
+                <h3 :class="header"><i class="bi bi-android2 mr-1"></i>{{ t('seo.pwa.home') }}</h3>
                 <div class="flex items-center justify-center gap-6 bg-gradient-to-br from-indigo-500 to-teal-500 p-6">
                     <div v-for="shape in ['rounded-full', 'rounded-[22%]']" :key="shape" class="w-16 text-center">
                         <span class="mx-auto flex h-14 w-14 items-center justify-center overflow-hidden bg-white" :class="shape">
@@ -60,7 +62,7 @@ const header = 'border-b border-slate-200 bg-slate-50 px-4 py-2 text-xs font-sem
 
             <!-- Splash screen: background_color, icon and name -->
             <section class="overflow-hidden rounded-xl border border-slate-200 dark:border-slate-700">
-                <h3 :class="header"><i class="bi bi-phone mr-1"></i>Splash screen</h3>
+                <h3 :class="header"><i class="bi bi-phone mr-1"></i>{{ t('seo.pwa.splash') }}</h3>
                 <div class="flex justify-center bg-slate-100 p-4 dark:bg-slate-900">
                     <div class="flex h-[220px] w-[110px] flex-col overflow-hidden rounded-2xl border-4 border-slate-800 shadow" :style="{ background: app.background_color }">
                         <div class="h-3 shrink-0" :style="{ background: app.theme_color || app.background_color }"></div>
@@ -100,6 +102,6 @@ const header = 'border-b border-slate-200 bg-slate-50 px-4 py-2 text-xs font-sem
             </dl>
         </section>
 
-        <CheckList title="Web app checks" :checks="checks" />
+        <CheckList :title="t('seo.pwa.checks')" :checks="checks" />
     </div>
 </template>

@@ -9,6 +9,9 @@ import CollectionView from './MongoAdmin/views/CollectionView.vue';
 import DocumentView from './MongoAdmin/views/DocumentView.vue';
 import { useMongoAdmin } from './MongoAdmin/lib/useMongoAdmin';
 import { useAppChrome } from './MongoAdmin/lib/useAppChrome';
+import { useI18n } from 'vue-i18n';
+
+const { t } = useI18n();
 
 // Mongo Admin: a standalone app outside the panel layout, like dPanel Mail,
 // laid out like mongo-express — server › database › collection › document.
@@ -68,18 +71,18 @@ onBeforeUnmount(() => window.removeEventListener('popstate', onPopState));
             <main class="mx-auto w-full max-w-7xl flex-1 space-y-5 p-4 sm:p-6">
                 <div v-if="message" class="flex items-start justify-between gap-3 rounded-md border px-4 py-3 text-sm" :class="message.type === 'success' ? 'border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-900 dark:bg-emerald-950 dark:text-emerald-200' : 'border-red-200 bg-red-50 text-red-700 dark:border-red-900 dark:bg-red-950 dark:text-red-200'">
                     <span>{{ message.text }}</span>
-                    <button type="button" aria-label="Dismiss" @click="message = null"><i class="bi bi-x-lg"></i></button>
+                    <button type="button" :aria-label="t('databases.mongoAdmin.dismiss')" @click="message = null"><i class="bi bi-x-lg"></i></button>
                 </div>
 
                 <div v-if="unreachable" class="rounded-xl border border-amber-200 bg-amber-50 p-6 text-sm text-amber-800 dark:border-amber-900 dark:bg-amber-950/40 dark:text-amber-200">
                     <p class="font-medium">{{ unreachable }}</p>
                     <div class="mt-3 flex gap-2">
-                        <Link v-if="!scope" :href="panelRoute('databases.mongodb')" class="rounded-md bg-amber-600 px-3 py-2 font-medium text-white hover:bg-amber-700">Open MongoDB service</Link>
-                        <button type="button" class="rounded-md border border-amber-300 px-3 py-2 hover:bg-amber-100 dark:border-amber-800 dark:hover:bg-amber-900/40" @click="refresh">Try again</button>
+                        <Link v-if="!scope" :href="panelRoute('databases.mongodb')" class="rounded-md bg-amber-600 px-3 py-2 font-medium text-white hover:bg-amber-700">{{ t('databases.mongoAdmin.openService') }}</Link>
+                        <button type="button" class="rounded-md border border-amber-300 px-3 py-2 hover:bg-amber-100 dark:border-amber-800 dark:hover:bg-amber-900/40" @click="refresh">{{ t('databases.mongoAdmin.tryAgain') }}</button>
                     </div>
                 </div>
 
-                <p v-else-if="loading && !databases.length" class="py-10 text-center text-sm text-slate-400">Connecting to MongoDB…</p>
+                <p v-else-if="loading && !databases.length" class="py-10 text-center text-sm text-slate-400">{{ t('databases.mongoAdmin.connecting') }}</p>
 
                 <template v-else>
                     <DocumentView

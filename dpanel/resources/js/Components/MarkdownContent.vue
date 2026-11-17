@@ -20,6 +20,9 @@ import sql from 'highlight.js/lib/languages/sql';
 import typescript from 'highlight.js/lib/languages/typescript';
 import xml from 'highlight.js/lib/languages/xml';
 import yaml from 'highlight.js/lib/languages/yaml';
+import { useI18n } from 'vue-i18n';
+
+const { t } = useI18n();
 
 const languages = { bash, css, diff, dockerfile, go, ini, javascript, json, nginx, php, plaintext, python, rust, sql, typescript, xml, yaml };
 for (const [name, lang] of Object.entries(languages)) {
@@ -44,7 +47,7 @@ const marked = new Marked({
             const known = name && hljs.getLanguage(name);
             const body = known ? hljs.highlight(text, { language: name, ignoreIllegals: true }).value : escapeHtml(text);
             return `<div class="md-code"><div class="md-code-head"><span>${escapeHtml(name || 'text')}</span>`
-                + '<button type="button" class="md-copy" data-copy><i class="bi bi-clipboard"></i> Copy</button></div>'
+                + `<button type="button" class="md-copy" data-copy><i class="bi bi-clipboard"></i> ${t('ui.markdown.copy')}</button></div>`
                 + `<pre><code class="hljs">${body}</code></pre></div>`;
         },
     },
@@ -66,8 +69,8 @@ const onClick = async (e) => {
     const code = button.closest('.md-code')?.querySelector('code')?.innerText ?? '';
     try {
         await navigator.clipboard.writeText(code);
-        button.innerHTML = '<i class="bi bi-check2"></i> Copied';
-        setTimeout(() => { button.innerHTML = '<i class="bi bi-clipboard"></i> Copy'; }, 1500);
+        button.innerHTML = `<i class="bi bi-check2"></i> ${t('ui.markdown.copied')}`;
+        setTimeout(() => { button.innerHTML = `<i class="bi bi-clipboard"></i> ${t('ui.markdown.copy')}`; }, 1500);
     } catch {
         // Clipboard API unavailable — the code is still selectable.
     }

@@ -1,5 +1,8 @@
 <script setup>
 import { computed, ref } from 'vue';
+import { useI18n } from 'vue-i18n';
+
+const { t } = useI18n();
 
 // A plain textarea that behaves like a small code editor: line numbers, Tab
 // indents two spaces, Shift+Tab outdents, Ctrl/Cmd+S asks to save. Also
@@ -55,8 +58,8 @@ const onDrop = (event) => readFile(event.dataTransfer?.files?.[0]);
         <div v-if="label || accept" class="mb-1 flex items-center justify-between gap-2">
             <span class="text-xs font-medium text-slate-600 dark:text-slate-300">{{ label }}</span>
             <span class="flex items-center gap-2">
-                <span class="text-[11px] text-slate-400">{{ lineCount }} lines</span>
-                <button v-if="accept" type="button" class="rounded-md border border-slate-300 px-2 py-0.5 text-[11px] hover:bg-slate-100 dark:border-slate-700 dark:hover:bg-slate-800" @click="fileInput?.click()"><i class="bi bi-upload mr-1"></i>Upload file</button>
+                <span class="text-[11px] text-slate-400">{{ t('docker.codeArea.lines', { count: lineCount }) }}</span>
+                <button v-if="accept" type="button" class="rounded-md border border-slate-300 px-2 py-0.5 text-[11px] hover:bg-slate-100 dark:border-slate-700 dark:hover:bg-slate-800" @click="fileInput?.click()"><i class="bi bi-upload mr-1"></i>{{ t('docker.codeArea.upload') }}</button>
                 <input v-if="accept" ref="fileInput" type="file" :accept="accept" class="hidden" @change="readFile($event.target.files?.[0]); $event.target.value = ''" />
             </span>
         </div>

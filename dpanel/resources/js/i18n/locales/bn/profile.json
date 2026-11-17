@@ -1,0 +1,98 @@
+{
+    "edit": {
+        "tabs": {
+            "profile": {
+                "label": "Profile",
+                "hint": "নাম ও email"
+            },
+            "password": {
+                "label": "Password",
+                "hint": "Password পরিবর্তন"
+            },
+            "security": {
+                "label": "নিরাপত্তা",
+                "hint": "2FA settings"
+            }
+        },
+        "title": "Profile",
+        "subtitle": "আপনার account settings পরিচালনা করুন",
+        "avatar": "Avatar পরিবর্তন করুন",
+        "user": "User",
+        "verified": "যাচাইকৃত",
+        "unverified": "যাচাই হয়নি",
+        "twoFaOn": "2FA চালু",
+        "twoFaOff": "2FA বন্ধ",
+        "completion": "Profile সম্পূর্ণতা",
+        "complete": "সম্পূর্ণ",
+        "pending": "অপেক্ষমাণ",
+        "emailStatus": "Email অবস্থা",
+        "enabled": "চালু",
+        "disabled": "বন্ধ",
+        "twoFaStatus": "2FA অবস্থা",
+        "role": "Role",
+        "infoTitle": "Profile তথ্য",
+        "infoText": "আপনার account-এর তথ্য হালনাগাদ করুন",
+        "passwordTitle": "Password হালনাগাদ করুন",
+        "passwordText": "আপনার account সুরক্ষিত রাখুন",
+        "twoFaTitle": "Two-factor authentication",
+        "twoFaText": "আপনার account-এ বাড়তি নিরাপত্তা যোগ করুন"
+    },
+    "info": {
+        "name": "পূর্ণ নাম",
+        "email": "Email address",
+        "emailLocked": "এখান থেকে email address পরিবর্তন করা যায় না",
+        "notVerified": "Email যাচাই হয়নি",
+        "verifyPrompt": "সব feature ব্যবহার করতে আপনার email address যাচাই করুন।",
+        "resend": "Verification email আবার পাঠান",
+        "sent": "আপনার email-এ verification link পাঠানো হয়েছে",
+        "verified": "Email যাচাইকৃত",
+        "verifiedText": "আপনার email address যাচাই করা হয়েছে",
+        "saving": "Save হচ্ছে...",
+        "save": "পরিবর্তন save করুন",
+        "saved": "সফলভাবে save হয়েছে"
+    },
+    "password": {
+        "weak": "দুর্বল",
+        "fair": "মোটামুটি",
+        "good": "ভালো",
+        "strong": "শক্তিশালী",
+        "current": "বর্তমান password",
+        "new": "নতুন password",
+        "confirm": "Password নিশ্চিত করুন",
+        "strength": "Password-এর শক্তি",
+        "match": "Password মিলেছে",
+        "noMatch": "Password মেলেনি",
+        "updating": "হালনাগাদ হচ্ছে...",
+        "submit": "Password হালনাগাদ করুন",
+        "saved": "Password সফলভাবে হালনাগাদ হয়েছে"
+    },
+    "twoFactor": {
+        "sendFailed": "Verification email পাঠানো যায়নি।",
+        "title": "নিরাপত্তা",
+        "subtitle": "নিচের verification card দিয়ে আপনার two-factor settings পরিচালনা করুন।",
+        "emailTitle": "Email যাচাই",
+        "verified": "যাচাইকৃত",
+        "pending": "অপেক্ষমাণ",
+        "emailText": "Account-এর address নিশ্চিত করতে একটি verification email পাঠান।",
+        "emailSent": "Verification email পাঠানো হয়েছে।",
+        "code": "নিশ্চিতকরণ code",
+        "codePlaceholder": "Code লিখুন",
+        "codeSent": "আপনার email address-এ code পাঠানো হয়েছে।",
+        "codeHint": "চালু বা বন্ধ নিশ্চিত করতে email-এ পাঠানো code ব্যবহার করুন।",
+        "sendEmail": "Email পাঠান",
+        "enable": "চালু করুন",
+        "disable": "বন্ধ করুন",
+        "googleTitle": "Google Authenticator",
+        "enabled": "চালু",
+        "ready": "প্রস্তুত",
+        "googleText": "Google Authenticator বা অন্য কোনো TOTP app দিয়ে QR code scan করুন।",
+        "confirmation": "নিশ্চিতকরণ",
+        "appPlaceholder": "Authenticator code লিখুন",
+        "googleRequired": "QR code scan করে app-এর code লিখুন, তাহলে Google Authenticator চালু হবে।",
+        "qr": "QR code",
+        "retry": "আবার চেষ্টা করুন",
+        "qrAlt": "Google Authenticator QR code",
+        "qrHint": "QR code তৈরি করতে Google Authenticator চালু করুন।",
+        "qrHidden": "Google Authenticator আগেই চালু আছে, তাই QR code লুকানো আছে।"
+    }
+}

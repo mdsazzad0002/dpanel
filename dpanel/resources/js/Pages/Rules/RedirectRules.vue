@@ -5,6 +5,9 @@ import SearchableSelect from '@/Components/SearchableSelect.vue';
 import InputError from '@/Components/InputError.vue';
 import { Head, router, useForm, usePage } from '@inertiajs/vue3';
 import { computed, ref } from 'vue';
+import { useI18n } from 'vue-i18n';
+
+const { t } = useI18n();
 
 const page = usePage();
 const panelToken = page.props.panel?.token;
@@ -17,29 +20,29 @@ const props = defineProps({
     statusCodes: { type: Array, default: () => [301, 302, 307, 308] },
 });
 
-const templates = [
+const templates = computed(() => [
     {
         kind: 'http_to_https',
-        title: 'Redirect from HTTP to HTTPS',
-        description: 'Always redirect HTTP requests to HTTPS based on hostname.',
+        title: t('rules.redirects.tpl.https'),
+        description: t('rules.redirects.tpl.httpsDesc'),
         icon: 'bi bi-shield-lock',
     },
     {
         kind: 'www_to_root',
-        title: 'Redirect from WWW to root',
-        description: 'Always redirect requests from the WWW subdomain to the root (also known as the “apex” or “naked” domain).',
+        title: t('rules.redirects.tpl.www'),
+        description: t('rules.redirects.tpl.wwwDesc'),
         icon: 'bi bi-signpost',
     },
     {
         kind: 'to_domain',
-        title: 'Redirect to a different domain',
-        description: 'Redirect all requests to a different hostname using HTTPS, keeping the original path and query string.',
+        title: t('rules.redirects.tpl.domain'),
+        description: t('rules.redirects.tpl.domainDesc'),
         icon: 'bi bi-box-arrow-up-right',
     },
-];
-const templateFor = (kind) => templates.find((t) => t.kind === kind) || { title: kind, icon: 'bi bi-arrow-return-right' };
+]);
+const templateFor = (kind) => templates.value.find((tpl) => tpl.kind === kind) || { title: kind, icon: 'bi bi-arrow-return-right' };
 
-const statusLabels = { 301: '301 — Permanent', 302: '302 — Temporary', 307: '307 — Temporary (keep method)', 308: '308 — Permanent (keep method)' };
+const statusLabels = computed(() => ({ 301: t('rules.redirects.code.301'), 302: t('rules.redirects.code.302'), 307: t('rules.redirects.code.307'), 308: t('rules.redirects.code.308') }));
 
 const search = ref('');
 const showAll = ref(false);
@@ -114,7 +117,7 @@ const toggle = (rule) => {
 };
 
 const remove = (website, rule) => {
-    if (!confirm(`Delete "${rule.name}" from ${website.domain}?`)) return;
+    if (!confirm(t('rules.redirects.deleteConfirm', { name: rule.name, domain: website.domain }))) return;
     router.delete(panelRoute('rules.redirects.destroy', { rule: rule.id }), { preserveScroll: true });
 };
 
@@ -122,17 +125,17 @@ const firstError = computed(() => page.props.errors?.website_id || page.props.er
 </script>
 
 <template>
-    <Head title="Redirect Rules" />
+    <Head :title="t('rules.redirects.title')" />
 
     <AuthenticatedLayout>
         <template #header>
             <div class="flex flex-wrap items-center justify-between gap-3">
                 <div>
-                    <h1 class="text-lg font-semibold">Redirect Rules</h1>
-                    <p class="text-sm text-slate-500 dark:text-slate-400">Redirects answered by the edge gateway before your site is reached.</p>
+                    <h1 class="text-lg font-semibold">{{ t('rules.redirects.title') }}</h1>
+                    <p class="text-sm text-slate-500 dark:text-slate-400">{{ t('rules.redirects.subtitle') }}</p>
                 </div>
                 <button @click="openCreate()" class="rounded-md bg-blue-600 px-3 py-2 text-sm text-white hover:bg-blue-700">
-                    <i class="bi bi-plus-lg mr-1"></i>Create redirect rule
+                    <i class="bi bi-plus-lg mr-1"></i>{{ t('rules.redirects.create') }}
                 </button>
             </div>
         </template>
@@ -143,21 +146,21 @@ const firstError = computed(() => page.props.errors?.website_id || page.props.er
             <div v-if="firstError && !panelOpen" class="rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{{ firstError }}</div>
 
             <div v-if="websites.length" class="flex flex-wrap items-center gap-3 rounded-xl border border-slate-200 bg-white p-4 dark:border-slate-700 dark:bg-slate-800">
-                <input v-model="search" type="search" placeholder="Search website…" class="min-w-0 flex-1 rounded-lg border-slate-300 text-sm dark:border-slate-600 dark:bg-slate-900" />
+                <input v-model="search" type="search" :placeholder="t('rules.portShares.search')" class="min-w-0 flex-1 rounded-lg border-slate-300 text-sm dark:border-slate-600 dark:bg-slate-900" />
                 <label class="flex items-center gap-2 text-sm text-slate-600 dark:text-slate-300">
                     <input v-model="showAll" type="checkbox" class="rounded border-slate-300" />
-                    Show websites without rules
+                    {{ t('rules.redirects.showAll') }}
                 </label>
-                <span class="text-xs text-slate-500 dark:text-slate-400">{{ ruleCount }} {{ ruleCount === 1 ? 'rule' : 'rules' }}</span>
+                <span class="text-xs text-slate-500 dark:text-slate-400">{{ ruleCount === 1 ? t('rules.redirects.oneRule', { count: ruleCount }) : t('rules.redirects.rules', { count: ruleCount }) }}</span>
             </div>
 
             <div v-if="!visibleWebsites.length" class="rounded-xl border border-dashed border-slate-300 bg-white p-10 text-center dark:border-slate-600 dark:bg-slate-800">
                 <i class="bi bi-signpost-2 text-3xl text-slate-400"></i>
-                <p class="mt-2 text-sm font-medium">{{ websites.length ? 'No redirect rules yet' : 'No websites yet' }}</p>
+                <p class="mt-2 text-sm font-medium">{{ websites.length ? t('rules.redirects.empty') : t('rules.portShares.noWebsites') }}</p>
                 <p class="mt-1 text-sm text-slate-500 dark:text-slate-400">
-                    {{ websites.length ? 'Start from a template: HTTPS, www to root, or a different domain.' : 'Create a website first, then add redirect rules to it.' }}
+                    {{ websites.length ? t('rules.redirects.emptyHelp') : t('rules.redirects.noWebsitesHelp') }}
                 </p>
-                <button v-if="websites.length" @click="openCreate()" class="mt-4 rounded-md bg-blue-600 px-3 py-2 text-sm text-white hover:bg-blue-700">Create redirect rule</button>
+                <button v-if="websites.length" @click="openCreate()" class="mt-4 rounded-md bg-blue-600 px-3 py-2 text-sm text-white hover:bg-blue-700">{{ t('rules.redirects.create') }}</button>
             </div>
 
             <div class="grid gap-4 lg:grid-cols-2">
@@ -171,11 +174,11 @@ const firstError = computed(() => page.props.errors?.website_id || page.props.er
                             <p class="truncate font-semibold">{{ website.domain }}</p>
                             <p class="text-xs text-slate-500 dark:text-slate-400">
                                 <i class="bi" :class="website.enable_ssl ? 'bi-lock-fill text-emerald-500' : 'bi-unlock text-amber-500'"></i>
-                                {{ website.enable_ssl ? 'SSL active' : 'No SSL' }} · {{ website.rules.length }} {{ website.rules.length === 1 ? 'rule' : 'rules' }}
+                                {{ website.enable_ssl ? t('rules.portShares.sslActive') : t('rules.portShares.noSsl') }} · {{ website.rules.length === 1 ? t('rules.redirects.oneRule', { count: website.rules.length }) : t('rules.redirects.rules', { count: website.rules.length }) }}
                             </p>
                         </div>
                         <button @click="openCreate(website.id)" class="shrink-0 rounded-md border border-slate-300 px-2.5 py-1.5 text-xs font-medium hover:bg-slate-50 dark:border-slate-600 dark:hover:bg-slate-700">
-                            <i class="bi bi-plus-lg"></i> Add rule
+                            <i class="bi bi-plus-lg"></i> {{ t('rules.redirects.add') }}
                         </button>
                     </div>
 
@@ -195,17 +198,17 @@ const firstError = computed(() => page.props.errors?.website_id || page.props.er
                                 @click="toggle(rule)"
                                 role="switch"
                                 :aria-checked="rule.enabled"
-                                :title="rule.enabled ? 'Disable' : 'Enable'"
+                                :title="rule.enabled ? t('rules.portShares.disable') : t('rules.portShares.enable')"
                                 class="relative mt-0.5 inline-flex h-5 w-9 shrink-0 rounded-full transition"
                                 :class="rule.enabled ? 'bg-emerald-500' : 'bg-slate-300 dark:bg-slate-600'"
                             >
                                 <span class="absolute top-0.5 h-4 w-4 rounded-full bg-white shadow transition" :class="rule.enabled ? 'left-[18px]' : 'left-0.5'"></span>
                             </button>
-                            <button @click="openEdit(website, rule)" title="Edit" class="rounded p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-700 dark:hover:bg-slate-700 dark:hover:text-slate-200"><i class="bi bi-pencil"></i></button>
-                            <button @click="remove(website, rule)" title="Delete" class="rounded p-1 text-slate-400 hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-900/30"><i class="bi bi-trash"></i></button>
+                            <button @click="openEdit(website, rule)" :title="t('rules.portShares.edit')" class="rounded p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-700 dark:hover:bg-slate-700 dark:hover:text-slate-200"><i class="bi bi-pencil"></i></button>
+                            <button @click="remove(website, rule)" :title="t('rules.portShares.delete')" class="rounded p-1 text-slate-400 hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-900/30"><i class="bi bi-trash"></i></button>
                         </li>
                     </ul>
-                    <p v-else class="px-4 py-6 text-center text-sm text-slate-500 dark:text-slate-400">No redirect rules on this website.</p>
+                    <p v-else class="px-4 py-6 text-center text-sm text-slate-500 dark:text-slate-400">{{ t('rules.redirects.noneHere') }}</p>
                 </div>
             </div>
         </div>
@@ -213,8 +216,8 @@ const firstError = computed(() => page.props.errors?.website_id || page.props.er
         <Offcanvas
             :show="panelOpen"
             width="lg"
-            :title="editing ? 'Edit redirect rule' : (step === 'template' ? 'Create new redirect rule' : templateFor(form.kind).title)"
-            :subtitle="step === 'template' ? 'Start from a template.' : templateFor(form.kind).description"
+            :title="editing ? t('rules.redirects.editTitle') : (step === 'template' ? t('rules.redirects.newTitle') : templateFor(form.kind).title)"
+            :subtitle="step === 'template' ? t('rules.redirects.startTpl') : templateFor(form.kind).description"
             @close="panelOpen = false"
         >
             <div v-if="step === 'template'" class="space-y-3">
@@ -229,7 +232,7 @@ const firstError = computed(() => page.props.errors?.website_id || page.props.er
                             <p class="font-semibold">{{ template.title }}</p>
                             <p class="mt-1 text-sm text-slate-500 dark:text-slate-400">{{ template.description }}</p>
                             <button @click="pickTemplate(template)" class="mt-3 rounded-md border border-slate-300 px-3 py-1.5 text-sm font-medium hover:bg-slate-50 dark:border-slate-600 dark:hover:bg-slate-800">
-                                Create from template
+                                {{ t('rules.redirects.fromTpl') }}
                             </button>
                         </div>
                     </div>
@@ -238,33 +241,33 @@ const firstError = computed(() => page.props.errors?.website_id || page.props.er
 
             <form v-else class="space-y-4" @submit.prevent="submit">
                 <button v-if="!editing" type="button" @click="step = 'template'" class="text-sm text-blue-600 hover:underline dark:text-blue-400">
-                    <i class="bi bi-arrow-left"></i> Templates
+                    <i class="bi bi-arrow-left"></i> {{ t('rules.redirects.templates') }}
                 </button>
 
                 <div>
-                    <label class="mb-1 block text-sm font-medium">Website</label>
+                    <label class="mb-1 block text-sm font-medium">{{ t('rules.portShares.form.website') }}</label>
                     <SearchableSelect
                         v-model="form.website_id"
                         :options="websiteOptions"
                         :disabled="!!editing"
-                        placeholder="Select a website…"
-                        search-placeholder="Search domains…"
+                        :placeholder="t('rules.portShares.form.selectWebsite')"
+                        :search-placeholder="t('rules.portShares.form.searchDomains')"
                     />
                     <InputError :message="form.errors.website_id" class="mt-1" />
                     <p v-if="form.kind === 'http_to_https' && formWebsite && !formWebsite.enable_ssl" class="mt-1 text-xs text-amber-600">
-                        This website has no SSL certificate yet. Issue one before turning on HTTPS redirects.
+                        {{ t('rules.redirects.noSsl') }}
                     </p>
-                    <p v-if="kindTaken" class="mt-1 text-xs text-amber-600">This website already has this rule. Edit the existing one instead.</p>
+                    <p v-if="kindTaken" class="mt-1 text-xs text-amber-600">{{ t('rules.redirects.taken') }}</p>
                 </div>
 
                 <div>
-                    <label class="mb-1 block text-sm font-medium">Rule name</label>
+                    <label class="mb-1 block text-sm font-medium">{{ t('rules.redirects.name') }}</label>
                     <input v-model="form.name" type="text" maxlength="120" class="w-full rounded-lg border-slate-300 text-sm dark:border-slate-600 dark:bg-slate-900" />
                     <InputError :message="form.errors.name" class="mt-1" />
                 </div>
 
                 <div v-if="form.kind === 'to_domain'">
-                    <label class="mb-1 block text-sm font-medium">Target hostname</label>
+                    <label class="mb-1 block text-sm font-medium">{{ t('rules.redirects.target') }}</label>
                     <div class="flex items-center rounded-lg border border-slate-300 dark:border-slate-600">
                         <span class="px-3 text-sm text-slate-500">https://</span>
                         <input v-model="form.target" type="text" placeholder="new-domain.com" class="w-full rounded-r-lg border-0 text-sm focus:ring-0 dark:bg-slate-900" />
@@ -274,7 +277,7 @@ const firstError = computed(() => page.props.errors?.website_id || page.props.er
 
                 <div class="grid gap-4 sm:grid-cols-2">
                     <div>
-                        <label class="mb-1 block text-sm font-medium">Status code</label>
+                        <label class="mb-1 block text-sm font-medium">{{ t('rules.redirects.statusCode') }}</label>
                         <select v-model.number="form.status_code" class="w-full rounded-lg border-slate-300 text-sm dark:border-slate-600 dark:bg-slate-900">
                             <option v-for="code in statusCodes" :key="code" :value="code">{{ statusLabels[code] || code }}</option>
                         </select>
@@ -282,25 +285,25 @@ const firstError = computed(() => page.props.errors?.website_id || page.props.er
                     </div>
                     <label class="flex items-center gap-2 self-end pb-2 text-sm">
                         <input v-model="form.preserve_query" type="checkbox" class="rounded border-slate-300" />
-                        Preserve query string
+                        {{ t('rules.redirects.preserveQuery') }}
                     </label>
                 </div>
 
                 <div class="rounded-lg bg-slate-50 p-3 text-xs dark:bg-slate-800">
-                    <p class="mb-1 font-medium text-slate-600 dark:text-slate-300">Preview</p>
+                    <p class="mb-1 font-medium text-slate-600 dark:text-slate-300">{{ t('rules.portShares.form.preview') }}</p>
                     <p class="flex flex-wrap items-center gap-1 font-mono text-slate-500 dark:text-slate-400">
                         <span>{{ summary(form.kind, formWebsite?.domain, form.target)[0] }}</span>
                         <i class="bi bi-arrow-right"></i>
                         <span>{{ summary(form.kind, formWebsite?.domain, form.target)[1] }}</span>
                         <span class="rounded bg-white px-1.5 py-0.5 font-sans dark:bg-slate-700">{{ form.status_code }}</span>
                     </p>
-                    <p class="mt-2 text-slate-500 dark:text-slate-400">The path is always kept. Certificate checks under /.well-known/acme-challenge/ are never redirected.</p>
+                    <p class="mt-2 text-slate-500 dark:text-slate-400">{{ t('rules.redirects.previewNote') }}</p>
                 </div>
 
                 <div class="flex justify-end gap-2 border-t border-slate-200 pt-4 dark:border-slate-700">
-                    <button type="button" @click="panelOpen = false" class="rounded-md border border-slate-300 px-3 py-2 text-sm dark:border-slate-600">Cancel</button>
+                    <button type="button" @click="panelOpen = false" class="rounded-md border border-slate-300 px-3 py-2 text-sm dark:border-slate-600">{{ t('common.cancel') }}</button>
                     <button type="submit" :disabled="form.processing || !form.website_id || kindTaken" class="rounded-md bg-blue-600 px-3 py-2 text-sm text-white hover:bg-blue-700 disabled:opacity-50">
-                        {{ editing ? 'Save' : 'Deploy' }}
+                        {{ editing ? t('common.save') : t('rules.portShares.form.deploy') }}
                     </button>
                 </div>
             </form>

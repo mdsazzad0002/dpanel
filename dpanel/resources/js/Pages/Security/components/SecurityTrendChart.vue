@@ -1,5 +1,8 @@
 <script setup>
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
+import { useI18n } from 'vue-i18n';
+
+const { t } = useI18n();
 
 const props = defineProps({
     // { metric: 'score' | 'threats', label, max, points: [{ date, value }] }
@@ -80,9 +83,9 @@ const tooltipLeft = computed(() => {
 <template>
     <div class="rounded-xl border border-slate-200 bg-white p-6 dark:border-slate-800 dark:bg-slate-900">
         <div class="flex flex-wrap items-baseline justify-between gap-2">
-            <h2 class="text-base font-semibold">{{ trend.label }} <span class="text-sm font-normal text-slate-500 dark:text-slate-400">· last 30 days</span></h2>
-            <p v-if="latest !== null && !isBars" class="text-sm text-slate-600 dark:text-slate-300">Now <span class="font-semibold tabular-nums text-slate-900 dark:text-slate-100">{{ latest }}</span></p>
-            <p v-else-if="isBars" class="text-sm text-slate-600 dark:text-slate-300">Total <span class="font-semibold tabular-nums text-slate-900 dark:text-slate-100">{{ values.reduce((a, b) => a + b, 0) }}</span></p>
+            <h2 class="text-base font-semibold">{{ trend.label }} <span class="text-sm font-normal text-slate-500 dark:text-slate-400">· {{ t('security.trend.last30') }}</span></h2>
+            <p v-if="latest !== null && !isBars" class="text-sm text-slate-600 dark:text-slate-300">{{ t('security.trend.now') }} <span class="font-semibold tabular-nums text-slate-900 dark:text-slate-100">{{ latest }}</span></p>
+            <p v-else-if="isBars" class="text-sm text-slate-600 dark:text-slate-300">{{ t('security.trend.total') }} <span class="font-semibold tabular-nums text-slate-900 dark:text-slate-100">{{ values.reduce((a, b) => a + b, 0) }}</span></p>
         </div>
 
         <div ref="box" class="relative mt-3">
@@ -91,7 +94,7 @@ const tooltipLeft = computed(() => {
                 :height="height"
                 class="block touch-none select-none"
                 role="img"
-                :aria-label="`${trend.label} over the last 30 days`"
+                :aria-label="t('security.trend.aria', { label: trend.label })"
                 @mousemove="onMove"
                 @mouseleave="hover = null"
             >
@@ -133,17 +136,17 @@ const tooltipLeft = computed(() => {
                 :style="{ left: `${tooltipLeft}px` }"
             >
                 <p class="text-slate-500 dark:text-slate-400">{{ formatDay(hovered.date) }}</p>
-                <p class="font-semibold tabular-nums text-slate-900 dark:text-slate-100">{{ hovered.value ?? 'No score yet' }}<span v-if="hovered.value !== null && isBars" class="font-normal text-slate-500"> threats</span></p>
+                <p class="font-semibold tabular-nums text-slate-900 dark:text-slate-100">{{ hovered.value ?? t('security.trend.noScore') }}<span v-if="hovered.value !== null && isBars" class="font-normal text-slate-500"> {{ t('security.trend.threats') }}</span></p>
             </div>
 
             <p v-if="!hasData" class="absolute inset-0 flex items-center justify-center text-sm text-slate-500">
-                {{ isBars ? 'No threats found in the last 30 days.' : 'Run a scan to start the score history.' }}
+                {{ isBars ? t('security.trend.noThreats') : t('security.trend.runScan') }}
             </p>
         </div>
 
         <table class="sr-only">
-            <caption>{{ trend.label }} by day</caption>
-            <thead><tr><th>Date</th><th>{{ trend.label }}</th></tr></thead>
+            <caption>{{ t('security.trend.byDay', { label: trend.label }) }}</caption>
+            <thead><tr><th>{{ t('security.trend.date') }}</th><th>{{ trend.label }}</th></tr></thead>
             <tbody>
                 <tr v-for="point in points" :key="`r${point.date}`"><td>{{ point.date }}</td><td>{{ point.value ?? '—' }}</td></tr>
             </tbody>

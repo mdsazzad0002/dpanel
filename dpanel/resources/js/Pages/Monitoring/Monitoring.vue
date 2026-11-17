@@ -2,6 +2,9 @@
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
 import { Head } from '@inertiajs/vue3';
+import { useI18n } from 'vue-i18n';
+
+const { t } = useI18n();
 
 const props = defineProps({
     snapshot: {
@@ -24,11 +27,11 @@ const previousCounters = ref(null);
 const rates = ref({ rx: 0, tx: 0, lo: 0, disks: {} });
 let refreshTimer = null;
 
-const metricOptions = [
-    { key: 'cpu', label: 'CPU', title: 'CPU load', color: '#10b981', icon: 'bi-cpu' },
-    { key: 'memory', label: 'Memory', title: 'Memory usage', color: '#06b6d4', icon: 'bi-memory' },
-    { key: 'disk', label: 'Disk', title: 'Disk usage', color: '#8b5cf6', icon: 'bi-device-hdd' },
-];
+const metricOptions = computed(() => [
+    { key: 'cpu', label: 'CPU', title: t('monitoring.metric.cpu'), color: '#10b981', icon: 'bi-cpu' },
+    { key: 'memory', label: t('monitoring.metric.memory'), title: t('monitoring.metric.memoryUsage'), color: '#06b6d4', icon: 'bi-memory' },
+    { key: 'disk', label: t('monitoring.metric.disk'), title: t('monitoring.metric.diskUsage'), color: '#8b5cf6', icon: 'bi-device-hdd' },
+]);
 
 // Subtle pointer-driven 3D tilt; skipped for touch devices and reduced-motion users.
 const vTilt = {
@@ -64,7 +67,7 @@ const vTilt = {
     },
 };
 
-const selectedMetricOption = computed(() => metricOptions.find((metric) => metric.key === selectedMetric.value));
+const selectedMetricOption = computed(() => metricOptions.value.find((metric) => metric.key === selectedMetric.value));
 const visibleHistory = computed(() => chartHistory.value.slice(-selectedWindow.value));
 const diskVolumes = computed(() => {
     if (Array.isArray(liveSnapshot.value.disks) && liveSnapshot.value.disks.length > 0) {
@@ -181,11 +184,11 @@ const runtimeBadges = {
 const connectionStats = computed(() => {
     const stats = liveSnapshot.value.connections || {};
     return [
-        { label: 'TCP established', value: stats.tcp_established },
-        { label: 'TCP time-wait', value: stats.tcp_time_wait },
-        { label: 'TCP in use', value: stats.tcp_in_use },
-        { label: 'UDP in use', value: stats.udp_in_use },
-        { label: 'Sockets', value: stats.sockets_used },
+        { label: t('monitoring.conn.established'), value: stats.tcp_established },
+        { label: t('monitoring.conn.timeWait'), value: stats.tcp_time_wait },
+        { label: t('monitoring.conn.tcpInUse'), value: stats.tcp_in_use },
+        { label: t('monitoring.conn.udpInUse'), value: stats.udp_in_use },
+        { label: t('monitoring.conn.sockets'), value: stats.sockets_used },
     ];
 });
 
@@ -258,22 +261,22 @@ const gaugeTip = (percent) => {
 };
 
 const loadLevel = (percent) => {
-    if (percent >= 90) return { label: 'Critical', color: '#f43f5e', badge: 'border-rose-400/30 bg-rose-400/10 text-rose-700 dark:text-rose-200' };
-    if (percent >= 75) return { label: 'High', color: '#f59e0b', badge: 'border-amber-400/30 bg-amber-400/10 text-amber-700 dark:text-amber-200' };
-    return { label: 'Healthy', color: '#10b981', badge: 'border-emerald-400/30 bg-emerald-400/10 text-emerald-700 dark:text-emerald-200' };
+    if (percent >= 90) return { label: t('monitoring.level.critical'), color: '#f43f5e', badge: 'border-rose-400/30 bg-rose-400/10 text-rose-700 dark:text-rose-200' };
+    if (percent >= 75) return { label: t('monitoring.level.high'), color: '#f59e0b', badge: 'border-amber-400/30 bg-amber-400/10 text-amber-700 dark:text-amber-200' };
+    return { label: t('monitoring.level.healthy'), color: '#10b981', badge: 'border-emerald-400/30 bg-emerald-400/10 text-emerald-700 dark:text-emerald-200' };
 };
 
-const gauges = computed(() => metricOptions.map((metric) => {
+const gauges = computed(() => metricOptions.value.map((metric) => {
     const value = metric.key === 'cpu'
         ? clampPercent(liveSnapshot.value.cpu_load_percent)
         : metric.key === 'memory'
             ? clampPercent(latestMetricValue('memory'))
             : clampPercent(activeDisk.value?.usage_percent);
     const detail = metric.key === 'cpu'
-        ? (liveSnapshot.value.cpu_clock_mhz ? `${liveSnapshot.value.cpu_clock_mhz} MHz` : 'Clock N/A')
+        ? (liveSnapshot.value.cpu_clock_mhz ? `${liveSnapshot.value.cpu_clock_mhz} MHz` : t('monitoring.clockNa'))
         : metric.key === 'memory'
             ? `${formatMemory(Number(liveSnapshot.value.memory_used_mb) || 0)} / ${formatMemory(Number(liveSnapshot.value.memory_total_mb) || 0)}`
-            : `${activeDisk.value?.device || 'No drive'} · ${formatDiskSize(activeDisk.value?.total_gb)}`;
+            : `${activeDisk.value?.device || t('monitoring.noDrive')} · ${formatDiskSize(activeDisk.value?.total_gb)}`;
 
     return {
         ...metric,
@@ -303,10 +306,10 @@ const hardwareSpecs = computed(() => [
 })));
 
 const resourceCounts = computed(() => [
-    { label: 'Websites', icon: 'bi-globe2', value: liveSnapshot.value.websites_total ?? 0, tone: 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-300' },
-    { label: 'Mailboxes', icon: 'bi-envelope', value: liveSnapshot.value.mailboxes_total ?? 0, tone: 'bg-cyan-500/10 text-cyan-600 dark:text-cyan-300' },
-    { label: 'DB requests', icon: 'bi-database', value: liveSnapshot.value.database_requests_total ?? 0, tone: 'bg-violet-500/10 text-violet-600 dark:text-violet-300' },
-    { label: 'Cron jobs', icon: 'bi-clock-history', value: liveSnapshot.value.cron_jobs_total ?? 0, tone: 'bg-amber-500/10 text-amber-600 dark:text-amber-300' },
+    { label: t('monitoring.res.websites'), icon: 'bi-globe2', value: liveSnapshot.value.websites_total ?? 0, tone: 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-300' },
+    { label: t('monitoring.res.mailboxes'), icon: 'bi-envelope', value: liveSnapshot.value.mailboxes_total ?? 0, tone: 'bg-cyan-500/10 text-cyan-600 dark:text-cyan-300' },
+    { label: t('monitoring.res.db'), icon: 'bi-database', value: liveSnapshot.value.database_requests_total ?? 0, tone: 'bg-violet-500/10 text-violet-600 dark:text-violet-300' },
+    { label: t('monitoring.res.cron'), icon: 'bi-clock-history', value: liveSnapshot.value.cron_jobs_total ?? 0, tone: 'bg-amber-500/10 text-amber-600 dark:text-amber-300' },
 ]);
 
 const topProcesses = computed(() => liveSnapshot.value.topProcesses || []);
@@ -357,7 +360,7 @@ const copySnapshot = async () => {
             copiedSnapshot.value = false;
         }, 1500);
     } catch (error) {
-        refreshError.value = 'Clipboard is not available.';
+        refreshError.value = t('monitoring.noClipboard');
     }
 };
 
@@ -398,7 +401,7 @@ const refreshSnapshot = async () => {
             refreshError.value = '';
         }
     } catch (error) {
-        refreshError.value = 'Live refresh failed.';
+        refreshError.value = t('monitoring.refreshFailed');
     }
 };
 
@@ -421,14 +424,14 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-    <Head title="Monitoring" />
+    <Head :title="t('monitoring.title')" />
 
     <AuthenticatedLayout>
         <template #header>
             <div class="flex flex-wrap items-center justify-between gap-3">
                 <div class="min-w-0">
                     <div class="flex items-center gap-2">
-                        <h1 class="text-xl font-semibold tracking-tight text-slate-900 dark:text-slate-50 sm:text-2xl">Monitoring</h1>
+                        <h1 class="text-xl font-semibold tracking-tight text-slate-900 dark:text-slate-50 sm:text-2xl">{{ t('monitoring.title') }}</h1>
                         <span
                             class="inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-[11px] font-medium"
                             :class="pollingPaused
@@ -439,21 +442,21 @@ onBeforeUnmount(() => {
                                 <span v-if="!pollingPaused" class="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-500 opacity-60"></span>
                                 <span class="relative inline-flex h-1.5 w-1.5 rounded-full" :class="pollingPaused ? 'bg-amber-500' : 'bg-emerald-500'"></span>
                             </span>
-                            {{ pollingPaused ? 'Paused' : 'Live' }}
+                            {{ pollingPaused ? t('monitoring.paused') : t('monitoring.live') }}
                         </span>
                     </div>
                     <p class="truncate text-sm text-slate-500 dark:text-slate-400">
-                        Live server telemetry · <span class="font-mono tabular-nums">{{ clockNow.toLocaleTimeString() }}</span>
+                        {{ t('monitoring.telemetry') }} · <span class="font-mono tabular-nums">{{ clockNow.toLocaleTimeString() }}</span>
                     </p>
                 </div>
                 <div class="flex shrink-0 items-center gap-2">
-                    <button type="button" class="toolbar-btn" :title="'Copy raw snapshot JSON'" @click="copySnapshot">
+                    <button type="button" class="toolbar-btn" :title="t('monitoring.copyJsonHint')" @click="copySnapshot">
                         <i class="bi" :class="copiedSnapshot ? 'bi-check2 text-emerald-500' : 'bi-braces'"></i>
-                        <span class="hidden sm:inline">{{ copiedSnapshot ? 'Copied' : 'Copy JSON' }}</span>
+                        <span class="hidden sm:inline">{{ copiedSnapshot ? t('monitoring.copied') : t('monitoring.copyJson') }}</span>
                     </button>
                     <button type="button" class="toolbar-btn toolbar-btn--accent" @click="pollingPaused = !pollingPaused">
                         <i class="bi" :class="pollingPaused ? 'bi-play-fill' : 'bi-pause-fill'"></i>
-                        {{ pollingPaused ? 'Resume' : 'Pause' }}
+                        {{ pollingPaused ? t('monitoring.resume') : t('monitoring.pause') }}
                     </button>
                 </div>
             </div>
@@ -470,30 +473,30 @@ onBeforeUnmount(() => {
                 <div class="hero-glow pointer-events-none absolute -right-20 -top-24 h-64 w-64 rounded-full" aria-hidden="true"></div>
                 <div class="relative grid items-center gap-6 lg:grid-cols-[1fr_auto]">
                     <div class="min-w-0">
-                        <p class="font-mono text-xs uppercase tracking-[0.22em] text-slate-500 dark:text-slate-400">System overview</p>
+                        <p class="font-mono text-xs uppercase tracking-[0.22em] text-slate-500 dark:text-slate-400">{{ t('monitoring.overview') }}</p>
                         <h2 class="mt-2 truncate text-2xl font-semibold tracking-tight text-slate-900 dark:text-slate-50 sm:text-3xl" :title="liveSnapshot.hostname || ''">
-                            {{ liveSnapshot.hostname || 'Server' }}
+                            {{ liveSnapshot.hostname || t('monitoring.server') }}
                         </h2>
                         <div class="mt-2 flex flex-wrap gap-x-4 gap-y-1 font-mono text-[11px] text-slate-500 dark:text-slate-400">
                             <span v-if="liveSnapshot.os_name"><i class="bi bi-pc-display mr-1"></i>{{ liveSnapshot.os_name }}</span>
                             <span v-if="liveSnapshot.kernel"><i class="bi bi-terminal mr-1"></i>{{ liveSnapshot.kernel }}</span>
-                            <span v-if="liveSnapshot.cpu_model" class="max-w-full truncate" :title="liveSnapshot.cpu_model"><i class="bi bi-cpu mr-1"></i>{{ liveSnapshot.cpu_model }}<template v-if="liveSnapshot.cpu_cores"> · {{ liveSnapshot.cpu_cores }} threads</template></span>
+                            <span v-if="liveSnapshot.cpu_model" class="max-w-full truncate" :title="liveSnapshot.cpu_model"><i class="bi bi-cpu mr-1"></i>{{ liveSnapshot.cpu_model }}<template v-if="liveSnapshot.cpu_cores"> · {{ t('monitoring.threads', { count: liveSnapshot.cpu_cores }) }}</template></span>
                         </div>
                         <div class="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
                             <div class="stat-tile">
-                                <span class="stat-label">Uptime</span>
+                                <span class="stat-label">{{ t('monitoring.uptime') }}</span>
                                 <span class="stat-value">{{ formatUptime(liveSnapshot.uptime_seconds) }}</span>
                             </div>
-                            <div class="stat-tile" :title="'Load average over 1, 5 and 15 minutes'">
-                                <span class="stat-label">Load 1·5·15</span>
+                            <div class="stat-tile" :title="t('monitoring.loadHint')">
+                                <span class="stat-label">{{ t('monitoring.load') }}</span>
                                 <span class="stat-value font-mono text-base">{{ loadAverage.length ? loadAverage.map((value) => value.toFixed(2)).join(' ') : '—' }}</span>
                             </div>
                             <div class="stat-tile">
-                                <span class="stat-label">Processes</span>
+                                <span class="stat-label">{{ t('monitoring.processes') }}</span>
                                 <span class="stat-value">{{ liveSnapshot.process_count ?? '—' }}</span>
                             </div>
                             <div class="stat-tile">
-                                <span class="stat-label">Services</span>
+                                <span class="stat-label">{{ t('monitoring.services') }}</span>
                                 <span class="stat-value">{{ runningServices }}<span class="text-slate-400">/{{ serviceEntries.length }}</span></span>
                             </div>
                         </div>
@@ -501,7 +504,7 @@ onBeforeUnmount(() => {
 
                     <div class="health-ring mx-auto" :style="{ '--level': healthLevel.color, '--score': `${healthScore * 3.6}deg` }">
                         <div class="health-ring__inner">
-                            <span class="font-mono text-[10px] uppercase tracking-[0.2em] text-slate-500 dark:text-slate-400">Health</span>
+                            <span class="font-mono text-[10px] uppercase tracking-[0.2em] text-slate-500 dark:text-slate-400">{{ t('monitoring.health') }}</span>
                             <span class="text-4xl font-bold tabular-nums text-slate-900 dark:text-white">{{ healthScore }}</span>
                             <span class="mt-0.5 rounded-full border px-2 py-0.5 text-[10px] font-medium" :class="healthLevel.badge">{{ healthLevel.label }}</span>
                         </div>
@@ -573,7 +576,7 @@ onBeforeUnmount(() => {
                     <div class="depth flex items-center justify-between text-[11px]">
                         <span :class="selectedMetric === gauge.key ? 'font-medium text-slate-700 dark:text-slate-200' : 'text-slate-400'">
                             <i class="bi" :class="selectedMetric === gauge.key ? 'bi-graph-up-arrow' : 'bi-cursor'"></i>
-                            {{ selectedMetric === gauge.key ? 'Showing in chart' : 'Click to chart' }}
+                            {{ selectedMetric === gauge.key ? t('monitoring.inChart') : t('monitoring.clickChart') }}
                         </span>
                         <span class="font-mono text-slate-400">{{ gauge.key }}</span>
                     </div>
@@ -585,31 +588,31 @@ onBeforeUnmount(() => {
                 <div class="panel">
                     <header class="panel-header">
                         <div class="flex min-w-0 items-center gap-2">
-                            <h3 class="panel-title">Network</h3>
-                            <span class="truncate font-mono text-[11px] text-slate-400">{{ networkInterfaces.join(', ') || 'no interfaces' }}</span>
+                            <h3 class="panel-title">{{ t('monitoring.network') }}</h3>
+                            <span class="truncate font-mono text-[11px] text-slate-400">{{ networkInterfaces.join(', ') || t('monitoring.noInterfaces') }}</span>
                         </div>
-                        <span class="font-mono text-[11px] text-slate-400">peak {{ formatRate(networkSpark.peak) }}</span>
+                        <span class="font-mono text-[11px] text-slate-400">{{ t('monitoring.peak', { rate: formatRate(networkSpark.peak) }) }}</span>
                     </header>
                     <div class="grid gap-5 p-4 sm:p-5 lg:grid-cols-[minmax(0,1fr)_14rem]">
                         <div class="min-w-0">
                             <div class="grid grid-cols-2 gap-3 sm:grid-cols-3">
                                 <div class="net-stat" style="--accent: #06b6d4">
-                                    <span class="flex items-center gap-1.5 text-xs text-slate-500 dark:text-slate-400"><i class="bi bi-arrow-down-circle-fill text-cyan-500"></i>Download (RX)</span>
+                                    <span class="flex items-center gap-1.5 text-xs text-slate-500 dark:text-slate-400"><i class="bi bi-arrow-down-circle-fill text-cyan-500"></i>{{ t('monitoring.download') }}</span>
                                     <span class="mt-1 block font-mono text-xl font-semibold tabular-nums text-slate-900 dark:text-slate-50">{{ formatRate(rates.rx) }}</span>
-                                    <span class="font-mono text-[10px] text-slate-400">{{ formatBytes(networkTotals.rx) }} since boot</span>
+                                    <span class="font-mono text-[10px] text-slate-400">{{ t('monitoring.sinceBoot', { size: formatBytes(networkTotals.rx) }) }}</span>
                                 </div>
                                 <div class="net-stat" style="--accent: #10b981">
-                                    <span class="flex items-center gap-1.5 text-xs text-slate-500 dark:text-slate-400"><i class="bi bi-arrow-up-circle-fill text-emerald-500"></i>Upload (TX)</span>
+                                    <span class="flex items-center gap-1.5 text-xs text-slate-500 dark:text-slate-400"><i class="bi bi-arrow-up-circle-fill text-emerald-500"></i>{{ t('monitoring.upload') }}</span>
                                     <span class="mt-1 block font-mono text-xl font-semibold tabular-nums text-slate-900 dark:text-slate-50">{{ formatRate(rates.tx) }}</span>
-                                    <span class="font-mono text-[10px] text-slate-400">{{ formatBytes(networkTotals.tx) }} since boot</span>
+                                    <span class="font-mono text-[10px] text-slate-400">{{ t('monitoring.sinceBoot', { size: formatBytes(networkTotals.tx) }) }}</span>
                                 </div>
-                                <div class="net-stat col-span-2 sm:col-span-1" style="--accent: #8b5cf6" title="Traffic between processes on this server over 127.0.0.1 / ::1 (apps → databases, proxies, etc.)">
-                                    <span class="flex items-center gap-1.5 text-xs text-slate-500 dark:text-slate-400"><i class="bi bi-arrow-repeat text-violet-500"></i>Local (loopback)</span>
+                                <div class="net-stat col-span-2 sm:col-span-1" style="--accent: #8b5cf6" :title="t('monitoring.loopbackHint')">
+                                    <span class="flex items-center gap-1.5 text-xs text-slate-500 dark:text-slate-400"><i class="bi bi-arrow-repeat text-violet-500"></i>{{ t('monitoring.loopback') }}</span>
                                     <span class="mt-1 block font-mono text-xl font-semibold tabular-nums text-slate-900 dark:text-slate-50">{{ formatRate(rates.lo) }}</span>
-                                    <span class="font-mono text-[10px] text-slate-400">{{ formatBytes(liveSnapshot.loopback?.rx_bytes) }} since boot</span>
+                                    <span class="font-mono text-[10px] text-slate-400">{{ t('monitoring.sinceBoot', { size: formatBytes(liveSnapshot.loopback?.rx_bytes) }) }}</span>
                                 </div>
                             </div>
-                            <svg viewBox="0 0 300 80" preserveAspectRatio="none" class="mt-4 h-28 w-full overflow-visible" role="img" aria-label="Network throughput history">
+                            <svg viewBox="0 0 300 80" preserveAspectRatio="none" class="mt-4 h-28 w-full overflow-visible" role="img" :aria-label="t('monitoring.netHistory')">
                                 <g class="text-slate-200 dark:text-white/[0.07]">
                                     <line v-for="level in [6, 41, 76]" :key="level" x1="0" :y1="level" x2="300" :y2="level" stroke="currentColor" stroke-dasharray="3 6" vector-effect="non-scaling-stroke" />
                                 </g>
@@ -618,8 +621,8 @@ onBeforeUnmount(() => {
                                 <path v-if="networkSpark.count > 1" :d="networkSpark.tx" fill="none" stroke="#10b981" stroke-width="2" stroke-linejoin="round" vector-effect="non-scaling-stroke" class="net-line" style="--accent: #10b981" />
                             </svg>
                             <div class="mt-1 flex justify-between font-mono text-[10px] text-slate-400">
-                                <span>last {{ networkSpark.count }}s</span>
-                                <span><span class="text-cyan-500">━</span> rx <span class="ml-2 text-emerald-500">━</span> tx <span class="ml-2 text-violet-500">┅</span> local</span>
+                                <span>{{ t('monitoring.lastSeconds', { count: networkSpark.count }) }}</span>
+                                <span><span class="text-cyan-500">━</span> rx <span class="ml-2 text-emerald-500">━</span> tx <span class="ml-2 text-violet-500">┅</span> {{ t('monitoring.scope.local') }}</span>
                             </div>
                         </div>
                         <dl class="divide-y divide-slate-100 self-start rounded-xl border border-slate-200 font-mono text-xs dark:divide-white/[0.06] dark:border-white/10">
@@ -633,7 +636,7 @@ onBeforeUnmount(() => {
 
                 <div class="panel">
                     <header class="panel-header">
-                        <h3 class="panel-title">Thermals &amp; swap</h3>
+                        <h3 class="panel-title">{{ t('monitoring.thermals') }}</h3>
                         <i class="bi bi-thermometer-half text-slate-400"></i>
                     </header>
                     <ul v-if="temperatures.length" class="divide-y divide-slate-100 dark:divide-white/[0.06]">
@@ -649,7 +652,7 @@ onBeforeUnmount(() => {
                             </div>
                         </li>
                     </ul>
-                    <p v-else class="px-5 py-6 text-center text-sm text-slate-500 dark:text-slate-400">No temperature sensors exposed.</p>
+                    <p v-else class="px-5 py-6 text-center text-sm text-slate-500 dark:text-slate-400">{{ t('monitoring.noSensors') }}</p>
                     <div class="border-t border-slate-200 px-4 py-3.5 dark:border-white/10 sm:px-5">
                         <div class="flex items-baseline justify-between font-mono text-xs">
                             <span class="text-slate-500 dark:text-slate-400"><i class="bi bi-arrow-left-right mr-1"></i>swap</span>
@@ -669,24 +672,24 @@ onBeforeUnmount(() => {
             <section class="panel">
                 <header class="panel-header">
                     <div class="flex min-w-0 items-center gap-2">
-                        <h3 class="panel-title">Live connections</h3>
-                        <span class="font-mono text-[11px] text-slate-400">established tcp · by port</span>
+                        <h3 class="panel-title">{{ t('monitoring.liveConnections') }}</h3>
+                        <span class="font-mono text-[11px] text-slate-400">{{ t('monitoring.byPort') }}</span>
                     </div>
                     <div class="flex flex-wrap items-center gap-1.5 text-[11px] font-medium">
-                        <span class="scope-chip scope-chip--local">{{ connectionScopeTotals.local }} local</span>
-                        <span class="scope-chip scope-chip--lan">{{ connectionScopeTotals.lan }} lan</span>
-                        <span class="scope-chip scope-chip--external">{{ connectionScopeTotals.external }} internet</span>
+                        <span class="scope-chip scope-chip--local">{{ t('monitoring.localCount', { count: connectionScopeTotals.local }) }}</span>
+                        <span class="scope-chip scope-chip--lan">{{ t('monitoring.lanCount', { count: connectionScopeTotals.lan }) }}</span>
+                        <span class="scope-chip scope-chip--external">{{ t('monitoring.internetCount', { count: connectionScopeTotals.external }) }}</span>
                     </div>
                 </header>
                 <div class="overflow-x-auto">
                     <table class="min-w-full text-left text-sm">
                         <thead class="bg-slate-50 font-mono text-[10px] uppercase tracking-wider text-slate-500 dark:bg-white/[0.02] dark:text-slate-400">
                             <tr>
-                                <th class="px-4 py-2.5 sm:px-5">Service</th>
-                                <th class="px-4 py-2.5">Port</th>
-                                <th class="px-4 py-2.5">Direction</th>
-                                <th class="min-w-[220px] px-4 py-2.5">Peers</th>
-                                <th class="px-4 py-2.5 text-right sm:px-5">Total</th>
+                                <th class="px-4 py-2.5 sm:px-5">{{ t('monitoring.col.service') }}</th>
+                                <th class="px-4 py-2.5">{{ t('monitoring.col.port') }}</th>
+                                <th class="px-4 py-2.5">{{ t('monitoring.col.direction') }}</th>
+                                <th class="min-w-[220px] px-4 py-2.5">{{ t('monitoring.col.peers') }}</th>
+                                <th class="px-4 py-2.5 text-right sm:px-5">{{ t('monitoring.col.total') }}</th>
                             </tr>
                         </thead>
                         <tbody class="divide-y divide-slate-100 dark:divide-white/[0.06]">
@@ -695,31 +698,31 @@ onBeforeUnmount(() => {
                                     <div class="flex min-w-0 items-center gap-2">
                                         <span class="truncate font-medium text-slate-800 dark:text-slate-100">{{ group.label }}</span>
                                         <span v-if="group.runtime" class="shrink-0 rounded-full border px-1.5 py-px font-mono text-[10px]" :class="runtimeBadges[group.runtime] || runtimeBadges.node">{{ group.runtime }}</span>
-                                        <span v-if="group.runtime && !group.listening" class="shrink-0 rounded-full border border-rose-400/30 bg-rose-400/10 px-1.5 py-px font-mono text-[10px] text-rose-700 dark:text-rose-200" title="Nothing is listening on this app's port">not listening</span>
+                                        <span v-if="group.runtime && !group.listening" class="shrink-0 rounded-full border border-rose-400/30 bg-rose-400/10 px-1.5 py-px font-mono text-[10px] text-rose-700 dark:text-rose-200" :title="t('monitoring.notListeningHint')">{{ t('monitoring.notListening') }}</span>
                                     </div>
                                 </td>
                                 <td class="px-4 py-2.5 font-mono text-xs text-slate-600 dark:text-slate-300">:{{ group.port }}</td>
                                 <td class="px-4 py-2.5 font-mono text-[11px]">
-                                    <span v-if="group.direction === 'inbound'" class="text-emerald-600 dark:text-emerald-300"><i class="bi bi-box-arrow-in-down-right"></i> in</span>
-                                    <span v-else class="text-sky-600 dark:text-sky-300"><i class="bi bi-box-arrow-up-right"></i> out</span>
+                                    <span v-if="group.direction === 'inbound'" class="text-emerald-600 dark:text-emerald-300"><i class="bi bi-box-arrow-in-down-right"></i> {{ t('monitoring.in') }}</span>
+                                    <span v-else class="text-sky-600 dark:text-sky-300"><i class="bi bi-box-arrow-up-right"></i> {{ t('monitoring.out') }}</span>
                                 </td>
                                 <td class="px-4 py-2.5">
                                     <div v-if="group.total > 0" class="flex h-2 overflow-hidden rounded-full bg-slate-100 dark:bg-white/[0.06]">
-                                        <div class="bg-violet-500" :style="{ width: `${(group.local / group.total) * 100}%` }" :title="`${group.local} local`"></div>
-                                        <div class="bg-amber-500" :style="{ width: `${(group.lan / group.total) * 100}%` }" :title="`${group.lan} lan`"></div>
-                                        <div class="bg-cyan-500" :style="{ width: `${(group.external / group.total) * 100}%` }" :title="`${group.external} internet`"></div>
+                                        <div class="bg-violet-500" :style="{ width: `${(group.local / group.total) * 100}%` }" :title="t('monitoring.localCount', { count: group.local })"></div>
+                                        <div class="bg-amber-500" :style="{ width: `${(group.lan / group.total) * 100}%` }" :title="t('monitoring.lanCount', { count: group.lan })"></div>
+                                        <div class="bg-cyan-500" :style="{ width: `${(group.external / group.total) * 100}%` }" :title="t('monitoring.internetCount', { count: group.external })"></div>
                                     </div>
                                     <div class="mt-1 flex gap-3 font-mono text-[10px] text-slate-400">
-                                        <span v-if="group.local">{{ group.local }} local</span>
-                                        <span v-if="group.lan">{{ group.lan }} lan</span>
-                                        <span v-if="group.external">{{ group.external }} internet</span>
-                                        <span v-if="group.total === 0">idle</span>
+                                        <span v-if="group.local">{{ t('monitoring.localCount', { count: group.local }) }}</span>
+                                        <span v-if="group.lan">{{ t('monitoring.lanCount', { count: group.lan }) }}</span>
+                                        <span v-if="group.external">{{ t('monitoring.internetCount', { count: group.external }) }}</span>
+                                        <span v-if="group.total === 0">{{ t('monitoring.idle') }}</span>
                                     </div>
                                 </td>
                                 <td class="px-4 py-2.5 text-right font-mono text-sm font-semibold tabular-nums text-slate-900 dark:text-slate-100 sm:px-5">{{ group.total }}</td>
                             </tr>
                             <tr v-if="connectionBreakdown.length === 0">
-                                <td colspan="5" class="px-4 py-8 text-center text-sm text-slate-500 dark:text-slate-400">No established connections.</td>
+                                <td colspan="5" class="px-4 py-8 text-center text-sm text-slate-500 dark:text-slate-400">{{ t('monitoring.noConnections') }}</td>
                             </tr>
                         </tbody>
                     </table>
@@ -731,7 +734,7 @@ onBeforeUnmount(() => {
                 <div class="panel">
                     <header class="panel-header">
                         <div class="flex min-w-0 items-center gap-2">
-                            <h3 class="panel-title">Resource history</h3>
+                            <h3 class="panel-title">{{ t('monitoring.history') }}</h3>
                             <span class="font-mono text-[11px] text-slate-400">{{ selectedMetricOption.key }}{{ selectedMetric === 'disk' ? `:${activeDisk?.device || 'n/a'}` : '' }}</span>
                         </div>
                         <div class="flex flex-wrap items-center gap-2">
@@ -761,24 +764,24 @@ onBeforeUnmount(() => {
                     <div class="px-4 pb-4 pt-3 sm:px-5">
                         <div class="grid grid-cols-4 gap-2 font-mono text-[11px]">
                             <div class="chart-stat" :style="{ '--accent': selectedMetricOption.color }">
-                                <span class="text-slate-400">{{ hoveredPoint ? hoveredPoint.time.toLocaleTimeString() : 'now' }}</span>
+                                <span class="text-slate-400">{{ hoveredPoint ? hoveredPoint.time.toLocaleTimeString() : t('monitoring.now') }}</span>
                                 <span class="chart-stat__value" :style="{ color: selectedMetricOption.color }">{{ (hoveredPoint ? hoveredPoint.value : latestMetricValue(selectedMetric)).toFixed(1) }}%</span>
                             </div>
                             <div class="chart-stat">
-                                <span class="text-slate-400">min</span>
+                                <span class="text-slate-400">{{ t('monitoring.min') }}</span>
                                 <span class="chart-stat__value">{{ chartStats.min.toFixed(1) }}%</span>
                             </div>
                             <div class="chart-stat">
-                                <span class="text-slate-400">avg</span>
+                                <span class="text-slate-400">{{ t('monitoring.avg') }}</span>
                                 <span class="chart-stat__value">{{ chartStats.avg.toFixed(1) }}%</span>
                             </div>
                             <div class="chart-stat">
-                                <span class="text-slate-400">max</span>
+                                <span class="text-slate-400">{{ t('monitoring.max') }}</span>
                                 <span class="chart-stat__value">{{ chartStats.max.toFixed(1) }}%</span>
                             </div>
                         </div>
 
-                        <svg viewBox="0 0 640 260" class="chart-svg mt-2 h-64 w-full overflow-visible" role="img" :aria-label="`${selectedMetricOption.label} usage history`" :style="{ '--accent': selectedMetricOption.color }">
+                        <svg viewBox="0 0 640 260" class="chart-svg mt-2 h-64 w-full overflow-visible" role="img" :aria-label="t('monitoring.usageHistory', { metric: selectedMetricOption.label })" :style="{ '--accent': selectedMetricOption.color }">
                             <defs>
                                 <linearGradient id="signalFill" x1="0" x2="0" y1="0" y2="1">
                                     <stop offset="0%" :stop-color="selectedMetricOption.color" stop-opacity="0.3" />
@@ -806,11 +809,11 @@ onBeforeUnmount(() => {
                                 @mouseleave="hoveredPoint = null"
                                 @blur="hoveredPoint = null"
                             />
-                            <text v-if="chartPoints.length === 0" x="340" y="145" text-anchor="middle" class="fill-slate-400 font-mono text-xs">Waiting for samples…</text>
+                            <text v-if="chartPoints.length === 0" x="340" y="145" text-anchor="middle" class="fill-slate-400 font-mono text-xs">{{ t('monitoring.waiting') }}</text>
                         </svg>
                         <div class="flex justify-between pl-12 font-mono text-[10px] text-slate-400">
                             <span>{{ chartPoints[0]?.time.toLocaleTimeString() || '—' }}</span>
-                            <span>{{ chartPoints.length }} samples · 1s interval</span>
+                            <span>{{ t('monitoring.samples', { count: chartPoints.length }) }}</span>
                             <span>{{ chartPoints.at(-1)?.time.toLocaleTimeString() || '—' }}</span>
                         </div>
                     </div>
@@ -818,9 +821,9 @@ onBeforeUnmount(() => {
 
                 <div class="panel">
                     <header class="panel-header">
-                        <h3 class="panel-title">Services</h3>
+                        <h3 class="panel-title">{{ t('monitoring.services') }}</h3>
                         <span class="shrink-0 rounded-full border border-emerald-400/30 bg-emerald-400/10 px-2 py-0.5 text-xs font-medium text-emerald-700 dark:text-emerald-200">
-                            {{ runningServices }}/{{ serviceEntries.length }} running
+                            {{ t('monitoring.runningCount', { running: runningServices, total: serviceEntries.length }) }}
                         </span>
                     </header>
                     <ul class="grid grid-cols-1 gap-px bg-slate-100 sm:grid-cols-2 xl:grid-cols-1 dark:bg-white/[0.06]">
@@ -840,7 +843,7 @@ onBeforeUnmount(() => {
                                 {{ status }}
                             </span>
                         </li>
-                        <li v-if="serviceEntries.length === 0" class="bg-white px-5 py-6 text-center text-sm text-slate-500 dark:bg-slate-900 dark:text-slate-400">No service data available.</li>
+                        <li v-if="serviceEntries.length === 0" class="bg-white px-5 py-6 text-center text-sm text-slate-500 dark:bg-slate-900 dark:text-slate-400">{{ t('monitoring.noServices') }}</li>
                     </ul>
                     <div class="grid grid-cols-2 gap-3 border-t border-slate-200 p-4 dark:border-white/10 sm:p-5">
                         <div v-for="item in resourceCounts" :key="item.label" class="flex items-center gap-3">
@@ -858,7 +861,7 @@ onBeforeUnmount(() => {
             <section class="grid gap-5 xl:grid-cols-[1fr_1.65fr]">
                 <div class="panel">
                     <header class="panel-header">
-                        <h3 class="panel-title">Hardware</h3>
+                        <h3 class="panel-title">{{ t('monitoring.hardware') }}</h3>
                         <i class="bi bi-motherboard text-slate-400"></i>
                     </header>
                     <dl class="divide-y divide-slate-100 font-mono text-xs dark:divide-white/[0.06]">
@@ -866,7 +869,7 @@ onBeforeUnmount(() => {
                             <div class="flex items-baseline justify-between gap-3">
                                 <dt class="text-slate-500 dark:text-slate-400">{{ spec.label }}</dt>
                                 <dd class="tabular-nums" :class="spec.value ? 'font-semibold text-slate-900 dark:text-slate-100' : 'text-slate-400'">
-                                    {{ spec.value ? `${spec.value} ${spec.unit}` : 'n/a' }}
+                                    {{ spec.value ? `${spec.value} ${spec.unit}` : t('monitoring.na') }}
                                 </dd>
                             </div>
                             <div class="mt-1.5 h-1 overflow-hidden rounded-full bg-slate-100 dark:bg-white/[0.06]">
@@ -879,10 +882,10 @@ onBeforeUnmount(() => {
                 <div class="panel">
                     <header class="panel-header">
                         <div class="flex min-w-0 items-center gap-2">
-                            <h3 class="panel-title">Physical disks</h3>
+                            <h3 class="panel-title">{{ t('monitoring.disks') }}</h3>
                             <span class="font-mono text-[11px] text-slate-400">{{ diskVolumes.length }}</span>
                         </div>
-                        <span class="truncate text-[11px] text-slate-400">Loop & virtual mounts excluded</span>
+                        <span class="truncate text-[11px] text-slate-400">{{ t('monitoring.loopExcluded') }}</span>
                     </header>
                     <div v-if="diskVolumes.length > 0" class="grid gap-3 p-4 sm:grid-cols-2 sm:p-5">
                         <button
@@ -912,24 +915,24 @@ onBeforeUnmount(() => {
                                 <span v-if="disk.usage_percent !== null" class="shrink-0 font-mono text-sm font-semibold tabular-nums" :style="{ color: diskUsageColor(disk.usage_percent) }">
                                     {{ Number(disk.usage_percent).toFixed(1) }}%
                                 </span>
-                                <span v-else class="shrink-0 rounded-full border border-slate-300 px-2 py-0.5 text-[10px] text-slate-500 dark:border-white/10">unmounted</span>
+                                <span v-else class="shrink-0 rounded-full border border-slate-300 px-2 py-0.5 text-[10px] text-slate-500 dark:border-white/10">{{ t('monitoring.unmounted') }}</span>
                             </div>
                             <div class="mt-4 h-2 overflow-hidden rounded-full bg-slate-200/70 dark:bg-white/[0.06]">
                                 <div class="drive-fill h-full rounded-full" :style="{ width: `${clampPercent(disk.usage_percent)}%` }"></div>
                             </div>
                             <div class="mt-2 flex justify-between gap-2 font-mono text-[10px] text-slate-500 dark:text-slate-400">
-                                <span>{{ formatDiskSize(disk.mounted_used_gb) }} used</span>
-                                <span>{{ formatDiskSize(disk.mounted_free_gb) }} free</span>
+                                <span>{{ t('monitoring.used', { size: formatDiskSize(disk.mounted_used_gb) }) }}</span>
+                                <span>{{ t('monitoring.free', { size: formatDiskSize(disk.mounted_free_gb) }) }}</span>
                                 <span>{{ formatDiskSize(disk.total_gb) }}</span>
                             </div>
-                            <p class="mt-1.5 truncate font-mono text-[10px] text-slate-400">{{ disk.mounts.length ? disk.mounts.map((mount) => mount.mountpoint).join('  ') : 'no mounted filesystem' }}</p>
+                            <p class="mt-1.5 truncate font-mono text-[10px] text-slate-400">{{ disk.mounts.length ? disk.mounts.map((mount) => mount.mountpoint).join('  ') : t('monitoring.noMount') }}</p>
                             <div v-if="disk.io" class="mt-3 grid grid-cols-3 gap-2 border-t border-slate-200 pt-2.5 font-mono text-[10px] dark:border-white/10">
                                 <span class="min-w-0">
-                                    <span class="block text-slate-400">read</span>
+                                    <span class="block text-slate-400">{{ t('monitoring.read') }}</span>
                                     <span class="block truncate font-semibold tabular-nums text-cyan-600 dark:text-cyan-300">{{ formatRate(rates.disks[disk.id]?.read) }}</span>
                                 </span>
                                 <span class="min-w-0">
-                                    <span class="block text-slate-400">write</span>
+                                    <span class="block text-slate-400">{{ t('monitoring.write') }}</span>
                                     <span class="block truncate font-semibold tabular-nums text-amber-600 dark:text-amber-300">{{ formatRate(rates.disks[disk.id]?.write) }}</span>
                                 </span>
                                 <span class="min-w-0 text-right">
@@ -939,14 +942,14 @@ onBeforeUnmount(() => {
                             </div>
                         </button>
                     </div>
-                    <p v-else class="px-5 py-10 text-center text-sm text-slate-500 dark:text-slate-400">No physical drives detected.</p>
+                    <p v-else class="px-5 py-10 text-center text-sm text-slate-500 dark:text-slate-400">{{ t('monitoring.noDrives') }}</p>
                 </div>
             </section>
 
             <!-- Processes -->
             <section class="panel">
                 <header class="panel-header">
-                    <h3 class="panel-title">Top processes</h3>
+                    <h3 class="panel-title">{{ t('monitoring.topProcesses') }}</h3>
                     <span class="font-mono text-[11px] text-slate-400">{{ liveSnapshot.updated_at ?? '—' }}</span>
                 </header>
                 <div class="overflow-x-auto">
@@ -955,9 +958,9 @@ onBeforeUnmount(() => {
                             <tr>
                                 <th class="w-12 px-4 py-2.5 sm:px-5">#</th>
                                 <th class="px-4 py-2.5">PID</th>
-                                <th class="px-4 py-2.5">Command</th>
+                                <th class="px-4 py-2.5">{{ t('monitoring.col.command') }}</th>
                                 <th class="min-w-[170px] px-4 py-2.5">CPU</th>
-                                <th class="min-w-[170px] px-4 py-2.5 sm:px-5">Memory</th>
+                                <th class="min-w-[170px] px-4 py-2.5 sm:px-5">{{ t('monitoring.metric.memory') }}</th>
                             </tr>
                         </thead>
                         <tbody class="divide-y divide-slate-100 dark:divide-white/[0.06]">
@@ -985,7 +988,7 @@ onBeforeUnmount(() => {
                                 </td>
                             </tr>
                             <tr v-if="topProcesses.length === 0">
-                                <td colspan="5" class="px-4 py-8 text-center text-sm text-slate-500 dark:text-slate-400">No process data available.</td>
+                                <td colspan="5" class="px-4 py-8 text-center text-sm text-slate-500 dark:text-slate-400">{{ t('monitoring.noProcesses') }}</td>
                             </tr>
                         </tbody>
                     </table>

@@ -1,0 +1,11 @@
+{
+    "title": "IP 地址",
+    "help": "此网站应答所用的地址。保存后，本服务器托管的 DNS 区域中其 A/AAAA 记录会指向该地址。",
+    "followsParent": "在 {address} 上应答，即 {parent} 的地址。",
+    "main": "主",
+    "dedicated": "独享",
+    "save": "更改 IP",
+    "saving": "正在更改…",
+    "loadFailed": "无法加载 IP 地址。",
+    "saveFailed": "无法更改 IP 地址。"
+}

@@ -1,0 +1,8 @@
+{
+    "title": "Server চালানোর নিরাপদ প্রবেশপথ",
+    "subtitle": "Production নিয়ন্ত্রণ, recovery আর রোজকার রক্ষণাবেক্ষণের জন্য গোছানো একটা admin panel।",
+    "operations": "কাজ",
+    "operationsText": "Production-এর কাজ ও দ্রুত recovery-র সব tool এক জায়গায়।",
+    "security": "Security",
+    "securityText": "সহজ login আর password যাচাই দিয়ে সুরক্ষিত প্রবেশ।"
+}

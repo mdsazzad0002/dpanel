@@ -1,0 +1,12 @@
+{
+    "language": "Language",
+    "refresh": "Refresh",
+    "loading": "Loading…",
+    "sessionExpired": "Your session expired — reload the page and try again.",
+    "search": "Search",
+    "save": "Save",
+    "cancel": "Cancel",
+    "close": "Close",
+    "none": "None",
+    "back": "Back to Manage"
+}

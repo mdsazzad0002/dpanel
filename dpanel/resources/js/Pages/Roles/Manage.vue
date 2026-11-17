@@ -2,6 +2,9 @@
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
 import { Head, useForm, usePage } from '@inertiajs/vue3';
 import { ref } from 'vue';
+import { useI18n } from 'vue-i18n';
+
+const { t } = useI18n();
 
 const props = defineProps({
     roles: {
@@ -87,24 +90,24 @@ const submit = () => {
 };
 
 const deleteRole = (role) => {
-    if (! confirm(`Delete role "${role.name}"?`)) return;
+    if (! confirm(t('roles.manage.deleteConfirm', { name: role.name }))) return;
 
     form.delete(route('roles.manage.destroy', role.id), { preserveScroll: true });
 };
 </script>
 
 <template>
-    <Head title="Manage Roles" />
+    <Head :title="t('roles.manage.title')" />
 
     <AuthenticatedLayout>
         <template #header>
             <div class="flex items-center justify-between">
                 <div>
-                    <h1 class="text-lg font-semibold">Manage Roles</h1>
-                    <p class="text-sm text-slate-500 dark:text-slate-400">Permissions come from a fixed system list; pick which apply to each role.</p>
+                    <h1 class="text-lg font-semibold">{{ t('roles.manage.title') }}</h1>
+                    <p class="text-sm text-slate-500 dark:text-slate-400">{{ t('roles.manage.subtitle') }}</p>
                 </div>
                 <button type="button" @click="openCreatePanel" class="rounded-md bg-indigo-600 px-3 py-1.5 text-sm text-white hover:bg-indigo-500">
-                    Create Role
+                    {{ t('roles.manage.create') }}
                 </button>
             </div>
         </template>
@@ -121,31 +124,31 @@ const deleteRole = (role) => {
                 <table class="min-w-full text-left text-sm">
                     <thead class="bg-slate-50 dark:bg-slate-800">
                         <tr>
-                            <th class="px-4 py-3">Role</th>
-                            <th class="px-4 py-3">Permissions</th>
-                            <th class="px-4 py-3">Users</th>
-                            <th class="px-4 py-3">Actions</th>
+                            <th class="px-4 py-3">{{ t('roles.manage.role') }}</th>
+                            <th class="px-4 py-3">{{ t('roles.manage.permissions') }}</th>
+                            <th class="px-4 py-3">{{ t('roles.manage.users') }}</th>
+                            <th class="px-4 py-3">{{ t('roles.manage.actions') }}</th>
                         </tr>
                     </thead>
                     <tbody>
                         <tr v-for="role in roles" :key="role.id" class="border-t border-slate-200 dark:border-slate-800">
                             <td class="px-4 py-3 align-top">
                                 {{ role.name }}
-                                <span v-if="isSystemRole(role.name)" class="ml-2 rounded bg-slate-100 px-2 py-0.5 text-xs dark:bg-slate-800">System</span>
+                                <span v-if="isSystemRole(role.name)" class="ml-2 rounded bg-slate-100 px-2 py-0.5 text-xs dark:bg-slate-800">{{ t('roles.manage.system') }}</span>
                             </td>
                             <td class="px-4 py-3">
                                 <div class="flex flex-wrap gap-1">
                                     <span v-for="permission in role.permissions" :key="permission" class="rounded bg-slate-100 px-2 py-0.5 text-xs dark:bg-slate-800">
                                         {{ permission }}
                                     </span>
-                                    <span v-if="role.permissions.length === 0" class="text-xs text-slate-400">No permissions</span>
+                                    <span v-if="role.permissions.length === 0" class="text-xs text-slate-400">{{ t('roles.manage.noPermissions') }}</span>
                                 </div>
                             </td>
                             <td class="px-4 py-3 align-top">{{ role.users_count }}</td>
                             <td class="px-4 py-3 align-top">
                                 <div class="flex gap-2">
                                     <button type="button" @click="openEditPanel(role)" class="rounded-md border border-slate-300 px-3 py-1.5 text-xs hover:bg-slate-100 dark:border-slate-700 dark:hover:bg-slate-800">
-                                        Edit
+                                        {{ t('roles.manage.edit') }}
                                     </button>
                                     <button
                                         v-if="!isSystemRole(role.name)"
@@ -153,13 +156,13 @@ const deleteRole = (role) => {
                                         @click="deleteRole(role)"
                                         class="rounded-md border border-red-300 px-3 py-1.5 text-xs text-red-600 hover:bg-red-50 dark:border-red-900 dark:hover:bg-red-950"
                                     >
-                                        Delete
+                                        {{ t('roles.manage.delete') }}
                                     </button>
                                 </div>
                             </td>
                         </tr>
                         <tr v-if="roles.length === 0">
-                            <td colspan="4" class="px-4 py-6 text-center text-slate-500">No roles found.</td>
+                            <td colspan="4" class="px-4 py-6 text-center text-slate-500">{{ t('roles.manage.empty') }}</td>
                         </tr>
                     </tbody>
                 </table>
@@ -174,27 +177,27 @@ const deleteRole = (role) => {
                 <div class="relative flex h-full w-[70%] flex-col overflow-y-auto border-l border-slate-200 bg-white text-slate-900 shadow-xl dark:border-slate-800 dark:bg-slate-900 dark:text-slate-100">
                     <div class="flex items-center justify-between border-b border-slate-200 px-5 py-4 dark:border-slate-800">
                         <h2 class="text-base font-semibold">
-                            {{ editingRole ? `Edit "${editingRole.name}"` : 'Create Role' }}
+                            {{ editingRole ? t('roles.manage.editTitle', { name: editingRole.name }) : t('roles.manage.create') }}
                         </h2>
-                        <button type="button" @click="closePanel" class="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200">✕</button>
+                        <button type="button" @click="closePanel" class="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200" :aria-label="t('common.close')">✕</button>
                     </div>
 
                     <form @submit.prevent="submit" class="flex flex-1 flex-col overflow-y-auto">
                         <div class="flex-1 space-y-5 px-5 py-4">
                             <div>
-                                <label class="mb-1 block text-sm font-medium">Role name</label>
+                                <label class="mb-1 block text-sm font-medium">{{ t('roles.manage.name') }}</label>
                                 <input
                                     v-model="form.name"
                                     type="text"
                                     :disabled="editingRole && isSystemRole(editingRole.name)"
                                     class="w-full rounded-md border border-slate-300 px-3 py-1.5 text-sm disabled:bg-slate-100 dark:border-slate-700 dark:bg-slate-800 dark:disabled:bg-slate-900"
-                                    placeholder="e.g. support_agent"
+                                    :placeholder="t('roles.manage.namePlaceholder')"
                                 />
                                 <p v-if="form.errors.name" class="mt-1 text-xs text-red-600">{{ form.errors.name }}</p>
                             </div>
 
                             <div>
-                                <label class="mb-2 block text-sm font-medium">Permissions</label>
+                                <label class="mb-2 block text-sm font-medium">{{ t('roles.manage.permissions') }}</label>
                                 <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
                                     <div
                                         v-for="(permissions, group) in permissionGroups"
@@ -232,10 +235,10 @@ const deleteRole = (role) => {
 
                         <div class="flex justify-end gap-2 border-t border-slate-200 px-5 py-4 dark:border-slate-800">
                             <button type="button" @click="closePanel" class="rounded-md border border-slate-300 px-3 py-1.5 text-sm hover:bg-slate-100 dark:border-slate-700 dark:hover:bg-slate-800">
-                                Cancel
+                                {{ t('common.cancel') }}
                             </button>
                             <button type="submit" :disabled="form.processing" class="rounded-md bg-indigo-600 px-3 py-1.5 text-sm text-white hover:bg-indigo-500 disabled:opacity-60">
-                                Save
+                                {{ t('common.save') }}
                             </button>
                         </div>
                     </form>

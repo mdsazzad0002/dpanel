@@ -1,0 +1,23 @@
+{
+    "panel": {
+        "title": "Reseller Panel",
+        "subtitle": "Manage customer websites, databases and requests.",
+        "websiteRequests": "Website Requests",
+        "databaseRequests": "Database Requests",
+        "pending": "Pending: {count}",
+        "quick": "Quick Actions",
+        "createWebsite": "Create Website",
+        "websiteList": "Website List",
+        "createDatabase": "Create Database",
+        "databaseList": "Database List",
+        "userPanel": "User Panel",
+        "recentWebsite": "Recent Website Requests",
+        "recentDatabase": "Recent Database Requests",
+        "domain": "Domain",
+        "status": "Status",
+        "created": "Created",
+        "database": "Database",
+        "noWebsite": "No website requests found.",
+        "noDatabase": "No database requests found."
+    }
+}

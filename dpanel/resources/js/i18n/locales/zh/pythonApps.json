@@ -1,0 +1,60 @@
+{
+    "card": {
+        "badge": {
+            "running": "运行中",
+            "error": "失败",
+            "stopped": "已停止",
+            "starting": "正在启动…"
+        },
+        "port": "端口",
+        "user": "用户",
+        "publicOn": "公开地址",
+        "notPublic": "未公开。{link}。",
+        "publishLink": "在 规则 → 端口共享 中发布",
+        "listening": "端口正在监听",
+        "notListening": "端口未监听",
+        "start": "启动",
+        "stop": "停止",
+        "restart": "重启",
+        "status": "状态",
+        "edit": "编辑",
+        "delete": "删除",
+        "default": "默认",
+        "workers": "{n} 个 worker",
+        "runs": "运行",
+        "settingUp": "正在后台设置（Python、venv、依赖包）。首次启动可能需要几分钟。"
+    },
+    "index": {
+        "title": "Python 应用",
+        "subtitle": "Django、Flask、FastAPI……可从主目录的任意文件夹运行。",
+        "new": "新建 Python 应用",
+        "empty": "还没有 Python 应用",
+        "noHome": "没有可用的主目录",
+        "emptyHelp": "先创建一个，然后在 规则 → 端口共享 中发布。",
+        "noHomeHelp": "应用在网站用户的主目录中运行。请先创建一个网站。"
+    },
+    "form": {
+        "editTitle": "编辑 {name}",
+        "newTitle": "新建 Python 应用",
+        "subtitle": "拥有独立的 .venv 并安装 requirements.txt，以该主目录的 Linux 用户身份用 gunicorn 运行。在 规则 → 端口共享 中发布。",
+        "name": "应用名称",
+        "home": "主目录",
+        "workdir": "工作目录",
+        "workdirHelp": "包含你的代码和 requirements.txt 的文件夹。留空则从主目录本身运行。",
+        "optional": "（可选）",
+        "port": "端口",
+        "auto": "自动",
+        "startAfter": "创建后启动",
+        "portNote": "端口 {port}。正在运行的应用会以新设置重启。",
+        "create": "创建应用",
+        "overrides": "覆盖 {cmd}。应用必须监听 127.0.0.1 和 {port}。",
+        "startCommand": "启动命令",
+        "entryHelp": "例如 {flask}（Flask）、{django}（Django）",
+        "version": "Python 版本",
+        "workers": "Worker 数",
+        "mode": "模式",
+        "production": "生产",
+        "development": "开发",
+        "timeout": "超时（秒）"
+    }
+}

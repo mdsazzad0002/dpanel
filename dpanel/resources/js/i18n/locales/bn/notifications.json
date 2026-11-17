@@ -1,0 +1,29 @@
+{
+    "show": {
+        "status": {
+            "completed": "সম্পন্ন",
+            "failed": "ব্যর্থ",
+            "warning": "সতর্কতা",
+            "processing": "চলছে",
+            "info": "তথ্য"
+        },
+        "copied": "Link clipboard-এ copy হয়েছে।",
+        "copyFailed": "Link copy করা যায়নি — নিজে copy করুন।",
+        "headTitle": "Notification - {title}",
+        "title": "Notification",
+        "back": "Dashboard-এ ফিরে যান",
+        "exportFile": "Export file",
+        "copyLink": "Link copy করুন",
+        "download": "Download",
+        "shareNote": "Panel-এ login লাগবে না — যে কারো সাথে share করা নিরাপদ।"
+    },
+    "index": {
+        "clearConfirm": "সব notification মুছবেন? এটি আর ফেরানো যাবে না।",
+        "title": "Notification",
+        "unread": "{count}টি অপঠিত",
+        "markAll": "সব পঠিত হিসেবে চিহ্নিত করুন",
+        "clearAll": "সব মুছুন",
+        "copy": "Copy",
+        "empty": "কোনো notification নেই"
+    }
+}

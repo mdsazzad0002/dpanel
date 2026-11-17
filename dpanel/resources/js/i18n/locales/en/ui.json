@@ -1,0 +1,38 @@
+{
+    "markdown": {
+        "copy": "Copy",
+        "copied": "Copied"
+    },
+    "searchableSelect": {
+        "placeholder": "Select…",
+        "search": "Search…",
+        "noMatches": "No matches.",
+        "showing": "Showing {shown} of {total} — keep typing to narrow results"
+    },
+    "terminal": {
+        "connecting": "Connecting…",
+        "openFailed": "Unable to open terminal.",
+        "connected": "Connected",
+        "error": "Connection error",
+        "closed": "Session closed (code {code})",
+        "title": "Terminal",
+        "reconnect": "Reconnect",
+        "clear": "Clear"
+    },
+    "legal": {
+        "back": "Back",
+        "updated": "Last updated: {date}",
+        "privacy": "Privacy Policy",
+        "terms": "Terms & Conditions"
+    },
+    "location": {
+        "unsupported": "This browser has no location support.",
+        "needsHttps": "This browser gives no location over plain HTTP. Open the panel over HTTPS.",
+        "failed": "Could not read your location.",
+        "errors": {
+            "blocked": "Location access was blocked. Allow location for this site in your browser settings, then try again.",
+            "unavailable": "Your device could not find its location. Turn on location services and try again.",
+            "timeout": "Getting your location took too long. Try again."
+        }
+    }
+}

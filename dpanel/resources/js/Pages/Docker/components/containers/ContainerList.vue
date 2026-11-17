@@ -1,5 +1,8 @@
 <script setup>
 import { computed, onBeforeUnmount, ref, watch } from 'vue';
+import { useI18n } from 'vue-i18n';
+
+const { t } = useI18n();
 
 // The containers on this server: filter, select several for one action, and
 // watch live CPU/RAM. A row opens the container's details.
@@ -20,11 +23,11 @@ const usage = ref({});
 let timer = null;
 
 const filters = computed(() => [
-    { key: 'all', label: 'All', count: props.containers.length },
-    { key: 'running', label: 'Running', count: props.containers.filter((c) => c.state === 'running').length },
-    { key: 'stopped', label: 'Stopped', count: props.containers.filter((c) => c.state !== 'running').length },
-    { key: 'stacks', label: 'In stacks', count: props.containers.filter((c) => c.project).length },
-    { key: 'sites', label: 'Websites', count: props.containers.filter((c) => c.name.startsWith('dpanel-site-')).length },
+    { key: 'all', label: t('docker.containerList.filters.all'), count: props.containers.length },
+    { key: 'running', label: t('docker.containerList.filters.running'), count: props.containers.filter((c) => c.state === 'running').length },
+    { key: 'stopped', label: t('docker.containerList.filters.stopped'), count: props.containers.filter((c) => c.state !== 'running').length },
+    { key: 'stacks', label: t('docker.containerList.filters.stacks'), count: props.containers.filter((c) => c.project).length },
+    { key: 'sites', label: t('docker.containerList.filters.sites'), count: props.containers.filter((c) => c.name.startsWith('dpanel-site-')).length },
 ].filter((f) => f.key === 'all' || f.count > 0));
 
 const rows = computed(() => {
@@ -98,37 +101,37 @@ const btn = 'inline-flex items-center justify-center rounded-md border border-sl
                 </button>
             </div>
             <div class="ml-auto flex w-full items-center gap-2 sm:w-auto">
-                <label class="inline-flex shrink-0 items-center gap-1.5 text-xs text-slate-600 dark:text-slate-300" title="CPU and memory, refreshed every 5 seconds">
-                    <input v-model="live" type="checkbox" /> Live usage
+                <label class="inline-flex shrink-0 items-center gap-1.5 text-xs text-slate-600 dark:text-slate-300" :title="t('docker.containerList.liveTitle')">
+                    <input v-model="live" type="checkbox" /> {{ t('docker.containerList.live') }}
                 </label>
-                <input v-model="search" data-docker-search type="search" placeholder="Find a container  ( / )" class="w-full rounded-md border border-slate-300 px-3 py-1.5 text-sm sm:w-64 dark:border-slate-700 dark:bg-slate-800" />
+                <input v-model="search" data-docker-search type="search" :placeholder="t('docker.containerList.search')" class="w-full rounded-md border border-slate-300 px-3 py-1.5 text-sm sm:w-64 dark:border-slate-700 dark:bg-slate-800" />
             </div>
         </div>
 
         <div v-if="selected.size" class="flex flex-wrap items-center gap-2 border-b border-indigo-200 bg-indigo-50 px-4 py-2 text-sm dark:border-indigo-900 dark:bg-indigo-950/40">
-            <span class="font-medium">{{ selected.size }} selected</span>
-            <button type="button" :class="btn" :disabled="busy === 'bulk'" @click="bulk('start')"><i class="bi bi-play-fill mr-1"></i>Start</button>
-            <button type="button" :class="btn" :disabled="busy === 'bulk'" @click="bulk('stop')"><i class="bi bi-stop-fill mr-1"></i>Stop</button>
-            <button type="button" :class="btn" :disabled="busy === 'bulk'" @click="bulk('restart')"><i class="bi bi-arrow-repeat mr-1"></i>Restart</button>
-            <button type="button" :class="[btn, 'text-red-700 dark:text-red-300']" :disabled="busy === 'bulk'" @click="bulk('remove')"><i class="bi bi-trash mr-1"></i>Remove</button>
+            <span class="font-medium">{{ t('docker.containerList.selected', { count: selected.size }) }}</span>
+            <button type="button" :class="btn" :disabled="busy === 'bulk'" @click="bulk('start')"><i class="bi bi-play-fill mr-1"></i>{{ t('docker.shared.start') }}</button>
+            <button type="button" :class="btn" :disabled="busy === 'bulk'" @click="bulk('stop')"><i class="bi bi-stop-fill mr-1"></i>{{ t('docker.shared.stop') }}</button>
+            <button type="button" :class="btn" :disabled="busy === 'bulk'" @click="bulk('restart')"><i class="bi bi-arrow-repeat mr-1"></i>{{ t('docker.shared.restart') }}</button>
+            <button type="button" :class="[btn, 'text-red-700 dark:text-red-300']" :disabled="busy === 'bulk'" @click="bulk('remove')"><i class="bi bi-trash mr-1"></i>{{ t('docker.shared.remove') }}</button>
             <i v-if="busy === 'bulk'" class="bi bi-arrow-repeat inline-block animate-spin"></i>
-            <button type="button" class="ml-auto text-xs text-slate-500 hover:underline" @click="selected = new Set()">Clear</button>
+            <button type="button" class="ml-auto text-xs text-slate-500 hover:underline" @click="selected = new Set()">{{ t('docker.console.clear') }}</button>
         </div>
 
         <div v-if="rows.length" class="hidden grid-cols-[2rem_minmax(0,2fr)_minmax(0,1.5fr)_minmax(0,1.3fr)_11.5rem] gap-3 px-4 py-2 text-xs font-medium text-slate-500 md:grid">
-            <input type="checkbox" :checked="allSelected" aria-label="Select all" @change="toggleAll" />
-            <span>Name</span><span>Image</span><span>{{ live ? 'Usage' : 'Ports' }}</span><span></span>
+            <input type="checkbox" :checked="allSelected" :aria-label="t('docker.containerList.selectAll')" @change="toggleAll" />
+            <span>{{ t('docker.shared.name') }}</span><span>{{ t('docker.containerList.image') }}</span><span>{{ live ? t('docker.containerList.usage') : t('docker.containerList.ports') }}</span><span></span>
         </div>
 
         <ul class="divide-y divide-slate-100 dark:divide-slate-800">
             <li v-for="c in rows" :key="c.id" class="grid grid-cols-[2rem_minmax(0,1fr)] gap-x-3 gap-y-2 px-4 py-3 hover:bg-slate-50 md:grid-cols-[2rem_minmax(0,2fr)_minmax(0,1.5fr)_minmax(0,1.3fr)_11.5rem] md:items-center dark:hover:bg-slate-800/40">
-                <input type="checkbox" class="mt-1 md:mt-0" :checked="selected.has(c.id)" :aria-label="`Select ${c.name}`" @change="toggle(c.id)" />
+                <input type="checkbox" class="mt-1 md:mt-0" :checked="selected.has(c.id)" :aria-label="t('docker.containerList.select', { name: c.name })" @change="toggle(c.id)" />
                 <button type="button" class="min-w-0 text-left" @click="emit('open', c, 'overview')">
                     <div class="flex items-center gap-2">
                         <span class="h-2 w-2 shrink-0 rounded-full" :class="stateClass(c.state)" :title="c.state"></span>
                         <span class="truncate font-medium hover:underline">{{ c.name }}</span>
                         <span v-if="c.project" class="shrink-0 rounded bg-violet-100 px-1.5 text-[10px] text-violet-700 dark:bg-violet-900/40 dark:text-violet-300">{{ c.project }}</span>
-                        <span v-else-if="c.name.startsWith('dpanel-site-')" class="shrink-0 rounded bg-sky-100 px-1.5 text-[10px] text-sky-700 dark:bg-sky-900/40 dark:text-sky-300">website</span>
+                        <span v-else-if="c.name.startsWith('dpanel-site-')" class="shrink-0 rounded bg-sky-100 px-1.5 text-[10px] text-sky-700 dark:bg-sky-900/40 dark:text-sky-300">{{ t('docker.containerList.website') }}</span>
                     </div>
                     <div class="mt-0.5 truncate pl-4 text-xs text-slate-500">{{ c.status }}</div>
                 </button>
@@ -148,24 +151,24 @@ const btn = 'inline-flex items-center justify-center rounded-md border border-sl
                     </template>
                     <div v-else class="flex flex-wrap gap-1">
                         <span v-for="p in shortPorts(c.ports)" :key="p" class="rounded bg-slate-100 px-1.5 py-0.5 font-mono text-[11px] dark:bg-slate-800" :class="p.startsWith('0.0.0.0') ? 'text-amber-700 dark:text-amber-300' : ''">{{ p.replace('0.0.0.0:', 'public:').replace('127.0.0.1:', '') }}</span>
-                        <span v-if="!c.ports" class="text-xs text-slate-400">no ports</span>
+                        <span v-if="!c.ports" class="text-xs text-slate-400">{{ t('docker.containerList.noPorts') }}</span>
                     </div>
                 </div>
                 <div class="col-start-2 flex flex-wrap gap-1 md:col-start-auto md:justify-end">
-                    <button v-if="c.state === 'paused'" type="button" :disabled="busy === c.id" :class="btn" title="Resume" @click="emit('action', 'unpause', c)"><i class="bi bi-play"></i></button>
-                    <button v-else-if="c.state !== 'running'" type="button" :disabled="busy === c.id" :class="[btn, 'text-emerald-700 dark:text-emerald-300']" title="Start" @click="emit('action', 'start', c)"><i class="bi bi-play-fill"></i></button>
-                    <button v-else type="button" :disabled="busy === c.id" :class="btn" title="Stop" @click="emit('action', 'stop', c)"><i class="bi bi-stop-fill"></i></button>
-                    <button type="button" :disabled="busy === c.id" :class="btn" title="Restart" @click="emit('action', 'restart', c)"><i class="bi bi-arrow-repeat" :class="busy === c.id ? 'inline-block animate-spin' : ''"></i></button>
-                    <button type="button" :class="btn" title="Logs" @click="emit('open', c, 'logs')"><i class="bi bi-journal-text"></i></button>
-                    <button type="button" :class="btn" title="Console" @click="emit('open', c, 'console')"><i class="bi bi-terminal"></i></button>
-                    <button type="button" :class="btn" title="Details" @click="emit('open', c, 'overview')"><i class="bi bi-three-dots"></i></button>
+                    <button v-if="c.state === 'paused'" type="button" :disabled="busy === c.id" :class="btn" :title="t('docker.containerList.resume')" @click="emit('action', 'unpause', c)"><i class="bi bi-play"></i></button>
+                    <button v-else-if="c.state !== 'running'" type="button" :disabled="busy === c.id" :class="[btn, 'text-emerald-700 dark:text-emerald-300']" :title="t('docker.shared.start')" @click="emit('action', 'start', c)"><i class="bi bi-play-fill"></i></button>
+                    <button v-else type="button" :disabled="busy === c.id" :class="btn" :title="t('docker.shared.stop')" @click="emit('action', 'stop', c)"><i class="bi bi-stop-fill"></i></button>
+                    <button type="button" :disabled="busy === c.id" :class="btn" :title="t('docker.shared.restart')" @click="emit('action', 'restart', c)"><i class="bi bi-arrow-repeat" :class="busy === c.id ? 'inline-block animate-spin' : ''"></i></button>
+                    <button type="button" :class="btn" :title="t('docker.shared.logs')" @click="emit('open', c, 'logs')"><i class="bi bi-journal-text"></i></button>
+                    <button type="button" :class="btn" :title="t('docker.shared.console')" @click="emit('open', c, 'console')"><i class="bi bi-terminal"></i></button>
+                    <button type="button" :class="btn" :title="t('docker.shared.details')" @click="emit('open', c, 'overview')"><i class="bi bi-three-dots"></i></button>
                 </div>
             </li>
             <li v-if="!rows.length" class="px-4 py-10 text-center text-sm text-slate-500">
-                <template v-if="loading">Loading…</template>
-                <template v-else-if="search || filter !== 'all'">No container matches.</template>
+                <template v-if="loading">{{ t('common.loading') }}</template>
+                <template v-else-if="search || filter !== 'all'">{{ t('docker.containerList.noMatch') }}</template>
                 <template v-else>
-                    No containers yet.
+                    {{ t('docker.containerList.empty') }}
                     <slot name="empty" />
                 </template>
             </li>

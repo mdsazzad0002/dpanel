@@ -9,6 +9,9 @@ import IndexesPanel from '../components/IndexesPanel.vue';
 import { toShell, preview } from '../lib/mongoJson';
 import { formatBytes, formatCount, validCollectionName } from '../lib/useMongoAdmin';
 import { importDocuments, readImportFile } from '../lib/importDocuments';
+import { useI18n } from 'vue-i18n';
+
+const { t } = useI18n();
 
 // One collection, like mongo-express: new document / index, query, the
 // documents with paging, delete what matched, rename, export / import,
@@ -93,14 +96,14 @@ const statsRows = computed(() => {
     const s = stats.value;
     if (!s) return [];
     return [
-        ['Documents', formatCount(s.count)],
-        ['Avg document size', formatBytes(s.avgObjSize)],
-        ['Data size', formatBytes(s.size)],
-        ['Storage size', formatBytes(s.storageSize)],
-        ['Indexes', formatCount(s.nindexes)],
-        ['Index size', formatBytes(s.totalIndexSize)],
-        ['Capped', s.capped ? 'Yes' : 'No'],
-        ['Namespace', s.ns || `${props.db}.${props.collection}`],
+        [t('databases.mongoAdmin.stats.documents'), formatCount(s.count)],
+        [t('databases.mongoAdmin.stats.avgSize'), formatBytes(s.avgObjSize)],
+        [t('databases.mongoAdmin.stats.dataSize'), formatBytes(s.size)],
+        [t('databases.mongoAdmin.stats.storageSize'), formatBytes(s.storageSize)],
+        [t('databases.mongoAdmin.stats.indexes'), formatCount(s.nindexes)],
+        [t('databases.mongoAdmin.stats.indexSize'), formatBytes(s.totalIndexSize)],
+        [t('databases.mongoAdmin.stats.capped'), s.capped ? t('databases.mongoAdmin.stats.yes') : t('databases.mongoAdmin.stats.no')],
+        [t('databases.mongoAdmin.stats.namespace'), s.ns || `${props.db}.${props.collection}`],
     ];
 });
 
@@ -108,7 +111,7 @@ const open = (doc) => emit('go', props.db, props.collection, toShell(doc._id));
 const newDocument = () => emit('go', props.db, props.collection, 'new');
 
 const remove = async (doc) => {
-    if (!confirm(`Delete document ${preview(doc._id, 40)}? This can't be undone.`)) return;
+    if (!confirm(t('databases.mongoAdmin.document.deleteConfirm', { id: preview(doc._id, 40) }))) return;
     try {
         await props.run({ action: 'delete', db: props.db, collection: props.collection, id: doc._id }, { notify: true });
         await load();
@@ -121,8 +124,8 @@ const remove = async (doc) => {
 const deleteMatching = async () => {
     const count = total.value.toLocaleString();
     if (filtered.value) {
-        if (!confirm(`Delete all ${count} documents matching the query?`)) return;
-    } else if (prompt(`Delete ALL ${count} documents in ${props.collection}? Type the collection name to confirm.`) !== props.collection) {
+        if (!confirm(t('databases.mongoAdmin.collection.deleteMatchingConfirm', { count }))) return;
+    } else if (prompt(t('databases.mongoAdmin.collection.deleteAllPrompt', { count, collection: props.collection })) !== props.collection) {
         return;
     }
     try {
@@ -146,13 +149,13 @@ const importFile = async (event) => {
     error.value = '';
     try {
         const docs = readImportFile(await file.text());
-        importing.value = `Importing ${docs.length.toLocaleString()} documents…`;
+        importing.value = t('databases.mongoAdmin.collection.importing', { count: docs.length.toLocaleString() });
         const done = await importDocuments(props.run, props.db, props.collection, docs, (n, of) => {
-            importing.value = `Imported ${n.toLocaleString()} of ${of.toLocaleString()}…`;
+            importing.value = t('databases.mongoAdmin.collection.importProgress', { n: n.toLocaleString(), total: of.toLocaleString() });
         });
-        emit('notify', { type: 'success', text: `Imported ${done.toLocaleString()} documents.` });
+        emit('notify', { type: 'success', text: t('databases.mongoAdmin.collection.imported', { count: done.toLocaleString() }) });
     } catch (e) {
-        error.value = `Import failed: ${e.message}`;
+        error.value = t('databases.mongoAdmin.collection.importFailed', { error: e.message });
     } finally {
         importing.value = '';
         reload();
@@ -163,7 +166,7 @@ const importFile = async (event) => {
 const rename = async () => {
     const to = renameTo.value.trim();
     if (!validCollectionName(to) || to === props.collection) {
-        error.value = 'Enter a new, valid collection name.';
+        error.value = t('databases.mongoAdmin.collection.errRename');
         return;
     }
     try {
@@ -176,7 +179,7 @@ const rename = async () => {
 };
 
 const drop = async () => {
-    if (!confirm(`Drop collection ${props.db}.${props.collection} and all its documents?`)) return;
+    if (!confirm(t('databases.mongoAdmin.collection.dropConfirm', { name: `${props.db}.${props.collection}` }))) return;
     try {
         await props.run({ action: 'drop_collection', db: props.db, collection: props.collection }, { notify: true });
         emit('changed');
@@ -197,20 +200,20 @@ const tool = 'rounded-md border border-slate-300 bg-white px-3 py-1.5 text-sm ho
         <div class="flex flex-wrap items-center justify-between gap-3">
             <div class="flex items-center gap-2">
                 <h1 class="font-mono text-lg font-semibold">{{ collection }}</h1>
-                <span class="rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-medium text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300">{{ formatCount(stats?.count ?? total) }} docs</span>
-                <span v-if="readOnly" class="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-700 dark:bg-amber-900/40 dark:text-amber-300">read only</span>
+                <span class="rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-medium text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300">{{ t('databases.mongoAdmin.collection.docs', { count: formatCount(stats?.count ?? total) }) }}</span>
+                <span v-if="readOnly" class="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-700 dark:bg-amber-900/40 dark:text-amber-300">{{ t('databases.mongoAdmin.collection.readOnly') }}</span>
             </div>
             <div class="flex flex-wrap items-center gap-2">
-                <button v-if="!readOnly" type="button" class="rounded-md bg-emerald-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-emerald-700" @click="newDocument"><i class="bi bi-plus-lg"></i> New Document</button>
-                <button v-if="!readOnly" type="button" :class="tool" @click="tab = 'indexes'"><i class="bi bi-lightning"></i> New Index</button>
-                <button type="button" :class="tool" @click="exportCollection"><i class="bi bi-download"></i> Export</button>
-                <button v-if="!readOnly" type="button" :class="tool" :disabled="!!importing" @click="fileInput.click()"><i class="bi bi-upload"></i> Import</button>
+                <button v-if="!readOnly" type="button" class="rounded-md bg-emerald-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-emerald-700" @click="newDocument"><i class="bi bi-plus-lg"></i> {{ t('databases.mongoAdmin.collection.newDocument') }}</button>
+                <button v-if="!readOnly" type="button" :class="tool" @click="tab = 'indexes'"><i class="bi bi-lightning"></i> {{ t('databases.mongoAdmin.collection.newIndex') }}</button>
+                <button type="button" :class="tool" @click="exportCollection"><i class="bi bi-download"></i> {{ t('databases.mongoAdmin.collection.export') }}</button>
+                <button v-if="!readOnly" type="button" :class="tool" :disabled="!!importing" @click="fileInput.click()"><i class="bi bi-upload"></i> {{ t('databases.mongoAdmin.collection.import') }}</button>
                 <input ref="fileInput" type="file" accept=".json,.ndjson,.jsonl,application/json" class="hidden" @change="importFile" />
             </div>
         </div>
 
         <div class="inline-flex rounded-lg bg-slate-100 p-1 text-sm font-medium dark:bg-slate-950">
-            <button v-for="[name, label] in [['documents', 'Documents'], ['indexes', 'Indexes'], ['tools', 'Tools & Stats']]" :key="name" type="button" class="rounded-md px-3 py-1.5" :class="tabClass(name)" @click="tab = name">{{ label }}</button>
+            <button v-for="name in ['documents', 'indexes', 'tools']" :key="name" type="button" class="rounded-md px-3 py-1.5" :class="tabClass(name)" @click="tab = name">{{ t(`databases.mongoAdmin.collection.tab.${name}`) }}</button>
         </div>
 
         <p v-if="importing" class="rounded-md bg-sky-50 px-3 py-2 text-sm text-sky-700 dark:bg-sky-950/40 dark:text-sky-300">{{ importing }}</p>
@@ -219,13 +222,13 @@ const tool = 'rounded-md border border-slate-300 bg-white px-3 py-1.5 text-sm ho
         <template v-if="tab === 'documents'">
             <QueryPanel :collection="`${db}.${collection}`" :loading="loading" @search="search" />
 
-            <Card :title="aggregating ? 'Pipeline results' : filtered ? 'Matching documents' : 'Documents'" icon="bi bi-file-earmark-text" flush>
+            <Card :title="aggregating ? t('databases.mongoAdmin.collection.pipelineResults') : filtered ? t('databases.mongoAdmin.collection.matching') : t('databases.mongoAdmin.stats.documents')" icon="bi bi-file-earmark-text" flush>
                 <template #badge>
-                    <span v-if="loading" class="text-xs font-normal text-slate-400">Loading…</span>
+                    <span v-if="loading" class="text-xs font-normal text-slate-400">{{ t('common.loading') }}</span>
                 </template>
                 <template #actions>
                     <button v-if="!readOnly && !aggregating && total > 0" type="button" class="rounded-md border border-red-200 px-2.5 py-1 text-xs text-red-600 hover:bg-red-50 dark:border-red-900 dark:text-red-300 dark:hover:bg-red-950/40" @click="deleteMatching">
-                        <i class="bi bi-trash"></i> Delete all {{ total.toLocaleString() }} {{ filtered ? 'matching' : '' }}
+                        <i class="bi bi-trash"></i> {{ filtered ? t('databases.mongoAdmin.collection.deleteAllMatching', { count: total.toLocaleString() }) : t('databases.mongoAdmin.collection.deleteAll', { count: total.toLocaleString() }) }}
                     </button>
                     <div class="inline-flex overflow-hidden rounded-md border border-slate-300 text-xs dark:border-slate-700">
                         <button type="button" class="px-2.5 py-1" :class="view === 'table' ? 'bg-slate-800 text-white dark:bg-slate-200 dark:text-slate-900' : 'hover:bg-slate-100 dark:hover:bg-slate-800'" @click="view = 'table'"><i class="bi bi-table"></i></button>
@@ -239,30 +242,30 @@ const tool = 'rounded-md border border-slate-300 bg-white px-3 py-1.5 text-sm ho
             </Card>
         </template>
 
-        <Card v-else-if="tab === 'indexes'" title="Indexes" icon="bi bi-lightning">
+        <Card v-else-if="tab === 'indexes'" :title="t('databases.mongoAdmin.stats.indexes')" icon="bi bi-lightning">
             <IndexesPanel :db="db" :collection="collection" :read-only="readOnly" :run="run" />
         </Card>
 
         <template v-else>
             <div class="grid gap-5 lg:grid-cols-2">
-                <Card title="Tools" icon="bi bi-tools">
+                <Card :title="t('databases.mongoAdmin.collection.tools')" icon="bi bi-tools">
                     <div class="space-y-4 text-sm">
                         <div class="flex flex-wrap items-center gap-2">
-                            <button type="button" :class="tool" @click="exportCollection"><i class="bi bi-download"></i> Export JSON</button>
-                            <button v-if="!readOnly" type="button" :class="tool" @click="fileInput.click()"><i class="bi bi-upload"></i> Import JSON / NDJSON</button>
+                            <button type="button" :class="tool" @click="exportCollection"><i class="bi bi-download"></i> {{ t('databases.mongoAdmin.collection.exportJson') }}</button>
+                            <button v-if="!readOnly" type="button" :class="tool" @click="fileInput.click()"><i class="bi bi-upload"></i> {{ t('databases.mongoAdmin.collection.importJson') }}</button>
                         </div>
                         <form v-if="!readOnly" class="flex flex-wrap items-end gap-2" @submit.prevent="rename">
-                            <label class="text-xs text-slate-500">Rename collection
+                            <label class="text-xs text-slate-500">{{ t('databases.mongoAdmin.collection.renameLabel') }}
                                 <input v-model.trim="renameTo" type="text" :placeholder="collection" class="mt-1 block w-56 rounded-md border-slate-300 py-1.5 text-sm dark:border-slate-700 dark:bg-slate-900" />
                             </label>
-                            <button type="submit" :class="tool">Rename</button>
+                            <button type="submit" :class="tool">{{ t('databases.mongoAdmin.collection.rename') }}</button>
                         </form>
                         <div v-if="!readOnly" class="border-t border-slate-200 pt-4 dark:border-slate-800">
-                            <button type="button" class="rounded-md bg-red-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-red-700" @click="drop"><i class="bi bi-trash"></i> Drop collection</button>
+                            <button type="button" class="rounded-md bg-red-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-red-700" @click="drop"><i class="bi bi-trash"></i> {{ t('databases.mongoAdmin.collection.drop') }}</button>
                         </div>
                     </div>
                 </Card>
-                <StatsTable title="Collection Stats" :rows="statsRows" :error="statsError" />
+                <StatsTable :title="t('databases.mongoAdmin.collection.stats')" :rows="statsRows" :error="statsError" />
             </div>
         </template>
     </div>

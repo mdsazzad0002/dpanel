@@ -5,6 +5,9 @@ import ContactCard from './ContactCard.vue';
 import MessageActions from './MessageActions.vue';
 import { avatarColorOf, emailOf, initialsOf, nameOrEmail, sameAddress } from './mailAddresses';
 import { mailDocument } from './mailFrame';
+import { useI18n } from 'vue-i18n';
+
+const { t } = useI18n();
 
 // Another message of the open conversation, Gmail style: a one-line summary
 // that expands to the full message. The body is fetched on first expand.
@@ -29,7 +32,7 @@ const onAction = async (id) => {
     }
 };
 const menuItems = computed(() => (props.rawDownloadEndpoint
-    ? [{ id: 'download', label: 'Download message', icon: 'bi-download', href: `${props.rawDownloadEndpoint}${props.rawDownloadEndpoint.includes('?') ? '&' : '?'}${new URLSearchParams({ folder: props.item.folder, uid: String(props.item.uid) })}` }]
+    ? [{ id: 'download', label: t('email.mailbox.message.download'), icon: 'bi-download', href: `${props.rawDownloadEndpoint}${props.rawDownloadEndpoint.includes('?') ? '&' : '?'}${new URLSearchParams({ folder: props.item.folder, uid: String(props.item.uid) })}` }]
     : []));
 
 const open = ref(props.initiallyOpen);
@@ -45,7 +48,7 @@ const ui = computed(() => (props.isDark
     : { hover: 'hover:bg-slate-50', strong: 'text-slate-900', muted: 'text-slate-500', body: 'text-slate-800', divider: 'border-slate-100', icon: 'text-slate-500 hover:bg-slate-100 hover:text-slate-900' }));
 
 const fromSelf = computed(() => sameAddress(props.item.from, props.selfEmail));
-const senderLabel = computed(() => (fromSelf.value ? 'me' : nameOrEmail(props.item.from)));
+const senderLabel = computed(() => (fromSelf.value ? t('email.mailbox.message.me') : nameOrEmail(props.item.from)));
 const shortDate = computed(() => {
     const parsed = new Date(props.item.date);
     if (Number.isNaN(parsed.getTime())) return props.item.date;
@@ -68,11 +71,11 @@ const load = async () => {
             params: { folder: props.item.folder, uid: props.item.uid },
             headers: { Accept: 'application/json' },
         });
-        if (!data?.success) throw new Error(data?.message || 'Message could not be loaded.');
+        if (!data?.success) throw new Error(data?.message || t('email.mailbox.message.loadFailed'));
         message.value = data.messageData;
     }
     catch (e) {
-        error.value = e?.message || 'Message could not be loaded.';
+        error.value = e?.message || t('email.mailbox.message.loadFailed');
     }
     finally {
         loading.value = false;
@@ -129,27 +132,27 @@ onBeforeUnmount(() => observer?.disconnect());
                         @action="onAction"
                     />
                 </div>
-                <p v-if="!open" :class="[ui.muted, 'mt-0.5 truncate text-sm']">{{ item.snippet || '(no preview)' }}</p>
-                <p v-else :class="[ui.muted, 'truncate text-xs']">to {{ item.to }}</p>
+                <p v-if="!open" :class="[ui.muted, 'mt-0.5 truncate text-sm']">{{ item.snippet || t('email.mailbox.message.noPreview') }}</p>
+                <p v-else :class="[ui.muted, 'truncate text-xs']">{{ t('email.mailbox.message.to', { to: item.to }) }}</p>
             </div>
         </header>
 
         <div v-if="open" class="pb-2">
-            <p v-if="loading" :class="[ui.muted, 'py-4 pl-[68px] text-sm md:pl-[76px]']"><i class="bi bi-arrow-repeat mr-1 inline-block animate-spin"></i> Loading…</p>
-            <p v-else-if="error" class="py-3 pl-[68px] text-sm text-rose-600 md:pl-[76px]">{{ error }} <button type="button" class="ml-2 underline" @click="load">Retry</button></p>
+            <p v-if="loading" :class="[ui.muted, 'py-4 pl-[68px] text-sm md:pl-[76px]']"><i class="bi bi-arrow-repeat mr-1 inline-block animate-spin"></i> {{ t('common.loading') }}</p>
+            <p v-else-if="error" class="py-3 pl-[68px] text-sm text-rose-600 md:pl-[76px]">{{ error }} <button type="button" class="ml-2 underline" @click="load">{{ t('email.mailbox.message.retry') }}</button></p>
             <div v-else-if="srcdoc" class="pr-4 md:pl-[52px] md:pr-6">
                 <iframe
                     ref="frame"
                     :srcdoc="srcdoc"
                     sandbox="allow-same-origin allow-popups allow-popups-to-escape-sandbox"
                     referrerpolicy="no-referrer"
-                    title="Message body"
+                    :title="t('email.mailbox.message.body')"
                     class="block w-full rounded-lg border-0 bg-white"
                     :style="{ height: `${frameHeight}px` }"
                     @load="onFrameLoad"
                 ></iframe>
             </div>
-            <div v-else-if="message" :class="[ui.body, 'whitespace-pre-wrap break-words py-3 pl-[68px] pr-4 text-[15px] leading-7 md:pl-[76px] md:pr-6']">{{ plainText || 'No body available.' }}</div>
+            <div v-else-if="message" :class="[ui.body, 'whitespace-pre-wrap break-words py-3 pl-[68px] pr-4 text-[15px] leading-7 md:pl-[76px] md:pr-6']">{{ plainText || t('email.mailbox.message.noBody') }}</div>
         </div>
     </article>
 </template>

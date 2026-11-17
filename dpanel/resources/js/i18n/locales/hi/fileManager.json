@@ -1,0 +1,410 @@
+{
+    "modal": {
+        "creating": "बनाया जा रहा है...",
+        "createFile": "फ़ाइल बनाएँ",
+        "createFolder": "फ़ोल्डर बनाएँ",
+        "selectedItems": "चयनित आइटम: {count}",
+        "destinationPlaceholder": "गंतव्य फ़ोल्डर पथ (खाली = रूट)",
+        "newNamePlaceholder": "नया नाम"
+    },
+    "rename": {
+        "renaming": "नाम बदला जा रहा है...",
+        "submit": "नाम बदलें"
+    },
+    "move": {
+        "dragHint": "आप चयनित पंक्तियों को खींचकर साइडबार फ़ोल्डरों पर भी छोड़ सकते हैं।",
+        "moving": "ले जाया जा रहा है...",
+        "submit": "ले जाएँ"
+    },
+    "unzip": {
+        "archive": "आर्काइव: {path}",
+        "extractTo": "फ़ोल्डर में एक्सट्रैक्ट करें",
+        "note": "फ़ोल्डर मौजूद न हो तो बनाया जाता है। समान नाम की मौजूदा फ़ाइलें बदल दी जाती हैं।",
+        "formats": "समर्थित फ़ॉर्मैट: .zip, .tar, .tar.gz, .tgz, और एक-फ़ाइल .gz।",
+        "extracting": "एक्सट्रैक्ट हो रहा है...",
+        "submit": "आर्काइव एक्सट्रैक्ट करें"
+    },
+    "copy": {
+        "name": "कॉपी का नाम रखें",
+        "note": "मूल आइटम अपनी जगह रहता है; गंतव्य पर एक कॉपी बनाई जाती है।",
+        "copying": "कॉपी हो रहा है...",
+        "submit": "कॉपी करें"
+    },
+    "zip": {
+        "format": "आर्काइव फ़ॉर्मैट",
+        "name": "आर्काइव का नाम",
+        "creating": "आर्काइव बन रहा है...",
+        "submit": "आर्काइव बनाएँ"
+    },
+    "selection": {
+        "selected": "{count} चयनित",
+        "clear": "साफ़ करें",
+        "move": "ले जाएँ",
+        "copy": "कॉपी करें",
+        "delete": "हटाएँ"
+    },
+    "toast": {
+        "dismiss": "हटाएँ"
+    },
+    "upload": {
+        "drop": "फ़ाइलें यहाँ खींचकर छोड़ें",
+        "choose": "या अपने कंप्यूटर से चुनें",
+        "selected": "{count} फ़ाइलें चयनित",
+        "uploading": "अपलोड हो रहा है...",
+        "submit": "फ़ाइलें अपलोड करें",
+        "complete": "पूर्ण",
+        "uploadingFile": "{file} अपलोड हो रही है..."
+    },
+    "context": {
+        "openFolder": "फ़ोल्डर खोलें",
+        "openSqlite": "SQLite व्यूअर में खोलें",
+        "preview": "पूर्वावलोकन",
+        "editFile": "फ़ाइल संपादित करें",
+        "openFile": "फ़ाइल खोलें",
+        "download": "डाउनलोड करें",
+        "rename": "नाम बदलें",
+        "permissions": "अनुमतियाँ",
+        "move": "ले जाएँ",
+        "copy": "कॉपी करें",
+        "zip": "Zip बनाएँ",
+        "unzip": "आर्काइव एक्सट्रैक्ट करें",
+        "delete": "हटाएँ"
+    },
+    "trash": {
+        "intro": "हटाए गए आइटम स्थायी रूप से हटाए जाने से पहले zip करके यहाँ रखे जाते हैं।",
+        "empty": "ट्रैश खाली है।",
+        "selected": "{count} चयनित",
+        "selectAll": "सभी चुनें",
+        "deleting": "हटाया जा रहा है…",
+        "deleteForeverCount": "हमेशा के लिए हटाएँ ({count})",
+        "from": "से: /{path}",
+        "root": "(रूट)",
+        "restore": "बहाल करें",
+        "deleteForever": "हमेशा के लिए हटाएँ"
+    },
+    "perm": {
+        "presets": {
+            "owner644": "मालिक RW, अन्य R",
+            "owner755": "मालिक सब, अन्य RX",
+            "group775": "समूह लिख सकता है",
+            "world777": "सभी लिख सकते हैं",
+            "owner600": "केवल मालिक",
+            "group640": "मालिक RW, समूह R",
+            "owner700": "केवल मालिक (exec)",
+            "zero0755": "आगे शून्य"
+        },
+        "presetsTitle": "प्रीसेट",
+        "highRisk": "उच्च जोखिम",
+        "safe": "सुरक्षित",
+        "custom": "कस्टम अनुमति",
+        "customHint": "`644`, `755`, या `0777` जैसे 3 या 4 अंक उपयोग करें।",
+        "preview": "लाइव पूर्वावलोकन",
+        "symbolic": "प्रतीकात्मक",
+        "warning": "चेतावनी: यह मोड सभी के लिए लिखने योग्य या अन्यथा उच्च जोखिम वाला है। सावधानी से उपयोग करें।",
+        "recursive": "सबडायरेक्टरी और फ़ाइलों पर भी लागू करें",
+        "saving": "सहेजा जा रहा है...",
+        "saveRecursive": "सभी पर सहेजें",
+        "save": "अनुमति सहेजें"
+    },
+    "sidebar": {
+        "close": "साइडबार बंद करें",
+        "folders": "फ़ोल्डर",
+        "goToPath": "पथ पर जाएँ...",
+        "dropUp": "आइटम को एक स्तर ऊपर ले जाने के लिए यहाँ छोड़ें",
+        "up": "ऊपर की डायरेक्टरी",
+        "root": "रूट पर जाएँ"
+    },
+    "editor": {
+        "readonly": "केवल पढ़ने के लिए",
+        "saving": "सहेजा जा रहा है...",
+        "explorer": "एक्सप्लोरर",
+        "file": "फ़ाइल",
+        "folder": "फ़ोल्डर",
+        "lines": "पंक्तियाँ",
+        "tips": "सुझाव",
+        "tipSave": "सहेजने के लिए Ctrl/Cmd+S",
+        "tipFullscreen": "पूर्ण-स्क्रीन कोड संपादन उपयोग करें",
+        "tipSplit": "फ़ाइलों को ज़िम्मेदारी के अनुसार अलग रखें",
+        "unsaved": "बिना सहेजे बदलाव",
+        "saved": "सहेजा गया",
+        "lineCount": "{count} पंक्तियाँ",
+        "openFull": "पूरी फ़ाइल खोलें",
+        "modified": "बदला गया",
+        "noChanges": "कोई बदलाव नहीं"
+    },
+    "topBar": {
+        "exit": "फ़ाइल मैनेजर से बाहर निकलें",
+        "toggleSidebar": "साइडबार दिखाएँ/छिपाएँ",
+        "root": "रूट पर जाएँ",
+        "browse": "{url} ब्राउज़ करें",
+        "search": "फ़ाइलें खोजें..."
+    },
+    "table": {
+        "open": "खोलें",
+        "view": "देखें",
+        "edit": "संपादित करें",
+        "download": "डाउनलोड करें",
+        "name": "नाम",
+        "action": "कार्रवाई",
+        "type": "प्रकार",
+        "size": "आकार",
+        "perm": "अनुमति",
+        "modified": "बदला गया",
+        "calculate": "गणना करें",
+        "calculating": "गणना हो रही है…",
+        "noMatch": "कोई फ़ाइल आपकी खोज से मेल नहीं खाती",
+        "empty": "इस डायरेक्टरी में कोई फ़ाइल नहीं"
+    },
+    "switcher": {
+        "title": "वेबसाइटें बदलें या ब्राउज़ करें",
+        "search": "वेबसाइटें खोजें...",
+        "openHere": "{domain} की फ़ाइलें इस टैब में खोलें",
+        "current": "वर्तमान",
+        "openNew": "{domain} की फ़ाइलें नए टैब में खोलें",
+        "noMatch": "कोई वेबसाइट “{query}” से मेल नहीं खाती।"
+    },
+    "preview": {
+        "openNewTab": "नए टैब में खोलें",
+        "download": "डाउनलोड करें",
+        "close": "बंद करें (Esc)",
+        "failed": "इस फ़ाइल का पूर्वावलोकन नहीं हो सका।",
+        "downloadInstead": "इसके बजाय डाउनलोड करें",
+        "previous": "पिछला (←)",
+        "next": "अगला (→)"
+    },
+    "index": {
+        "headTitle": "फ़ाइल मैनेजर - {site}",
+        "dropTo": "अपलोड करने के लिए फ़ाइलें यहाँ छोड़ें",
+        "items": "{count} आइटम",
+        "openTerminal": "टर्मिनल खोलें",
+        "terminal": "टर्मिनल",
+        "closeTerminal": "टर्मिनल बंद करें",
+        "titles": {
+            "createFolder": "फ़ोल्डर बनाएँ",
+            "createFile": "फ़ाइल बनाएँ",
+            "rename": "आइटम का नाम बदलें",
+            "permissions": "अनुमतियाँ बदलें",
+            "move": "आइटम ले जाएँ",
+            "copy": "आइटम कॉपी करें",
+            "zip": "आर्काइव बनाएँ",
+            "unzip": "आर्काइव एक्सट्रैक्ट करें",
+            "trash": "ट्रैश",
+            "upload": "फ़ाइल अपलोड करें"
+        }
+    },
+    "sqlite": {
+        "closeEsc": "बंद करें (Esc)",
+        "ai": {
+            "placeholder": "AI से पूछें: जैसे इस महीने साइन अप करने वाले पिछले 10 उपयोगकर्ता / Gmail उपयोगकर्ताओं की सूची",
+            "writing": "लिखा जा रहा है…",
+            "generate": "SQL बनाएँ",
+            "hint": "SQL नीचे एडिटर में जाता है। इसे जाँचें, फिर Run दबाएँ — अपने आप कुछ नहीं चलता।"
+        },
+        "query": {
+            "run": "Run",
+            "editingHint": "Ctrl+Enter · संपादन चालू है: INSERT, UPDATE, DELETE, CREATE … वास्तव में चलते हैं",
+            "readOnlyHint": "Ctrl+Enter · केवल पढ़ना: SELECT, WITH, EXPLAIN और केवल-पढ़ने वाले PRAGMA",
+            "changed": "{count} पंक्तियाँ बदलीं",
+            "rows": "{ms} ms में {count} पंक्तियाँ",
+            "truncated": "पहली {count} दिखाई जा रही हैं"
+        },
+        "structure": {
+            "dropConfirm": "\"{table}\" से कॉलम \"{column}\" हटाएँ? इसका डेटा खो जाएगा। इसे पूर्ववत नहीं किया जा सकता।",
+            "dropped": "कॉलम {column} हटाया गया।",
+            "addColumn": "कॉलम जोड़ें",
+            "column": "कॉलम",
+            "type": "प्रकार",
+            "default": "डिफ़ॉल्ट",
+            "key": "कुंजी",
+            "actions": "कार्रवाइयाँ",
+            "generated": "जनरेटेड",
+            "edit": "संपादित करें",
+            "deleteColumn": "कॉलम हटाएँ",
+            "indexes": "इंडेक्स",
+            "createStatement": "CREATE स्टेटमेंट"
+        },
+        "column": {
+            "needDefault": "मौजूदा पंक्तियों में NOT NULL कॉलम जोड़ने के लिए SQLite को डिफ़ॉल्ट मान चाहिए।",
+            "added": "कॉलम {name} जोड़ा गया।",
+            "renamed": "कॉलम का नाम {name} किया गया।",
+            "editTitle": "कॉलम {name} संपादित करें",
+            "name": "नाम",
+            "value": "मान…",
+            "typeLabel": "प्रकार:",
+            "nullable": "nullable",
+            "defaultLabel": "डिफ़ॉल्ट",
+            "renameOnly": "SQLite केवल कॉलम का नाम वहीं बदल सकता है। उसका प्रकार या बाधाएँ बदलने के लिए SQL से टेबल फिर से बनाएँ।",
+            "sqlPreview": "चलने वाला SQL",
+            "rename": "नाम बदलें"
+        },
+        "grid": {
+            "noRows": "कोई पंक्ति नहीं।",
+            "editRow": "पंक्ति संपादित करें",
+            "deleteRow": "पंक्ति हटाएँ",
+            "dblClick": "संपादित करने के लिए डबल-क्लिक करें",
+            "clickCopy": "कॉपी करने के लिए क्लिक करें"
+        },
+        "row": {
+            "addTitle": "{table} में पंक्ति जोड़ें",
+            "editTitle": "पंक्ति {rowid} संपादित करें",
+            "emptyDefault": "खाली फ़ील्ड कॉलम का डिफ़ॉल्ट उपयोग करते हैं",
+            "undo": "इस फ़ील्ड के बदलाव पूर्ववत करें",
+            "locked": "पूरा लोड नहीं हुआ; इसे SQL से बदलें।",
+            "auto": "स्वतः",
+            "defaultPlaceholder": "डिफ़ॉल्ट: {value}",
+            "convert": "बदलें / फ़ॉर्मैट बदलें",
+            "working": "काम हो रहा है…",
+            "format": "फ़ॉर्मैट…",
+            "changed": "{count} फ़ील्ड बदले",
+            "insert": "पंक्ति डालें",
+            "save": "बदलाव सहेजें"
+        },
+        "data": {
+            "savedCell": "{column} सहेजा गया।",
+            "deleteRowsConfirm": "\"{table}\" से {count} पंक्तियाँ हटाएँ? इसे पूर्ववत नहीं किया जा सकता।",
+            "deletedRows": "{count} पंक्तियाँ हटाई गईं।",
+            "deleteRowConfirm": "\"{table}\" से पंक्ति {rowid} हटाएँ? इसे पूर्ववत नहीं किया जा सकता।",
+            "deletedRow": "पंक्ति {rowid} हटाई गई।",
+            "rowAdded": "पंक्ति जोड़ी गई (rowid {rowid})।",
+            "savedFields": "{count} फ़ील्ड सहेजे गए।",
+            "search": "सभी कॉलम में खोजें",
+            "addRow": "पंक्ति जोड़ें",
+            "deleteCount": "{count} हटाएँ",
+            "matchCount": "{count} पंक्तियाँ मेल खाती हैं",
+            "rowCount": "{count} पंक्तियाँ",
+            "perPage": "{n} / पेज",
+            "viewReadonly": "व्यू को ग्रिड में संपादित नहीं किया जा सकता — SQL टैब उपयोग करें।",
+            "noRowid": "इस टेबल में rowid नहीं है, इसलिए इसे ग्रिड में संपादित नहीं किया जा सकता — SQL टैब उपयोग करें।"
+        },
+        "viewer": {
+            "tabData": "डेटा",
+            "tabStructure": "संरचना",
+            "requestFailed": "अनुरोध विफल हुआ।",
+            "aiFailed": "AI अनुरोध विफल हुआ।",
+            "convertFailed": "रूपांतरण विफल हुआ।",
+            "editing": "संपादन",
+            "readOnly": "केवल पढ़ना",
+            "writeOn": "लिखना चालू है: बदलाव सीधे डेटाबेस फ़ाइल में जाते हैं",
+            "writeOff": "केवल पढ़ना: डेटा बदलने के लिए चालू करें",
+            "write": "लिखें",
+            "opening": "डेटाबेस खुल रहा है…",
+            "filter": "टेबल फ़िल्टर करें",
+            "noTables": "कोई टेबल नहीं।",
+            "showInternal": "sqlite_ टेबल दिखाएँ"
+        }
+    },
+    "icons": {
+        "folder": "फ़ोल्डर",
+        "file": "फ़ाइल"
+    },
+    "cells": {
+        "blob": "BLOB {bytes} बाइट",
+        "emptyBlob": "खाली blob",
+        "textCut": "टेक्स्ट {total} में से {shown} अक्षरों पर काटा गया"
+    },
+    "formats": {
+        "errors": {
+            "notNumber": "संख्या नहीं है।",
+            "notBase64": "मान्य Base64 नहीं है।",
+            "notJson": "मान्य JSON नहीं है।",
+            "notUnix": "Unix टाइमस्टैम्प नहीं है।",
+            "notDate": "तारीख नहीं है।",
+            "valueNotNumber": "\"{value}\" संख्या नहीं है।"
+        },
+        "groups": {
+            "type": "प्रकार",
+            "hash": "हैश",
+            "text": "टेक्स्ट",
+            "encode": "एन्कोड",
+            "dateId": "तारीख और ID"
+        },
+        "items": {
+            "text": "टेक्स्ट",
+            "int": "पूर्णांक",
+            "real": "दशमलव संख्या",
+            "bcrypt": "bcrypt (पासवर्ड)",
+            "argon2id": "Argon2id (पासवर्ड)",
+            "upper": "बड़े अक्षर",
+            "lower": "छोटे अक्षर",
+            "trim": "स्पेस हटाएँ",
+            "slug": "Slug",
+            "empty": "खाली स्ट्रिंग",
+            "b64e": "Base64 एन्कोड",
+            "b64d": "Base64 डिकोड",
+            "urle": "URL एन्कोड",
+            "urld": "URL डिकोड",
+            "jsonp": "JSON सुंदर",
+            "jsonm": "JSON छोटा करें",
+            "now": "अभी (YYYY-MM-DD HH:MM:SS)",
+            "nowunix": "अभी (Unix टाइमस्टैम्प)",
+            "unix2date": "Unix टाइमस्टैम्प → तारीख",
+            "date2unix": "तारीख → Unix टाइमस्टैम्प",
+            "uuid": "नया UUID v4"
+        }
+    },
+    "manager": {
+        "website": "वेबसाइट",
+        "home": "होम",
+        "pathInside": "पथ {base} के अंदर ही रहना चाहिए।",
+        "cannotEdit": "\"{filename}\" संपादित नहीं किया जा सकता। यह फ़ाइल प्रकार संपादन के लिए समर्थित नहीं है।",
+        "largeFileConfirm": "\"{name}\" का आकार {size} है। पूरी फ़ाइल लोड करने से ब्राउज़र धीमा हो सकता है। पूरी फ़ाइल खोलें?",
+        "sizeFailed": "फ़ोल्डर का आकार नहीं निकाला जा सका।",
+        "trashConfirm": "{count} आइटम ट्रैश में भेजें?",
+        "renamed": "आइटम का नाम बदला गया।",
+        "renameFailed": "आइटम का नाम नहीं बदला जा सका।",
+        "trashLoadFailed": "ट्रैश लोड नहीं हो सका।",
+        "restored": "आइटम बहाल हुए।",
+        "restoreFailed": "बहाल नहीं हो सका।",
+        "purgeOneConfirm": "यह ट्रैश आइटम स्थायी रूप से हटाएँ? इसे पूर्ववत नहीं किया जा सकता।",
+        "purged": "स्थायी रूप से हटाया गया।",
+        "deleteFailed": "हटाया नहीं जा सका।",
+        "purgeManyConfirm": "{count} आइटम स्थायी रूप से हटाएँ? इसे पूर्ववत नहीं किया जा सकता।",
+        "deleteSelectedFailed": "चयनित आइटम हटाए नहीं जा सके।",
+        "extracted": "आर्काइव सफलतापूर्वक एक्सट्रैक्ट हुआ।",
+        "extractFailed": "आर्काइव एक्सट्रैक्ट नहीं हो सका।",
+        "uploadedMany": "{count} फ़ाइलें सफलतापूर्वक अपलोड हुईं।",
+        "uploadedOne": "फ़ाइल सफलतापूर्वक अपलोड हुई।",
+        "uploadFailed": "अपलोड विफल हुआ।",
+        "cacheCleared": "प्रोजेक्ट कैश सफलतापूर्वक साफ़ हुआ।",
+        "cacheFailed": "प्रोजेक्ट कैश साफ़ नहीं हो सका।",
+        "saved": "फ़ाइल सहेजी गई।",
+        "saveFailed": "फ़ाइल सहेजी नहीं जा सकी।",
+        "owner": "मालिक",
+        "group": "समूह",
+        "world": "सभी"
+    },
+    "quick": {
+        "groups": {
+            "create": "बनाएँ",
+            "fileOps": "फ़ाइल कार्य",
+            "navigation": "नेविगेशन",
+            "danger": "ख़तरा"
+        },
+        "upload": "अपलोड",
+        "uploadHint": "इस फ़ोल्डर में फ़ाइलें जोड़ें",
+        "newFile": "नई फ़ाइल",
+        "newFileHint": "खाली फ़ाइल बनाएँ",
+        "newFolder": "नया फ़ोल्डर",
+        "newFolderHint": "डायरेक्टरी बनाएँ",
+        "permissions": "अनुमतियाँ",
+        "permissionsHint": "पहुँच मोड बदलें",
+        "download": "डाउनलोड",
+        "downloadHint": "लोकल रूप से सहेजें",
+        "zip": "Zip",
+        "zipHint": "चयन को संपीड़ित करें",
+        "extract": "एक्सट्रैक्ट",
+        "extractHint": "आर्काइव खोलें",
+        "clearing": "साफ़ हो रहा है...",
+        "clearCache": "कैश साफ़ करें",
+        "clearCacheHint": "Laravel optimize:clear चलाएँ",
+        "upLevel": "एक स्तर ऊपर",
+        "upLevelHint": "पैरेंट फ़ोल्डर पर जाएँ",
+        "hideHidden": "छिपी फ़ाइलें छिपाएँ",
+        "showHidden": "छिपी फ़ाइलें दिखाएँ",
+        "hiddenHint": "dotfiles दिखाएँ/छिपाएँ",
+        "trash": "ट्रैश",
+        "trashHint": "बहाल करें या स्थायी रूप से हटाएँ",
+        "delete": "हटाएँ",
+        "deleteHint": "चयनित आइटम हटाएँ"
+    }
+}

@@ -4,6 +4,9 @@ import axios from 'axios';
 import TableData from './TableData.vue';
 import TableStructure from './TableStructure.vue';
 import QueryPanel from './QueryPanel.vue';
+import { useI18n } from 'vue-i18n';
+
+const { t } = useI18n();
 
 const props = defineProps({
     fm: { type: Object, required: true },
@@ -22,9 +25,9 @@ const showInternal = ref(false);
 const editing = ref(false);
 
 const tables = computed(() => (schema.value?.tables || [])
-    .filter((t) => showInternal.value || !t.internal)
-    .filter((t) => !filter.value.trim() || t.name.toLowerCase().includes(filter.value.trim().toLowerCase())));
-const current = computed(() => schema.value?.tables.find((t) => t.name === selected.value) || null);
+    .filter((tbl) => showInternal.value || !tbl.internal)
+    .filter((tbl) => !filter.value.trim() || tbl.name.toLowerCase().includes(filter.value.trim().toLowerCase())));
+const current = computed(() => schema.value?.tables.find((tbl) => tbl.name === selected.value) || null);
 const quoted = (name) => `"${name.replace(/"/g, '""')}"`;
 const querySeed = computed(() => (current.value ? `SELECT * FROM ${quoted(current.value.name)} LIMIT 100` : ''));
 
@@ -38,7 +41,7 @@ async function run(action, extra = {}) {
         return data.data;
     } catch (e) {
         const errors = e.response?.data?.errors || {};
-        throw new Error(Object.values(errors)[0]?.[0] || e.response?.data?.message || 'The request failed.');
+        throw new Error(Object.values(errors)[0]?.[0] || e.response?.data?.message || t('fileManager.sqlite.viewer.requestFailed'));
     }
 }
 
@@ -52,7 +55,7 @@ async function askAi(prompt, currentSql) {
         return data.data.sql;
     } catch (e) {
         const errors = e.response?.data?.errors || {};
-        throw new Error(Object.values(errors)[0]?.[0] || e.response?.data?.message || 'The AI request failed.');
+        throw new Error(Object.values(errors)[0]?.[0] || e.response?.data?.message || t('fileManager.sqlite.viewer.aiFailed'));
     }
 }
 
@@ -66,7 +69,7 @@ async function convert(format, text) {
         return data.data.value;
     } catch (e) {
         const errors = e.response?.data?.errors || {};
-        throw new Error(Object.values(errors)[0]?.[0] || e.response?.data?.message || 'Conversion failed.');
+        throw new Error(Object.values(errors)[0]?.[0] || e.response?.data?.message || t('fileManager.sqlite.viewer.convertFailed'));
     }
 }
 
@@ -76,8 +79,8 @@ async function loadSchema({ quiet = false } = {}) {
     error.value = '';
     try {
         schema.value = await run('schema');
-        if (!selected.value || !schema.value.tables.some((t) => t.name === selected.value)) {
-            selected.value = schema.value.tables.find((t) => !t.internal)?.name || schema.value.tables[0]?.name || '';
+        if (!selected.value || !schema.value.tables.some((tbl) => tbl.name === selected.value)) {
+            selected.value = schema.value.tables.find((tbl) => !tbl.internal)?.name || schema.value.tables[0]?.name || '';
         }
         if (!selected.value) tab.value = 'sql';
     } catch (e) {
@@ -143,33 +146,33 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown));
                 <div class="min-w-0 flex-1">
                     <p class="flex items-center gap-2 truncate text-sm font-semibold text-slate-800 dark:text-slate-100">
                         <span class="truncate">{{ item.name }}</span>
-                        <span v-if="editing" class="shrink-0 rounded bg-amber-100 px-1.5 py-0.5 text-[10px] font-normal text-amber-700 dark:bg-amber-900/40 dark:text-amber-300">Editing</span>
-                        <span v-else class="shrink-0 rounded bg-sky-100 px-1.5 py-0.5 text-[10px] font-normal text-sky-700 dark:bg-sky-900/40 dark:text-sky-300">Read-only</span>
+                        <span v-if="editing" class="shrink-0 rounded bg-amber-100 px-1.5 py-0.5 text-[10px] font-normal text-amber-700 dark:bg-amber-900/40 dark:text-amber-300">{{ t('fileManager.sqlite.viewer.editing') }}</span>
+                        <span v-else class="shrink-0 rounded bg-sky-100 px-1.5 py-0.5 text-[10px] font-normal text-sky-700 dark:bg-sky-900/40 dark:text-sky-300">{{ t('fileManager.sqlite.viewer.readOnly') }}</span>
                     </p>
                     <p class="truncate text-[11px] text-slate-500">{{ item.path }}</p>
                 </div>
                 <button v-if="schema" type="button" role="switch" :aria-checked="editing" @click="toggleEditing"
                     class="flex items-center gap-2 rounded-md px-2 py-1 text-xs text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800"
-                    :title="editing ? 'Writing is on: changes go straight to the database file' : 'Read-only: turn on to change data'">
+                    :title="editing ? t('fileManager.sqlite.viewer.writeOn') : t('fileManager.sqlite.viewer.writeOff')">
                     <span class="relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors"
                         :class="editing ? 'bg-amber-500' : 'bg-slate-300 dark:bg-slate-600'">
                         <span class="inline-block h-4 w-4 rounded-full bg-white shadow transition-transform"
                             :class="editing ? 'translate-x-[18px]' : 'translate-x-0.5'"></span>
                     </span>
-                    Write
+                    {{ t('fileManager.sqlite.viewer.write') }}
                 </button>
-                <button type="button" @click="loadSchema()" :disabled="loading" title="Refresh"
+                <button type="button" @click="loadSchema()" :disabled="loading" :title="t('common.refresh')"
                     class="rounded-md p-2 text-slate-500 hover:bg-slate-100 disabled:opacity-50 dark:hover:bg-slate-800">
                     <i class="bi bi-arrow-clockwise" :class="loading ? 'inline-block animate-spin' : ''"></i>
                 </button>
-                <button type="button" @click="close" title="Close (Esc)"
+                <button type="button" @click="close" :title="t('fileManager.sqlite.closeEsc')"
                     class="rounded-md p-2 text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800">
                     <i class="bi bi-x-lg"></i>
                 </button>
             </header>
 
             <div v-if="loading && !schema" class="flex flex-1 items-center justify-center text-sm text-slate-400">
-                <i class="bi bi-arrow-repeat mr-2 inline-block animate-spin"></i> Opening database…
+                <i class="bi bi-arrow-repeat mr-2 inline-block animate-spin"></i> {{ t('fileManager.sqlite.viewer.opening') }}
             </div>
 
             <div v-else-if="error && !schema" class="m-4 rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700 dark:border-red-800 dark:bg-red-950 dark:text-red-300">
@@ -179,22 +182,22 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown));
             <div v-else-if="schema" class="flex min-h-0 flex-1 flex-col md:flex-row">
                 <nav class="flex max-h-48 shrink-0 flex-col border-b border-slate-200 md:max-h-none md:w-60 md:border-b-0 md:border-r dark:border-slate-800">
                     <div class="p-2">
-                        <input v-model="filter" type="text" placeholder="Filter tables"
+                        <input v-model="filter" type="text" :placeholder="t('fileManager.sqlite.viewer.filter')"
                             class="w-full rounded-md border border-slate-300 px-2 py-1.5 text-xs dark:border-slate-700 dark:bg-slate-900" />
                     </div>
                     <div class="min-h-0 flex-1 space-y-0.5 overflow-y-auto px-2">
-                        <button v-for="t in tables" :key="t.name" type="button" @click="pick(t.name)"
+                        <button v-for="tbl in tables" :key="tbl.name" type="button" @click="pick(tbl.name)"
                             class="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-xs"
-                            :class="selected === t.name ? 'bg-blue-600 text-white' : 'text-slate-700 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800'">
-                            <i class="bi" :class="t.type === 'view' ? 'bi-eye' : 'bi-table'"></i>
-                            <span class="min-w-0 flex-1 truncate font-mono">{{ t.name }}</span>
-                            <span v-if="t.row_count !== null" class="shrink-0 opacity-70">{{ t.row_count.toLocaleString() }}</span>
+                            :class="selected === tbl.name ? 'bg-blue-600 text-white' : 'text-slate-700 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800'">
+                            <i class="bi" :class="tbl.type === 'view' ? 'bi-eye' : 'bi-table'"></i>
+                            <span class="min-w-0 flex-1 truncate font-mono">{{ tbl.name }}</span>
+                            <span v-if="tbl.row_count !== null" class="shrink-0 opacity-70">{{ tbl.row_count.toLocaleString() }}</span>
                         </button>
-                        <p v-if="!tables.length" class="px-2 py-3 text-center text-xs text-slate-400">No tables.</p>
+                        <p v-if="!tables.length" class="px-2 py-3 text-center text-xs text-slate-400">{{ t('fileManager.sqlite.viewer.noTables') }}</p>
                     </div>
                     <div class="hidden space-y-1 border-t border-slate-200 p-3 text-[11px] text-slate-500 md:block dark:border-slate-800">
                         <label class="flex items-center gap-1.5">
-                            <input v-model="showInternal" type="checkbox" /> Show sqlite_ tables
+                            <input v-model="showInternal" type="checkbox" /> {{ t('fileManager.sqlite.viewer.showInternal') }}
                         </label>
                         <p>{{ formatBytes(schema.file_size) }} · {{ schema.journal_mode }} · {{ schema.encoding }}</p>
                         <p>SQLite {{ schema.sqlite_version }} · user_version {{ schema.user_version }}</p>
@@ -204,11 +207,11 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown));
                 <section class="flex min-h-0 min-w-0 flex-1 flex-col">
                     <div class="flex flex-wrap items-center gap-1 border-b border-slate-200 px-3 py-2 dark:border-slate-800">
                         <h2 v-if="current" class="mr-3 truncate font-mono text-sm font-semibold text-slate-800 dark:text-slate-100">{{ current.name }}</h2>
-                        <button v-for="t in [{ id: 'data', label: 'Data', icon: 'bi-grid-3x3' }, { id: 'structure', label: 'Structure', icon: 'bi-diagram-3' }, { id: 'sql', label: 'SQL', icon: 'bi-terminal' }]"
-                            :key="t.id" type="button" @click="tab = t.id" :disabled="!current && t.id !== 'sql'"
+                        <button v-for="tabItem in [{ id: 'data', label: t('fileManager.sqlite.viewer.tabData'), icon: 'bi-grid-3x3' }, { id: 'structure', label: t('fileManager.sqlite.viewer.tabStructure'), icon: 'bi-diagram-3' }, { id: 'sql', label: 'SQL', icon: 'bi-terminal' }]"
+                            :key="tabItem.id" type="button" @click="tab = tabItem.id" :disabled="!current && tabItem.id !== 'sql'"
                             class="rounded-md px-3 py-1 text-xs disabled:opacity-40"
-                            :class="tab === t.id ? 'bg-slate-900 text-white dark:bg-slate-100 dark:text-slate-900' : 'text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800'">
-                            <i class="bi" :class="t.icon"></i> {{ t.label }}
+                            :class="tab === tabItem.id ? 'bg-slate-900 text-white dark:bg-slate-100 dark:text-slate-900' : 'text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800'">
+                            <i class="bi" :class="tabItem.icon"></i> {{ tabItem.label }}
                         </button>
                     </div>
 

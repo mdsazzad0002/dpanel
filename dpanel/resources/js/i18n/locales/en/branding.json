@@ -1,0 +1,13 @@
+{
+    "title": "Branding",
+    "serverHelp": "The name, logo and colour everyone sees, unless their reseller has their own.",
+    "resellerHelp": "The name, logo and colour you and your customers see.",
+    "name": "Panel name",
+    "color": "Colour",
+    "logo": "Logo",
+    "logoHelp": "PNG, JPG or WebP, at most 512 KB.",
+    "removeLogo": "Remove logo",
+    "fallback": "Anything left empty comes from the server's branding, then dPanel's own.",
+    "save": "Save",
+    "failed": "Branding was not saved."
+}

@@ -1,5 +1,8 @@
 <script setup>
 import { computed, ref } from 'vue';
+import { useI18n } from 'vue-i18n';
+
+const { t } = useI18n();
 
 // Images on the server, which containers use them, and quick ways on from
 // each: run a container from it, pull it again for a newer build, remove it.
@@ -26,10 +29,10 @@ const all = computed(() => props.images.map((image) => {
 }));
 
 const filters = computed(() => [
-    { key: 'all', label: 'All', count: all.value.length },
-    { key: 'used', label: 'In use', count: all.value.filter((i) => i.usedBy.length).length },
-    { key: 'unused', label: 'Unused', count: all.value.filter((i) => !i.usedBy.length).length },
-    { key: 'dangling', label: 'Untagged', count: all.value.filter((i) => !i.tagged).length },
+    { key: 'all', label: t('docker.imageList.filters.all'), count: all.value.length },
+    { key: 'used', label: t('docker.imageList.filters.used'), count: all.value.filter((i) => i.usedBy.length).length },
+    { key: 'unused', label: t('docker.imageList.filters.unused'), count: all.value.filter((i) => !i.usedBy.length).length },
+    { key: 'dangling', label: t('docker.imageList.filters.dangling'), count: all.value.filter((i) => !i.tagged).length },
 ].filter((f) => f.key === 'all' || f.count > 0));
 
 const rows = computed(() => {
@@ -50,7 +53,7 @@ const btn = 'inline-flex items-center gap-1 rounded-md border border-slate-300 p
                     {{ f.label }} <span class="opacity-60">{{ f.count }}</span>
                 </button>
             </div>
-            <input v-model="search" data-docker-search type="search" placeholder="Find an image  ( / )" class="ml-auto w-full rounded-md border border-slate-300 px-3 py-1.5 text-sm sm:w-64 dark:border-slate-700 dark:bg-slate-800" />
+            <input v-model="search" data-docker-search type="search" :placeholder="t('docker.imageList.search')" class="ml-auto w-full rounded-md border border-slate-300 px-3 py-1.5 text-sm sm:w-64 dark:border-slate-700 dark:bg-slate-800" />
         </div>
 
         <ul class="divide-y divide-slate-100 dark:divide-slate-800">
@@ -63,20 +66,20 @@ const btn = 'inline-flex items-center gap-1 rounded-md border border-slate-300 p
                 </div>
                 <div class="min-w-0 basis-40 text-xs">
                     <span v-if="image.usedBy.length" class="text-slate-600 dark:text-slate-300"><i class="bi bi-box mr-1"></i>{{ image.usedBy.join(', ') }}</span>
-                    <span v-else class="text-slate-400">not used</span>
+                    <span v-else class="text-slate-400">{{ t('docker.imageList.notUsed') }}</span>
                 </div>
                 <div class="flex flex-wrap gap-1">
-                    <button v-if="image.tagged" type="button" :class="btn" title="Run a container from this image" @click="emit('run', image)"><i class="bi bi-play-fill"></i>Run</button>
-                    <button v-if="image.tagged" type="button" :class="btn" :disabled="busy === `pull:${image.label}`" title="Pull again for a newer build of this tag" @click="emit('pull', image.label)">
-                        <i class="bi bi-cloud-arrow-down" :class="busy === `pull:${image.label}` ? 'animate-pulse' : ''"></i>{{ busy === `pull:${image.label}` ? 'Pulling…' : 'Pull again' }}
+                    <button v-if="image.tagged" type="button" :class="btn" :title="t('docker.imageList.runTitle')" @click="emit('run', image)"><i class="bi bi-play-fill"></i>{{ t('docker.imageList.run') }}</button>
+                    <button v-if="image.tagged" type="button" :class="btn" :disabled="busy === `pull:${image.label}`" :title="t('docker.imageList.pullTitle')" @click="emit('pull', image.label)">
+                        <i class="bi bi-cloud-arrow-down" :class="busy === `pull:${image.label}` ? 'animate-pulse' : ''"></i>{{ busy === `pull:${image.label}` ? t('docker.shared.pulling') : t('docker.imageList.pullAgain') }}
                     </button>
-                    <button type="button" :disabled="busy === image.id" :class="[btn, 'text-red-700 dark:text-red-300']" :title="image.usedBy.length ? 'Still used by a container' : 'Remove'" @click="emit('remove', image, image.usedBy.length > 0)">
-                        <i class="bi bi-trash"></i>Remove
+                    <button type="button" :disabled="busy === image.id" :class="[btn, 'text-red-700 dark:text-red-300']" :title="image.usedBy.length ? t('docker.imageList.stillUsed') : t('docker.shared.remove')" @click="emit('remove', image, image.usedBy.length > 0)">
+                        <i class="bi bi-trash"></i>{{ t('docker.shared.remove') }}
                     </button>
                 </div>
             </li>
             <li v-if="!rows.length" class="px-4 py-10 text-center text-sm text-slate-500">
-                {{ loading ? 'Loading…' : (search || filter !== 'all' ? 'No image matches.' : 'No images yet. Pull one above.') }}
+                {{ loading ? t('common.loading') : (search || filter !== 'all' ? t('docker.imageList.noMatch') : t('docker.imageList.empty')) }}
             </li>
         </ul>
     </section>

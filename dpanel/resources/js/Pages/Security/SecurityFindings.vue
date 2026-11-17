@@ -4,6 +4,9 @@ import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
 import { Head, Link, router, usePage } from '@inertiajs/vue3';
 import axios from 'axios';
 import FindingsBulkBar from './components/FindingsBulkBar.vue';
+import { useI18n } from 'vue-i18n';
+
+const { t } = useI18n();
 
 const props = defineProps({
     findings: { type: Object, required: true },
@@ -47,7 +50,7 @@ const toggleAll = () => {
 
 const deleteSelected = async () => {
     const ids = [...selected.value];
-    if (!confirm(`Delete ${ids.length} finding${ids.length === 1 ? '' : 's'}? A problem that is still there will be reported again on the next scan.`)) return;
+    if (!confirm(ids.length === 1 ? t('security.findings.deleteOne') : t('security.findings.deleteMany', { count: ids.length }))) return;
     deleting.value = true;
     message.value = null;
     try {
@@ -62,7 +65,7 @@ const deleteSelected = async () => {
         }
         message.value = { type: 'success', text: data.message };
     } catch (e) {
-        message.value = { type: 'error', text: e.response?.data?.message || 'Could not delete the findings.' };
+        message.value = { type: 'error', text: e.response?.data?.message || t('security.findings.deleteFailed') };
     } finally {
         deleting.value = false;
     }
@@ -88,7 +91,7 @@ const setStatus = async (finding, status) => {
         const { data } = await axios.post(panelRoute('security.center.findings.status', { finding: finding.id }), { status });
         Object.assign(finding, data.finding);
     } catch (e) {
-        message.value = { type: 'error', text: e.response?.data?.message || 'Could not update the finding.' };
+        message.value = { type: 'error', text: e.response?.data?.message || t('security.findings.updateFailed') };
     } finally {
         busy.value = null;
     }
@@ -98,17 +101,17 @@ const formatDate = (value) => (value ? new Date(value).toLocaleString() : '—')
 </script>
 
 <template>
-    <Head title="Security Findings" />
+    <Head :title="t('security.findings.title')" />
 
     <AuthenticatedLayout>
         <template #header>
             <div class="flex flex-wrap items-center justify-between gap-3">
                 <div>
-                    <h1 class="text-lg font-semibold">Security Findings</h1>
-                    <p class="text-sm text-slate-500 dark:text-slate-400">{{ total }} finding(s) match the filters.</p>
+                    <h1 class="text-lg font-semibold">{{ t('security.findings.title') }}</h1>
+                    <p class="text-sm text-slate-500 dark:text-slate-400">{{ t('security.findings.matchCount', { count: total }) }}</p>
                 </div>
                 <Link :href="panelRoute('security.center')" class="rounded-md border border-slate-300 px-3 py-2 text-sm hover:bg-slate-50 dark:border-slate-700 dark:hover:bg-slate-800">
-                    Back to Security Center
+                    {{ t('security.findings.back') }}
                 </Link>
             </div>
         </template>
@@ -120,41 +123,41 @@ const formatDate = (value) => (value ? new Date(value).toLocaleString() : '—')
 
             <form class="grid gap-3 rounded-xl border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-900 md:grid-cols-3 xl:grid-cols-6 xl:items-end" @submit.prevent="applyFilters">
                 <div>
-                    <label class="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500">Status</label>
+                    <label class="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500">{{ t('security.findings.status') }}</label>
                     <select v-model="form.status" class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-800">
-                        <option value="open">Open</option>
-                        <option value="ignored">Ignored</option>
-                        <option value="resolved">Resolved</option>
-                        <option value="all">All</option>
+                        <option value="open">{{ t('security.findings.statuses.open') }}</option>
+                        <option value="ignored">{{ t('security.findings.statuses.ignored') }}</option>
+                        <option value="resolved">{{ t('security.findings.statuses.resolved') }}</option>
+                        <option value="all">{{ t('security.findings.all') }}</option>
                     </select>
                 </div>
                 <div>
-                    <label class="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500">Severity</label>
+                    <label class="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500">{{ t('security.findings.severity') }}</label>
                     <select v-model="form.severity" class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-800">
-                        <option value="">Any</option>
-                        <option v-for="severity in ['critical', 'high', 'medium', 'low', 'info']" :key="severity" :value="severity" class="capitalize">{{ severity }}</option>
+                        <option value="">{{ t('security.findings.any') }}</option>
+                        <option v-for="severity in ['critical', 'high', 'medium', 'low', 'info']" :key="severity" :value="severity" class="capitalize">{{ t(`security.common.severity.${severity}`) }}</option>
                     </select>
                 </div>
                 <div>
-                    <label class="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500">Category</label>
+                    <label class="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500">{{ t('security.findings.category') }}</label>
                     <select v-model="form.category" class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-800">
-                        <option value="">Any</option>
+                        <option value="">{{ t('security.findings.any') }}</option>
                         <option v-for="category in categories" :key="category" :value="category">{{ category }}</option>
                     </select>
                 </div>
                 <div>
-                    <label class="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500">Target</label>
+                    <label class="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500">{{ t('security.findings.target') }}</label>
                     <select v-model="form.website" class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-800">
-                        <option value="">Any</option>
-                        <option v-if="isAdmin" value="server">Server</option>
+                        <option value="">{{ t('security.findings.any') }}</option>
+                        <option v-if="isAdmin" value="server">{{ t('security.findings.server') }}</option>
                         <option v-for="website in websites" :key="website.id" :value="website.id">{{ website.domain }}</option>
                     </select>
                 </div>
                 <div>
-                    <label class="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500">Search</label>
-                    <input v-model="form.search" type="search" placeholder="Title, file or rule" class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-800">
+                    <label class="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500">{{ t('common.search') }}</label>
+                    <input v-model="form.search" type="search" :placeholder="t('security.findings.searchPlaceholder')" class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-800">
                 </div>
-                <button type="submit" class="rounded-md bg-slate-900 px-4 py-2 text-sm text-white hover:bg-slate-800 dark:bg-slate-100 dark:text-slate-900 dark:hover:bg-white">Apply</button>
+                <button type="submit" class="rounded-md bg-slate-900 px-4 py-2 text-sm text-white hover:bg-slate-800 dark:bg-slate-100 dark:text-slate-900 dark:hover:bg-white">{{ t('security.findings.apply') }}</button>
             </form>
 
             <FindingsBulkBar v-if="selected.size" :count="selected.size" :busy="deleting" @delete="deleteSelected" @clear="selected = new Set()" />
@@ -164,13 +167,13 @@ const formatDate = (value) => (value ? new Date(value).toLocaleString() : '—')
                     <thead class="bg-slate-50 dark:bg-slate-800">
                         <tr>
                             <th class="w-8 px-4 py-3">
-                                <input type="checkbox" :checked="allSelected" :disabled="!rows.length" title="Select all findings on this page" class="rounded border-slate-300 dark:border-slate-600" @change="toggleAll">
+                                <input type="checkbox" :checked="allSelected" :disabled="!rows.length" :title="t('security.findings.selectAll')" class="rounded border-slate-300 dark:border-slate-600" @change="toggleAll">
                             </th>
-                            <th class="px-4 py-3">Severity</th>
-                            <th class="px-4 py-3">Finding</th>
-                            <th class="px-4 py-3">Target</th>
-                            <th class="px-4 py-3">Last seen</th>
-                            <th class="px-4 py-3">Status</th>
+                            <th class="px-4 py-3">{{ t('security.findings.severity') }}</th>
+                            <th class="px-4 py-3">{{ t('security.findings.finding') }}</th>
+                            <th class="px-4 py-3">{{ t('security.findings.target') }}</th>
+                            <th class="px-4 py-3">{{ t('security.findings.lastSeen') }}</th>
+                            <th class="px-4 py-3">{{ t('security.findings.status') }}</th>
                             <th class="px-4 py-3"></th>
                         </tr>
                     </thead>
@@ -180,19 +183,19 @@ const formatDate = (value) => (value ? new Date(value).toLocaleString() : '—')
                                 <td class="px-4 py-3" @click.stop>
                                     <input type="checkbox" :checked="selected.has(finding.id)" class="rounded border-slate-300 dark:border-slate-600" @change="toggle(finding.id)">
                                 </td>
-                                <td class="px-4 py-3"><span class="rounded-full px-2 py-0.5 text-xs capitalize" :class="severityStyles[finding.severity]">{{ finding.severity }}</span></td>
+                                <td class="px-4 py-3"><span class="rounded-full px-2 py-0.5 text-xs capitalize" :class="severityStyles[finding.severity]">{{ t(`security.common.severity.${finding.severity}`) }}</span></td>
                                 <td class="px-4 py-3">
                                     <p class="font-medium">{{ finding.title }}</p>
                                     <p class="text-xs text-slate-500"><span class="font-mono">{{ finding.rule_id }}</span><span v-if="finding.file_path"> · {{ finding.file_path }}<span v-if="finding.line_number">:{{ finding.line_number }}</span></span></p>
                                 </td>
-                                <td class="px-4 py-3">{{ finding.website?.domain || 'Server' }}</td>
+                                <td class="px-4 py-3">{{ finding.website?.domain || t('security.findings.server') }}</td>
                                 <td class="px-4 py-3 text-xs">{{ formatDate(finding.last_seen_at) }}</td>
-                                <td class="px-4 py-3 capitalize">{{ finding.status }}</td>
+                                <td class="px-4 py-3 capitalize">{{ t(`security.findings.statuses.${finding.status}`) }}</td>
                                 <td class="px-4 py-3 text-right" @click.stop>
                                     <div class="flex justify-end gap-2">
-                                        <button v-if="finding.status !== 'ignored'" type="button" :disabled="busy === finding.id" class="rounded-md border border-slate-300 px-2 py-1 text-xs hover:bg-slate-100 disabled:opacity-50 dark:border-slate-700 dark:hover:bg-slate-800" @click="setStatus(finding, 'ignored')">Ignore</button>
-                                        <button v-if="finding.status === 'open'" type="button" :disabled="busy === finding.id" class="rounded-md border border-emerald-300 px-2 py-1 text-xs text-emerald-700 hover:bg-emerald-50 disabled:opacity-50 dark:border-emerald-700 dark:text-emerald-300" @click="setStatus(finding, 'resolved')">Mark resolved</button>
-                                        <button v-if="finding.status !== 'open'" type="button" :disabled="busy === finding.id" class="rounded-md border border-slate-300 px-2 py-1 text-xs hover:bg-slate-100 disabled:opacity-50 dark:border-slate-700 dark:hover:bg-slate-800" @click="setStatus(finding, 'open')">Reopen</button>
+                                        <button v-if="finding.status !== 'ignored'" type="button" :disabled="busy === finding.id" class="rounded-md border border-slate-300 px-2 py-1 text-xs hover:bg-slate-100 disabled:opacity-50 dark:border-slate-700 dark:hover:bg-slate-800" @click="setStatus(finding, 'ignored')">{{ t('security.findings.ignore') }}</button>
+                                        <button v-if="finding.status === 'open'" type="button" :disabled="busy === finding.id" class="rounded-md border border-emerald-300 px-2 py-1 text-xs text-emerald-700 hover:bg-emerald-50 disabled:opacity-50 dark:border-emerald-700 dark:text-emerald-300" @click="setStatus(finding, 'resolved')">{{ t('security.findings.markResolved') }}</button>
+                                        <button v-if="finding.status !== 'open'" type="button" :disabled="busy === finding.id" class="rounded-md border border-slate-300 px-2 py-1 text-xs hover:bg-slate-100 disabled:opacity-50 dark:border-slate-700 dark:hover:bg-slate-800" @click="setStatus(finding, 'open')">{{ t('security.findings.reopen') }}</button>
                                     </div>
                                 </td>
                             </tr>
@@ -200,16 +203,16 @@ const formatDate = (value) => (value ? new Date(value).toLocaleString() : '—')
                                 <td colspan="7" class="px-4 py-3 text-sm">
                                     <p>{{ finding.description }}</p>
                                     <pre v-if="finding.evidence" class="mt-2 overflow-x-auto rounded-md bg-slate-900 p-3 text-xs text-slate-100">{{ finding.evidence }}</pre>
-                                    <p v-if="finding.recommendation" class="mt-2"><span class="font-semibold">Recommendation:</span> {{ finding.recommendation }}</p>
+                                    <p v-if="finding.recommendation" class="mt-2"><span class="font-semibold">{{ t('security.findings.recommendation') }}</span> {{ finding.recommendation }}</p>
                                     <p class="mt-2 text-xs text-slate-500">
-                                        First seen {{ formatDate(finding.first_seen_at) }}
-                                        <span v-if="finding.auto_fix_available"> · Auto-fix will be available in a later release.</span>
+                                        {{ t('security.findings.firstSeen', { date: formatDate(finding.first_seen_at) }) }}
+                                        <span v-if="finding.auto_fix_available"> · {{ t('security.findings.autoFix') }}</span>
                                     </p>
                                 </td>
                             </tr>
                         </template>
                         <tr v-if="rows.length === 0">
-                            <td colspan="7" class="px-4 py-6 text-center text-slate-500">No findings match these filters.</td>
+                            <td colspan="7" class="px-4 py-6 text-center text-slate-500">{{ t('security.findings.empty') }}</td>
                         </tr>
                     </tbody>
                 </table>

@@ -1,6 +1,9 @@
 <script setup>
 import { Link, router } from '@inertiajs/vue3';
 import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue';
+import { useI18n } from 'vue-i18n';
+
+const { t } = useI18n();
 
 const props = defineProps({
     fm: {
@@ -57,8 +60,8 @@ onBeforeUnmount(() => document.removeEventListener('pointerdown', onDocumentPoin
             type="button"
             class="flex h-7 items-center gap-1 rounded-md px-1.5 text-slate-400 transition hover:bg-slate-100 hover:text-sky-600 dark:hover:bg-slate-800 dark:hover:text-sky-400"
             :class="open ? 'bg-slate-100 text-sky-600 dark:bg-slate-800 dark:text-sky-400' : ''"
-            title="Switch or browse websites"
-            aria-label="Switch or browse websites"
+            :title="t('fileManager.switcher.title')"
+            :aria-label="t('fileManager.switcher.title')"
             aria-haspopup="true"
             :aria-expanded="open"
             @click="toggle"
@@ -79,7 +82,7 @@ onBeforeUnmount(() => document.removeEventListener('pointerdown', onDocumentPoin
                         v-model="query"
                         type="text"
                         class="w-full rounded-lg border border-slate-200 bg-white py-1.5 pl-7 pr-2 text-xs outline-none transition focus:border-sky-400 focus:ring-2 focus:ring-sky-400/15 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200"
-                        placeholder="Search websites..."
+                        :placeholder="t('fileManager.switcher.search')"
                         @keydown.enter.prevent="switchTo(filteredSites[0])"
                     >
                 </div>
@@ -90,12 +93,12 @@ onBeforeUnmount(() => document.removeEventListener('pointerdown', onDocumentPoin
                         :href="fileManagerUrl(site)"
                         class="flex min-w-0 flex-1 items-center gap-2 px-3 py-2 text-left text-xs transition hover:bg-slate-100 dark:hover:bg-slate-800"
                         :class="String(site.id) === currentId ? 'pointer-events-none' : ''"
-                        :title="`Open ${site.domain} files in this tab`"
+                        :title="t('fileManager.switcher.openHere', { domain: site.domain })"
                         @click="close"
                     >
                         <i class="bi bi-folder2-open shrink-0 text-amber-500"></i>
                         <span class="min-w-0 flex-1 truncate font-medium text-slate-700 dark:text-slate-200">{{ site.domain }}</span>
-                        <span v-if="String(site.id) === currentId" class="shrink-0 rounded-full bg-sky-50 px-1.5 py-0.5 text-[10px] font-medium text-sky-600 dark:bg-sky-900/30 dark:text-sky-400">current</span>
+                        <span v-if="String(site.id) === currentId" class="shrink-0 rounded-full bg-sky-50 px-1.5 py-0.5 text-[10px] font-medium text-sky-600 dark:bg-sky-900/30 dark:text-sky-400">{{ t('fileManager.switcher.current') }}</span>
                         <span v-else-if="site.type && site.type !== 'primary'" class="shrink-0 rounded-full bg-slate-100 px-1.5 py-0.5 text-[10px] text-slate-500 dark:bg-slate-800 dark:text-slate-400">{{ site.type }}</span>
                     </Link>
                     <a
@@ -103,8 +106,8 @@ onBeforeUnmount(() => document.removeEventListener('pointerdown', onDocumentPoin
                         target="_blank"
                         rel="noopener noreferrer"
                         class="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-slate-400 opacity-0 transition hover:bg-slate-100 hover:text-sky-600 focus:opacity-100 group-hover:opacity-100 dark:hover:bg-slate-800 dark:hover:text-sky-400"
-                        :title="`Open ${site.domain} files in a new tab`"
-                        :aria-label="`Open ${site.domain} files in a new tab`"
+                        :title="t('fileManager.switcher.openNew', { domain: site.domain })"
+                        :aria-label="t('fileManager.switcher.openNew', { domain: site.domain })"
                         @click="close"
                     >
                         <i class="bi bi-box-arrow-up-right text-[11px]"></i>
@@ -115,14 +118,14 @@ onBeforeUnmount(() => document.removeEventListener('pointerdown', onDocumentPoin
                         target="_blank"
                         rel="noopener noreferrer"
                         class="mr-1 flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-slate-400 opacity-0 transition hover:bg-emerald-50 hover:text-emerald-600 focus:opacity-100 group-hover:opacity-100 dark:hover:bg-emerald-900/20 dark:hover:text-emerald-400"
-                        :title="`Browse ${site.url}`"
-                        :aria-label="`Browse ${site.url}`"
+                        :title="t('fileManager.topBar.browse', { url: site.url })"
+                        :aria-label="t('fileManager.topBar.browse', { url: site.url })"
                         @click="close"
                     >
                         <i class="bi bi-globe2 text-[11px]"></i>
                     </a>
                 </li>
-                <li v-if="!filteredSites.length" class="px-3 py-3 text-center text-xs text-slate-500 dark:text-slate-400">No websites match “{{ query }}”.</li>
+                <li v-if="!filteredSites.length" class="px-3 py-3 text-center text-xs text-slate-500 dark:text-slate-400">{{ t('fileManager.switcher.noMatch', { query }) }}</li>
             </ul>
         </div>
     </div>

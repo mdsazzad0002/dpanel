@@ -5,6 +5,9 @@ import InputLabel from '@/Components/InputLabel.vue';
 import PrimaryButton from '@/Components/PrimaryButton.vue';
 import TextInput from '@/Components/TextInput.vue';
 import { Head, useForm } from '@inertiajs/vue3';
+import { useI18n } from 'vue-i18n';
+
+const { t } = useI18n();
 
 const form = useForm({
     password: '',
@@ -19,29 +22,29 @@ const submit = () => {
 
 <template>
     <GuestLayout>
-        <Head title="Confirm Password" />
+        <Head :title="t('auth.confirm.headTitle')" />
 
         <div class="space-y-6">
             <div class="space-y-2">
                 <p class="font-mono text-xs uppercase tracking-[0.32em] text-emerald-300/80">
-                    Security check
+                    {{ t('auth.confirm.eyebrow') }}
                 </p>
                 <h2 class="text-2xl font-semibold tracking-tight text-slate-50">
-                    Confirm password
+                    {{ t('auth.confirm.title') }}
                 </h2>
                 <p class="text-sm leading-6 text-slate-300">
-                    Please confirm your password before continuing.
+                    {{ t('auth.confirm.subtitle') }}
                 </p>
             </div>
 
             <div class="text-sm leading-6 text-slate-300">
-                This is a secure area of the application and we need to verify your identity first.
+                {{ t('auth.confirm.intro') }}
             </div>
         </div>
 
         <form class="mt-6 space-y-5" @submit.prevent="submit">
             <div>
-                <InputLabel for="password" value="Password" class="text-slate-200" />
+                <InputLabel for="password" :value="t('auth.confirm.password')" class="text-slate-200" />
                 <TextInput
                     id="password"
                     type="password"
@@ -60,7 +63,7 @@ const submit = () => {
                     :class="{ 'opacity-25': form.processing }"
                     :disabled="form.processing"
                 >
-                    Confirm
+                    {{ t('auth.confirm.submit') }}
                 </PrimaryButton>
             </div>
         </form>

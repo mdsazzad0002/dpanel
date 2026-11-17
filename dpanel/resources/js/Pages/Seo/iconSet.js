@@ -2,31 +2,39 @@
 // the browser: canvas does the resizing (and SVG and any script for text),
 // so the server only stores the finished files when asked to install them.
 
+import { i18n } from '@/i18n';
+
+const t = (...args) => i18n.global.t(...args);
+
 // Every generated image: who uses it and how it is drawn.
 //   opaque: filled with the background color (iOS shows transparency as black)
 //   maskable: logo kept inside the safe zone Android crops to a circle/squircle
 export const IMAGES = [
-    { name: 'favicon.ico', group: 'favicon', sizes: [16, 32, 48], width: 48, height: 48, use: 'Browsers, Bing and Yandex request it at the site root' },
-    { name: 'favicon.svg', group: 'favicon', vectorOnly: true, use: 'Modern browsers; sharp at every size' },
-    { name: 'favicon-16x16.png', group: 'favicon', width: 16, height: 16, use: 'Browser tabs' },
-    { name: 'favicon-32x32.png', group: 'favicon', width: 32, height: 32, use: 'Tabs on high-DPI screens, taskbar, bookmarks' },
-    { name: 'favicon-48x48.png', group: 'favicon', width: 48, height: 48, use: 'Google search results (minimum size)' },
-    { name: 'favicon-96x96.png', group: 'favicon', width: 96, height: 96, use: 'Google search results (sharp), desktop shortcuts' },
-    { name: 'apple-touch-icon.png', group: 'apple', width: 180, height: 180, opaque: true, use: 'iPhone and iPad home screen, Safari' },
-    { name: 'android-chrome-192x192.png', group: 'pwa', width: 192, height: 192, use: 'Android home screen, PWA install prompt' },
-    { name: 'android-chrome-512x512.png', group: 'pwa', width: 512, height: 512, use: 'PWA splash screen, app listings' },
-    { name: 'maskable-icon-192x192.png', group: 'pwa', width: 192, height: 192, opaque: true, maskable: true, use: 'Android adaptive icon (cropped to circle or squircle)' },
-    { name: 'maskable-icon-512x512.png', group: 'pwa', width: 512, height: 512, opaque: true, maskable: true, use: 'Android adaptive icon, large' },
-    { name: 'mstile-150x150.png', group: 'windows', width: 150, height: 150, use: 'Windows Start menu tile' },
-    { name: 'og-image.png', group: 'social', width: 1200, height: 630, use: 'Facebook, X, LinkedIn, WhatsApp link previews' },
-];
+    { name: 'favicon.ico', group: 'favicon', sizes: [16, 32, 48], width: 48, height: 48 },
+    { name: 'favicon.svg', group: 'favicon', vectorOnly: true },
+    { name: 'favicon-16x16.png', group: 'favicon', width: 16, height: 16 },
+    { name: 'favicon-32x32.png', group: 'favicon', width: 32, height: 32 },
+    { name: 'favicon-48x48.png', group: 'favicon', width: 48, height: 48 },
+    { name: 'favicon-96x96.png', group: 'favicon', width: 96, height: 96 },
+    { name: 'apple-touch-icon.png', group: 'apple', width: 180, height: 180, opaque: true },
+    { name: 'android-chrome-192x192.png', group: 'pwa', width: 192, height: 192 },
+    { name: 'android-chrome-512x512.png', group: 'pwa', width: 512, height: 512 },
+    { name: 'maskable-icon-192x192.png', group: 'pwa', width: 192, height: 192, opaque: true, maskable: true },
+    { name: 'maskable-icon-512x512.png', group: 'pwa', width: 512, height: 512, opaque: true, maskable: true },
+    { name: 'mstile-150x150.png', group: 'windows', width: 150, height: 150 },
+    { name: 'og-image.png', group: 'social', width: 1200, height: 630 },
+].map((image) => ({
+    ...image,
+    // Who uses it, in the panel language (seo.icons.use.<file name with _>).
+    get use() { return t(`seo.icons.use.${image.name.replace(/[^a-z0-9]/gi, '_')}`); },
+}));
 
 export const GROUPS = {
-    favicon: 'Favicons',
-    apple: 'Apple touch icon',
-    pwa: 'PWA (Android) + manifest',
-    windows: 'Windows tile',
-    social: 'Share image (Open Graph)',
+    get favicon() { return t('seo.icons.groups.favicon'); },
+    get apple() { return t('seo.icons.groups.apple'); },
+    get pwa() { return t('seo.icons.groups.pwa'); },
+    get windows() { return t('seo.icons.groups.windows'); },
+    get social() { return t('seo.icons.groups.social'); },
 };
 
 const MASTER_SIZE = 2048;
@@ -41,7 +49,7 @@ const canvas = (width, height) => {
 const loadImage = (url) => new Promise((resolve, reject) => {
     const img = new Image();
     img.onload = () => resolve(img);
-    img.onerror = () => reject(new Error('This file could not be read as an image.'));
+    img.onerror = () => reject(new Error(t('seo.icons.notImage')));
     img.src = url;
 });
 
@@ -58,7 +66,7 @@ export async function loadSource(file, { trim = true } = {}) {
         svgText = await file.text();
         const doc = new DOMParser().parseFromString(svgText, 'image/svg+xml');
         const svg = doc.documentElement;
-        if (svg.nodeName.toLowerCase() !== 'svg') throw new Error('This SVG file has no <svg> root element.');
+        if (svg.nodeName.toLowerCase() !== 'svg') throw new Error(t('seo.icons.noSvgRoot'));
         const box = (svg.getAttribute('viewBox') || '').split(/[\s,]+/).map(Number);
         const ratio = box.length === 4 && box[2] > 0 && box[3] > 0 ? box[2] / box[3] : 1;
         svg.setAttribute('width', String(ratio >= 1 ? MASTER_SIZE : Math.round(MASTER_SIZE * ratio)));

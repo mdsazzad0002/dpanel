@@ -1,6 +1,9 @@
 import { computed, reactive, ref } from 'vue';
 import { usePage } from '@inertiajs/vue3';
 import axios from 'axios';
+import { i18n } from '@/i18n';
+
+const t = (...args) => i18n.global.t(...args);
 
 /** Filters, events, map points and actions for the Login Audit page. */
 export function useLoginAudit() {
@@ -37,7 +40,7 @@ export function useLoginAudit() {
             stats.value = list.data.stats;
             points.value = map.data.data;
         } catch (e) {
-            error.value = e.response?.data?.message || 'Could not load the login history.';
+            error.value = e.response?.data?.message || t('security.loginAudit.actions.loadFailed');
         } finally {
             loading.value = false;
         }
@@ -61,7 +64,7 @@ export function useLoginAudit() {
             message.value = { type: 'success', text: data.message };
             return true;
         } catch (e) {
-            message.value = { type: 'error', text: e.response?.data?.message || 'The request failed.' };
+            message.value = { type: 'error', text: e.response?.data?.message || t('security.loginAudit.actions.requestFailed') };
             return false;
         } finally {
             busy.value = '';
@@ -82,7 +85,7 @@ export function useLoginAudit() {
             message.value = { type: 'success', text: data.message };
             return data.modes;
         } catch (e) {
-            message.value = { type: 'error', text: e.response?.data?.message || 'Could not save the setting.' };
+            message.value = { type: 'error', text: e.response?.data?.message || t('security.loginAudit.actions.saveFailed') };
             return null;
         } finally {
             busy.value = '';

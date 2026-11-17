@@ -1,0 +1,78 @@
+{
+    "enforcement": {
+        "disk": "超出磁盘限制",
+        "report": "报告：仅通知",
+        "enforce": "强制：服务器拒绝继续写入",
+        "diskHelp": "强制模式需要站点文件系统启用用户配额。磁盘用量每小时检查一次。",
+        "bandwidth": "超出月度带宽限制",
+        "notify": "仅通知",
+        "block": "阻止：网站显示 503 页面直到月底",
+        "bandwidthHelp": "0 GB 表示无限制。用量在每月第一天重置。",
+        "emailsHour": "每小时邮件数",
+        "emailsDay": "每天邮件数",
+        "cpu": "CPU 限制（%）",
+        "memory": "内存限制（MB）",
+        "processes": "进程限制",
+        "phpHelp": "作用于该账户网站的 PHP，所有站点合计。100% CPU 即一个完整核心；0 表示无限制。设置限制后，该账户的 PHP 在独立的 PHP-FPM 中运行，因此不会拖慢其他账户。需要带 systemd 的 Linux 服务器；五分钟内生效。",
+        "mailHelp": "该账户邮箱和网站的外发邮件，每个收件人计一次。0 表示无限制。超出限制后，邮件会被暂缓直到当前小时或当天结束（网站邮件在队列中等待，邮件客户端会被要求稍后重试），并通知该账户。需要 Rspamd 模块。"
+    },
+    "create": {
+        "title": "创建资源套餐",
+        "subtitle": "为域名用户设置硬性资源限制。",
+        "namePh": "例如 Basic、Pro、Enterprise",
+        "submit": "创建套餐"
+    },
+    "form": {
+        "name": "套餐名称",
+        "storage": "最大存储（MB）",
+        "mailboxes": "最大邮箱数",
+        "websites": "最大网站数",
+        "databases": "最大数据库数",
+        "bandwidth": "带宽限制（GB）",
+        "sortOrder": "排序",
+        "features": "功能",
+        "forwarding": "允许邮件转发",
+        "aliases": "允许别名",
+        "priority": "优先支持",
+        "back": "返回套餐"
+    },
+    "edit": {
+        "headTitle": "编辑套餐 - {name}",
+        "title": "编辑套餐：{name}",
+        "subtitle": "更新应用于已分配域名用户的硬性限制。",
+        "usage": "当前用量",
+        "mailboxes": "邮箱：",
+        "unlimited": "无限制",
+        "storageUsed": "已用存储：",
+        "submit": "更新套餐"
+    },
+    "list": {
+        "deleteConfirm": "删除此套餐？它不能有已分配的用户或邮箱。",
+        "unlimited": "无限制",
+        "title": "资源套餐",
+        "subtitle": "管理分配给域名用户的硬性配额。",
+        "manageUsers": "管理用户",
+        "create": "创建套餐",
+        "th": {
+            "package": "套餐",
+            "owner": "所有者",
+            "storage": "存储",
+            "mailboxes": "邮箱",
+            "features": "功能",
+            "usage": "用量",
+            "actions": "操作"
+        },
+        "admin": "管理员",
+        "nMailboxes": "{n} 个邮箱",
+        "sitesDbs": "{sites} 个网站 · {dbs} 个数据库",
+        "bandwidth": "{n} GB 带宽",
+        "forwarding": "转发",
+        "aliases": "别名",
+        "priority": "优先支持",
+        "used": "已用 {size}",
+        "assigned": "{n} 个已分配用户",
+        "edit": "编辑",
+        "delete": "删除",
+        "empty": "未找到套餐。创建一个开始使用。"
+    }
+}

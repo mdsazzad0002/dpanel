@@ -1,5 +1,8 @@
 <script setup>
 import { nextTick, ref, watch } from 'vue';
+import { useI18n } from 'vue-i18n';
+
+const { t } = useI18n();
 
 // Runs one command at a time inside the container (`sh -c`), like a terminal
 // without interactive programs. ↑/↓ walk the history; each run is logged.
@@ -20,12 +23,12 @@ const box = ref(null);
 const input = ref(null);
 
 const quick = [
-    { label: 'Files', cmd: 'ls -la' },
-    { label: 'Variables', cmd: 'env | sort' },
-    { label: 'Processes', cmd: 'ps aux 2>/dev/null || ps' },
-    { label: 'Disk', cmd: 'df -h' },
-    { label: 'OS', cmd: 'cat /etc/os-release' },
-    { label: 'Network', cmd: 'cat /etc/hosts; (ip addr 2>/dev/null || ifconfig 2>/dev/null)' },
+    { get label() { return t('docker.console.quick.files'); }, cmd: 'ls -la' },
+    { get label() { return t('docker.console.quick.variables'); }, cmd: 'env | sort' },
+    { get label() { return t('docker.console.quick.processes'); }, cmd: 'ps aux 2>/dev/null || ps' },
+    { get label() { return t('docker.console.quick.disk'); }, cmd: 'df -h' },
+    { get label() { return t('docker.console.quick.os'); }, cmd: 'cat /etc/os-release' },
+    { get label() { return t('docker.console.quick.network'); }, cmd: 'cat /etc/hosts; (ip addr 2>/dev/null || ifconfig 2>/dev/null)' },
 ];
 
 watch(() => props.container?.id, () => {
@@ -79,32 +82,32 @@ const field = 'rounded-md border border-slate-300 px-2 py-1 text-xs dark:border-
 <template>
     <div class="space-y-2">
         <div v-if="container.state !== 'running'" class="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800 dark:border-amber-900 dark:bg-amber-950/40 dark:text-amber-200">
-            The container is {{ container.state }}. Start it to run commands inside it.
+            {{ t('docker.console.notRunning', { state: container.state }) }}
         </div>
         <div class="flex flex-wrap items-center gap-1">
-            <span class="mr-1 text-xs text-slate-500">Quick:</span>
+            <span class="mr-1 text-xs text-slate-500">{{ t('docker.console.quickLabel') }}</span>
             <button v-for="q in quick" :key="q.label" type="button" :disabled="running || container.state !== 'running'" class="rounded-full border border-slate-300 px-2.5 py-0.5 text-xs hover:bg-slate-100 disabled:opacity-50 dark:border-slate-700 dark:hover:bg-slate-800" @click="run(q.cmd)">{{ q.label }}</button>
-            <button v-if="entries.length" type="button" class="ml-auto text-xs text-slate-500 hover:underline" @click="entries = []">Clear</button>
+            <button v-if="entries.length" type="button" class="ml-auto text-xs text-slate-500 hover:underline" @click="entries = []">{{ t('docker.console.clear') }}</button>
         </div>
         <div ref="box" class="max-h-[50vh] min-h-[12rem] overflow-auto rounded-md bg-slate-950 p-3 font-mono text-xs text-slate-100" @click="input?.focus()">
-            <p v-if="!entries.length" class="text-slate-400">Type a command below and press Enter. Programs that wait for input (top, vim, a shell) do not work here; commands stop after one minute.</p>
+            <p v-if="!entries.length" class="text-slate-400">{{ t('docker.console.help') }}</p>
             <div v-for="(entry, i) in entries" :key="i" class="mb-3">
                 <div class="text-emerald-400"><span class="select-none text-slate-500">{{ container.name }} $ </span>{{ entry.cmd }}</div>
                 <pre v-if="entry.output" class="whitespace-pre-wrap break-all">{{ entry.output }}</pre>
                 <div v-if="entry.error" class="text-red-300">{{ entry.error }}</div>
-                <div v-else-if="entry.timedOut" class="text-amber-300">Stopped after one minute.</div>
-                <div v-else-if="entry.code !== null && entry.code !== 0" class="text-amber-300">exit code {{ entry.code }}</div>
-                <div v-else-if="entry.code === null" class="text-slate-400">running…</div>
+                <div v-else-if="entry.timedOut" class="text-amber-300">{{ t('docker.console.timedOut') }}</div>
+                <div v-else-if="entry.code !== null && entry.code !== 0" class="text-amber-300">{{ t('docker.console.exitCode', { code: entry.code }) }}</div>
+                <div v-else-if="entry.code === null" class="text-slate-400">{{ t('docker.console.running') }}</div>
             </div>
         </div>
         <form class="flex gap-2" @submit.prevent="run()">
             <input ref="input" v-model="command" type="text" :disabled="container.state !== 'running'" placeholder="ls -la /app" autocomplete="off" spellcheck="false" class="min-w-0 flex-1 rounded-md border border-slate-300 px-3 py-2 font-mono text-sm dark:border-slate-700 dark:bg-slate-800" @keydown="onKey" />
-            <button type="submit" :disabled="running || !command.trim()" class="rounded-md bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-700 disabled:opacity-40 dark:bg-slate-100 dark:text-slate-900">{{ running ? 'Running…' : 'Run' }}</button>
+            <button type="submit" :disabled="running || !command.trim()" class="rounded-md bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-700 disabled:opacity-40 dark:bg-slate-100 dark:text-slate-900">{{ running ? t('docker.console.runningBtn') : t('docker.console.run') }}</button>
         </form>
         <details class="text-xs text-slate-500">
-            <summary class="cursor-pointer">Run as another user or in another folder</summary>
+            <summary class="cursor-pointer">{{ t('docker.console.advanced') }}</summary>
             <div class="mt-2 flex flex-wrap gap-2">
-                <input v-model="user" type="text" placeholder="user (e.g. www-data)" :class="field" />
+                <input v-model="user" type="text" :placeholder="t('docker.console.user')" :class="field" />
                 <input v-model="workdir" type="text" placeholder="/folder" :class="field" />
             </div>
         </details>

@@ -2,6 +2,9 @@
 import { computed, ref } from 'vue';
 import { Head, Link, router, usePage } from '@inertiajs/vue3';
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
+import { useI18n } from 'vue-i18n';
+
+const { t } = useI18n();
 
 const props = defineProps({
     notifications: { type: Object, required: true },
@@ -59,7 +62,7 @@ const markAllAsRead = async () => {
 };
 
 const clearAll = async () => {
-    if (!confirm('Clear all notifications? This cannot be undone.')) return;
+    if (!confirm(t('notifications.index.clearConfirm'))) return;
     busy.value = true;
     try {
         await window.axios.delete(panelRoute('notifications.clear'));
@@ -71,13 +74,13 @@ const clearAll = async () => {
 </script>
 
 <template>
-    <Head title="Notifications" />
+    <Head :title="t('notifications.index.title')" />
     <AuthenticatedLayout>
         <template #header>
             <div class="flex flex-wrap items-center justify-between gap-3">
                 <div>
-                    <h1 class="text-lg font-semibold">Notifications</h1>
-                    <p class="text-sm text-slate-500">{{ unreadCount }} unread</p>
+                    <h1 class="text-lg font-semibold">{{ t('notifications.index.title') }}</h1>
+                    <p class="text-sm text-slate-500">{{ t('notifications.index.unread', { count: unreadCount }) }}</p>
                 </div>
                 <div class="flex items-center gap-2">
                     <button
@@ -86,7 +89,7 @@ const clearAll = async () => {
                         class="rounded-lg border px-3 py-1.5 text-sm text-slate-600 hover:bg-slate-50 disabled:opacity-50 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800"
                         @click="markAllAsRead"
                     >
-                        Mark all read
+                        {{ t('notifications.index.markAll') }}
                     </button>
                     <button
                         type="button"
@@ -94,7 +97,7 @@ const clearAll = async () => {
                         class="rounded-lg border px-3 py-1.5 text-sm text-slate-600 hover:bg-slate-50 disabled:opacity-50 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800"
                         @click="clearAll"
                     >
-                        Clear all
+                        {{ t('notifications.index.clearAll') }}
                     </button>
                 </div>
             </div>
@@ -123,14 +126,14 @@ const clearAll = async () => {
                                     class="rounded-md border border-slate-300 px-2 py-1 text-[11px] font-medium text-slate-700 hover:bg-slate-100 dark:border-slate-600 dark:text-slate-200 dark:hover:bg-slate-700"
                                     @click="copyNotificationLink(notification, $event)"
                                 >
-                                    <i class="bi bi-clipboard mr-1"></i>Copy
+                                    <i class="bi bi-clipboard mr-1"></i>{{ t('notifications.index.copy') }}
                                 </button>
                                 <button
                                     type="button"
                                     class="rounded-md bg-violet-600 px-2 py-1 text-[11px] font-semibold text-white hover:bg-violet-700"
                                     @click="downloadNotification(notification, $event)"
                                 >
-                                    <i class="bi bi-download mr-1"></i>Download
+                                    <i class="bi bi-download mr-1"></i>{{ t('notifications.show.download') }}
                                 </button>
                             </div>
                         </div>
@@ -139,7 +142,7 @@ const clearAll = async () => {
                 </template>
                 <div v-else class="px-4 py-14 text-center">
                     <i class="bi bi-bell-slash text-3xl text-slate-300 dark:text-slate-600"></i>
-                    <p class="mt-2 text-sm text-slate-500 dark:text-slate-400">No notifications</p>
+                    <p class="mt-2 text-sm text-slate-500 dark:text-slate-400">{{ t('notifications.index.empty') }}</p>
                 </div>
             </section>
 

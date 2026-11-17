@@ -3,18 +3,19 @@
  * only on HTTPS (and localhost); some, or some settings, allow it on HTTP
  * too, so we always let the browser decide.
  */
+import { i18n } from '@/i18n';
+
+const t = (...args) => i18n.global.t(...args);
+
 export const canReadLocation = () => typeof window !== 'undefined' && 'geolocation' in navigator;
 
-const ERRORS = {
-    1: 'Location access was blocked. Allow location for this site in your browser settings, then try again.',
-    2: 'Your device could not find its location. Turn on location services and try again.',
-    3: 'Getting your location took too long. Try again.',
-};
+// Error codes of the Geolocation API with a message each (read when shown, so it follows the language).
+const ERROR_KEYS = { 1: 'blocked', 2: 'unavailable', 3: 'timeout' };
 
 /** Resolves {device_latitude, device_longitude, device_accuracy}; rejects with a readable message. */
 export const readDeviceLocation = () => new Promise((resolve, reject) => {
     if (!canReadLocation()) {
-        reject(new Error('This browser has no location support.'));
+        reject(new Error(t('ui.location.unsupported')));
         return;
     }
     navigator.geolocation.getCurrentPosition(
@@ -25,8 +26,8 @@ export const readDeviceLocation = () => new Promise((resolve, reject) => {
         }),
         (error) => reject(new Error(
             error.code === 1 && !window.isSecureContext
-                ? 'This browser gives no location over plain HTTP. Open the panel over HTTPS.'
-                : (ERRORS[error.code] || 'Could not read your location.'),
+                ? t('ui.location.needsHttps')
+                : t(ERROR_KEYS[error.code] ? `ui.location.errors.${ERROR_KEYS[error.code]}` : 'ui.location.failed'),
         )),
         { enableHighAccuracy: true, timeout: 20000, maximumAge: 60000 },
     );

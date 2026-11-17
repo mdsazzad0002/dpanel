@@ -1,6 +1,9 @@
 <script setup>
 import { nextTick, ref } from 'vue';
 import { cellClass, cellText, cellTitle } from '../../helpers/sqliteCells';
+import { useI18n } from 'vue-i18n';
+
+const { t } = useI18n();
 
 const props = defineProps({
     columns: { type: Array, default: () => [] },
@@ -68,7 +71,7 @@ const toggleAll = () => emit('update:selected', props.selected.length === props.
                         <input type="checkbox" :checked="rows.length > 0 && selected.length === rows.length" @change="toggleAll" />
                     </th>
                     <th class="w-10 border-b border-slate-200 px-2 py-2 text-right font-normal text-slate-400 dark:border-slate-700">#</th>
-                    <th v-if="rowActions" class="w-px whitespace-nowrap border-b border-slate-200 px-2 py-2 font-medium dark:border-slate-700">Actions</th>
+                    <th v-if="rowActions" class="w-px whitespace-nowrap border-b border-slate-200 px-2 py-2 font-medium dark:border-slate-700">{{ t('fileManager.sqlite.structure.actions') }}</th>
                     <th v-for="col in columns" :key="col"
                         class="whitespace-nowrap border-b border-slate-200 px-3 py-2 font-medium dark:border-slate-700"
                         :class="sortable ? 'cursor-pointer select-none hover:text-blue-600' : ''"
@@ -80,17 +83,17 @@ const toggleAll = () => emit('update:selected', props.selected.length === props.
             </thead>
             <tbody class="divide-y divide-slate-100 dark:divide-slate-800">
                 <tr v-if="!rows.length">
-                    <td :colspan="columns.length + (editable ? 2 : 1) + (rowActions ? 1 : 0)" class="px-3 py-6 text-center text-slate-400">No rows.</td>
+                    <td :colspan="columns.length + (editable ? 2 : 1) + (rowActions ? 1 : 0)" class="px-3 py-6 text-center text-slate-400">{{ t('fileManager.sqlite.grid.noRows') }}</td>
                 </tr>
                 <tr v-for="(row, r) in rows" :key="r"
                     :class="isSelected(r) ? 'bg-blue-50 dark:bg-blue-950/40' : 'hover:bg-slate-50 dark:hover:bg-slate-800/60'">
                     <td v-if="editable" class="px-2 py-1.5"><input type="checkbox" :checked="isSelected(r)" @change="toggleRow(r)" /></td>
                     <td class="px-2 py-1.5 text-right text-slate-400">{{ offset + r + 1 }}</td>
                     <td v-if="rowActions" class="whitespace-nowrap px-2 py-1">
-                        <button type="button" title="Edit row" class="rounded border border-slate-200 px-1.5 py-0.5 text-blue-600 hover:bg-blue-50 dark:border-slate-700 dark:text-blue-400 dark:hover:bg-blue-950/40" @click="emit('edit-row', r)">
-                            <i class="bi bi-pencil-square"></i> Edit
+                        <button type="button" :title="t('fileManager.sqlite.grid.editRow')" class="rounded border border-slate-200 px-1.5 py-0.5 text-blue-600 hover:bg-blue-50 dark:border-slate-700 dark:text-blue-400 dark:hover:bg-blue-950/40" @click="emit('edit-row', r)">
+                            <i class="bi bi-pencil-square"></i> {{ t('fileManager.sqlite.structure.edit') }}
                         </button>
-                        <button type="button" title="Delete row" class="ml-1 rounded border border-slate-200 px-1.5 py-0.5 text-red-600 hover:bg-red-50 dark:border-slate-700 dark:text-red-400 dark:hover:bg-red-950/40" @click="emit('delete-row', r)">
+                        <button type="button" :title="t('fileManager.sqlite.grid.deleteRow')" class="ml-1 rounded border border-slate-200 px-1.5 py-0.5 text-red-600 hover:bg-red-50 dark:border-slate-700 dark:text-red-400 dark:hover:bg-red-950/40" @click="emit('delete-row', r)">
                             <i class="bi bi-trash"></i>
                         </button>
                     </td>
@@ -101,15 +104,15 @@ const toggleAll = () => emit('update:selected', props.selected.length === props.
                             <input v-else ref="editorEl" v-model="editing.text" @keydown="onEditorKey"
                                 class="w-full rounded border border-blue-500 px-1.5 py-1 text-xs dark:bg-slate-900" />
                             <div class="mt-1 flex gap-1 text-[10px]">
-                                <button type="button" @click="save()" class="rounded bg-blue-600 px-1.5 py-0.5 text-white">Save</button>
+                                <button type="button" @click="save()" class="rounded bg-blue-600 px-1.5 py-0.5 text-white">{{ t('common.save') }}</button>
                                 <button type="button" @click="save(true)" class="rounded border border-slate-300 px-1.5 py-0.5 dark:border-slate-600">NULL</button>
-                                <button type="button" @click="cancel" class="rounded px-1.5 py-0.5 text-slate-500">Cancel</button>
+                                <button type="button" @click="cancel" class="rounded px-1.5 py-0.5 text-slate-500">{{ t('common.cancel') }}</button>
                             </div>
                         </td>
                         <td v-else
                             class="max-w-xs truncate whitespace-nowrap px-3 py-1.5"
                             :class="[cellClass(value), canEdit(value) ? 'cursor-text' : 'cursor-copy']"
-                            :title="cellTitle(value) || (canEdit(value) ? 'Double-click to edit' : 'Click to copy')"
+                            :title="cellTitle(value) || (canEdit(value) ? t('fileManager.sqlite.grid.dblClick') : t('fileManager.sqlite.grid.clickCopy'))"
                             @click="!editable && copy(value)"
                             @dblclick="startEdit(r, c, value)">{{ cellText(value) }}</td>
                     </template>

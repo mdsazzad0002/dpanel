@@ -1,5 +1,8 @@
 <script setup>
 import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue';
+import { useI18n } from 'vue-i18n';
+
+const { t } = useI18n();
 
 // Logs of a container or a stack: pick how many lines, follow them live,
 // filter, wrap, copy or download. `fetch(lines)` resolves to the log text.
@@ -8,7 +11,7 @@ const props = defineProps({
     // Changing it (another container or service) reloads from scratch.
     source: { type: String, required: true },
     filename: { type: String, default: 'docker.log' },
-    errorText: { type: Function, default: (e) => e?.response?.data?.message || e?.message || 'Could not load logs.' },
+    errorText: { type: Function, default: (e) => e?.response?.data?.message || e?.message || '' },
 });
 
 const lines = ref(200);
@@ -36,7 +39,7 @@ const load = async ({ quiet = false } = {}) => {
             if (box.value) box.value.scrollTop = box.value.scrollHeight;
         }
     } catch (e) {
-        error.value = props.errorText(e);
+        error.value = props.errorText(e) || t('docker.logs.loadFailed');
         follow.value = false;
     } finally {
         loading.value = false;
@@ -90,22 +93,22 @@ const btn = 'rounded-md border border-slate-300 px-2.5 py-1 text-xs hover:bg-sla
 <template>
     <div class="space-y-2">
         <div class="flex flex-wrap items-center gap-2">
-            <select v-model.number="lines" class="rounded-md border border-slate-300 px-2 py-1 text-xs dark:border-slate-700 dark:bg-slate-800" aria-label="Lines" @change="load()">
-                <option :value="100">Last 100 lines</option>
-                <option :value="200">Last 200 lines</option>
-                <option :value="1000">Last 1000 lines</option>
-                <option :value="5000">Last 5000 lines</option>
+            <select v-model.number="lines" class="rounded-md border border-slate-300 px-2 py-1 text-xs dark:border-slate-700 dark:bg-slate-800" :aria-label="t('docker.logs.lines')" @change="load()">
+                <option :value="100">{{ t('docker.logs.last', { count: 100 }) }}</option>
+                <option :value="200">{{ t('docker.logs.last', { count: 200 }) }}</option>
+                <option :value="1000">{{ t('docker.logs.last', { count: 1000 }) }}</option>
+                <option :value="5000">{{ t('docker.logs.last', { count: 5000 }) }}</option>
             </select>
-            <input v-model="filter" type="search" placeholder="Filter lines" class="min-w-0 flex-1 rounded-md border border-slate-300 px-2 py-1 text-xs sm:max-w-xs dark:border-slate-700 dark:bg-slate-800" />
-            <span v-if="matchCount !== null" class="text-xs text-slate-500">{{ matchCount }} match{{ matchCount === 1 ? '' : 'es' }}</span>
+            <input v-model="filter" type="search" :placeholder="t('docker.logs.filter')" class="min-w-0 flex-1 rounded-md border border-slate-300 px-2 py-1 text-xs sm:max-w-xs dark:border-slate-700 dark:bg-slate-800" />
+            <span v-if="matchCount !== null" class="text-xs text-slate-500">{{ matchCount === 1 ? t('docker.logs.match', { count: matchCount }) : t('docker.logs.matches', { count: matchCount }) }}</span>
             <div class="ml-auto flex flex-wrap gap-1">
                 <label class="inline-flex items-center gap-1 rounded-md border border-slate-300 px-2 py-1 text-xs dark:border-slate-700" :class="follow ? 'border-emerald-400 text-emerald-700 dark:text-emerald-300' : ''">
-                    <input v-model="follow" type="checkbox" /> Live
+                    <input v-model="follow" type="checkbox" /> {{ t('docker.logs.live') }}
                 </label>
-                <button type="button" :class="btn" @click="wrap = !wrap">{{ wrap ? 'No wrap' : 'Wrap' }}</button>
-                <button type="button" :class="btn" :disabled="!text" @click="copy">{{ copied ? 'Copied' : 'Copy' }}</button>
+                <button type="button" :class="btn" @click="wrap = !wrap">{{ wrap ? t('docker.logs.noWrap') : t('docker.logs.wrap') }}</button>
+                <button type="button" :class="btn" :disabled="!text" @click="copy">{{ copied ? t('docker.shared.copied') : t('docker.shared.copy') }}</button>
                 <button type="button" :class="btn" :disabled="!text" @click="download"><i class="bi bi-download"></i></button>
-                <button type="button" :class="btn" :disabled="loading" @click="load()">{{ loading ? 'Loading…' : 'Reload' }}</button>
+                <button type="button" :class="btn" :disabled="loading" @click="load()">{{ loading ? t('common.loading') : t('docker.logs.reload') }}</button>
             </div>
         </div>
         <div v-if="error" class="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700 dark:border-red-900 dark:bg-red-950 dark:text-red-200">{{ error }}</div>
@@ -113,7 +116,7 @@ const btn = 'rounded-md border border-slate-300 px-2.5 py-1 text-xs hover:bg-sla
             <template v-if="shown">
                 <div v-for="(line, i) in shown.split('\n')" :key="i" :class="[lineClass(line), wrap ? 'whitespace-pre-wrap break-all' : 'whitespace-pre']">{{ line }}</div>
             </template>
-            <div v-else class="text-slate-400">{{ loading ? 'Loading…' : (filter ? 'No line matches.' : 'No log output.') }}</div>
+            <div v-else class="text-slate-400">{{ loading ? t('common.loading') : (filter ? t('docker.logs.noMatch') : t('docker.logs.empty')) }}</div>
         </div>
     </div>
 </template>

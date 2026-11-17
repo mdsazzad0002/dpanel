@@ -5,6 +5,9 @@ import { Head, Link, router, usePage } from '@inertiajs/vue3';
 import ProtectionBreakdown from './components/ProtectionBreakdown.vue';
 import ScanLauncher from './components/ScanLauncher.vue';
 import SecurityTrendChart from './components/SecurityTrendChart.vue';
+import { useI18n } from 'vue-i18n';
+
+const { t } = useI18n();
 
 const props = defineProps({
     score: { type: Object, required: true },
@@ -48,7 +51,7 @@ const scanQueued = () => router.reload({ only: ['scans'] });
 // Snapshot the score, reload, and say what moved and where.
 const scanFinished = (scan) => {
     if (scan.status === 'failed') {
-        message.value = { type: 'error', text: `${scan.target} scan failed: ${scan.error || 'unknown error'}` };
+        message.value = { type: 'error', text: t('security.center.scanFailed', { target: scan.target, error: scan.error || t('security.center.unknownError') }) };
         router.reload({ preserveScroll: true });
         return;
     }
@@ -60,11 +63,11 @@ const scanFinished = (scan) => {
                 .filter((c) => c.score !== before.categories[c.key])
                 .map((c) => ({ label: c.label, from: before.categories[c.key], to: c.score }));
             const scoreText = before.overall === props.score.overall
-                ? `score stays ${props.score.overall ?? '—'}`
-                : `score ${before.overall ?? '—'} → ${props.score.overall ?? '—'}`;
+                ? t('security.center.scoreStays', { score: props.score.overall ?? '—' })
+                : t('security.center.scoreMoved', { from: before.overall ?? '—', to: props.score.overall ?? '—' });
             message.value = {
                 type: props.score.overall !== null && before.overall !== null && props.score.overall < before.overall ? 'error' : 'success',
-                text: `${scan.target} scan finished: ${scan.threats_found} threat(s) found, ${scoreText}.`,
+                text: t('security.center.scanFinished', { target: scan.target, count: scan.threats_found, score: scoreText }),
                 changes,
             };
         },
@@ -73,21 +76,21 @@ const scanFinished = (scan) => {
 </script>
 
 <template>
-    <Head title="Security Center" />
+    <Head :title="t('security.center.title')" />
 
     <AuthenticatedLayout>
         <template #header>
             <div class="flex flex-wrap items-center justify-between gap-3">
                 <div>
-                    <h1 class="text-lg font-semibold">Security Center</h1>
-                    <p class="text-sm text-slate-500 dark:text-slate-400">Malware, file integrity, permissions and server configuration in one score.</p>
+                    <h1 class="text-lg font-semibold">{{ t('security.center.title') }}</h1>
+                    <p class="text-sm text-slate-500 dark:text-slate-400">{{ t('security.center.subtitle') }}</p>
                 </div>
                 <div class="flex gap-2">
                     <Link :href="panelRoute('security.center.findings')" class="rounded-md border border-slate-300 px-3 py-2 text-sm hover:bg-slate-50 dark:border-slate-700 dark:hover:bg-slate-800">
-                        All findings
+                        {{ t('security.center.allFindings') }}
                     </Link>
                     <Link :href="panelRoute('security.center.scans')" class="rounded-md border border-slate-300 px-3 py-2 text-sm hover:bg-slate-50 dark:border-slate-700 dark:hover:bg-slate-800">
-                        Scan history
+                        {{ t('security.scanHistory.title') }}
                     </Link>
                 </div>
             </div>
@@ -98,7 +101,7 @@ const scanFinished = (scan) => {
                 <p>{{ message.text }}</p>
                 <ul v-if="message.changes?.length" class="mt-1 flex flex-wrap gap-x-4 gap-y-1 text-xs">
                     <li v-for="change in message.changes" :key="change.label">
-                        {{ change.label }}: {{ change.from ?? 'not scanned' }} → <span class="font-semibold">{{ change.to ?? 'not scanned' }}</span>
+                        {{ change.label }}: {{ change.from ?? t('security.center.notScanned') }} → <span class="font-semibold">{{ change.to ?? t('security.center.notScanned') }}</span>
                     </li>
                 </ul>
             </div>
@@ -116,7 +119,7 @@ const scanFinished = (scan) => {
 
             <section class="grid gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,2fr)]">
                 <div class="rounded-xl border border-slate-200 bg-white p-6 text-center dark:border-slate-800 dark:bg-slate-900">
-                    <p class="text-xs font-semibold uppercase tracking-wide text-slate-500">Security Score</p>
+                    <p class="text-xs font-semibold uppercase tracking-wide text-slate-500">{{ t('security.center.score') }}</p>
                     <p class="mt-3 text-5xl font-bold" :class="scoreColor(score.overall)">
                         {{ score.overall ?? '—' }}<span class="text-xl text-slate-400"> / 100</span>
                     </p>
@@ -129,18 +132,18 @@ const scanFinished = (scan) => {
                             class="flex items-center justify-between rounded-md px-3 py-2"
                             :class="severityStyles[severity]"
                         >
-                            <span class="capitalize">{{ severity }}</span>
+                            <span class="capitalize">{{ t(`security.common.severity.${severity}`) }}</span>
                             <span class="font-semibold">{{ score.counts[severity] ?? 0 }}</span>
                         </Link>
                     </div>
-                    <p v-if="score.overall === null" class="mt-4 text-xs text-slate-500">Run a scan to calculate the score.</p>
+                    <p v-if="score.overall === null" class="mt-4 text-xs text-slate-500">{{ t('security.center.runScan') }}</p>
                 </div>
 
                 <SecurityTrendChart :trend="trend" />
             </section>
 
             <section class="rounded-xl border border-slate-200 bg-white p-6 dark:border-slate-800 dark:bg-slate-900">
-                <h2 class="text-base font-semibold">Protection</h2>
+                <h2 class="text-base font-semibold">{{ t('security.center.protection') }}</h2>
                 <ProtectionBreakdown
                     :categories="score.categories"
                     :unscanned="unscanned"
@@ -152,7 +155,7 @@ const scanFinished = (scan) => {
                     @queued="scanQueued"
                 />
                 <p class="mt-4 text-xs text-slate-500 dark:text-slate-400">
-                    Click a row to see what it checks. Categories without data are left out of the overall score.
+                    {{ t('security.center.clickRow') }}
                 </p>
             </section>
         </div>

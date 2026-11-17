@@ -1,6 +1,9 @@
 <script setup>
 import Modal from '@/Components/Modal.vue';
 import { computed, ref, watch } from 'vue';
+import { useI18n } from 'vue-i18n';
+
+const { t } = useI18n();
 
 const props = defineProps({
     show: { type: Boolean, default: false },
@@ -42,8 +45,8 @@ const findings = computed(() => {
         const sitemapLines = (props.sitemaps.length ? props.sitemaps : [`${props.baseUrl}/sitemap.xml`]).map((u) => `Sitemap: ${u}`);
         out.push({
             level: served.value ? 'warn' : 'fail',
-            message: served.value ? 'robots.txt is empty.' : `No robots.txt is served (${props.robots?.error || `HTTP ${props.robots?.status}`}).`,
-            fix: { label: 'Create a standard robots.txt', apply: () => ['User-agent: *', 'Allow: /', '', ...sitemapLines].join('\n') },
+            message: served.value ? t('seo.robots.empty') : t('seo.robots.notServed', { reason: props.robots?.error || `HTTP ${props.robots?.status}` }),
+            fix: { label: t('seo.robots.createStandard'), apply: () => ['User-agent: *', 'Allow: /', '', ...sitemapLines].join('\n') },
         });
         return out;
     }
@@ -56,16 +59,16 @@ const findings = computed(() => {
     lines.forEach((raw, i) => {
         const line = raw.replace(/#.*/, '').trim();
         if (!line) return;
-        const at = `Line ${i + 1}`;
+        const at = t('seo.robots.line', { n: i + 1 });
         const colon = line.indexOf(':');
         if (colon < 1) {
-            out.push({ level: 'warn', line: i, message: `${at}: "${line}" is not a directive (expected "Field: value").`, fix: { label: 'Remove line', apply: replaceLines([i]) } });
+            out.push({ level: 'warn', line: i, message: t('seo.robots.notDirective', { at, line }), fix: { label: t('seo.robots.removeLine'), apply: replaceLines([i]) } });
             return;
         }
         const field = line.slice(0, colon).trim().toLowerCase();
         const value = line.slice(colon + 1).trim();
         if (!KNOWN.includes(field)) {
-            out.push({ level: 'warn', line: i, message: `${at}: unknown directive "${field}"; crawlers ignore it.`, fix: { label: 'Remove line', apply: replaceLines([i]) } });
+            out.push({ level: 'warn', line: i, message: t('seo.robots.unknown', { at, field }), fix: { label: t('seo.robots.removeLine'), apply: replaceLines([i]) } });
             return;
         }
         if (field === 'user-agent') {
@@ -77,13 +80,13 @@ const findings = computed(() => {
             let url = null;
             try { url = new URL(value); } catch (e) { /* not absolute */ }
             if (!url || !/^https?:$/.test(url.protocol)) {
-                out.push({ level: 'fail', line: i, message: `${at}: "${value}" is not a full URL; Sitemap needs https://…`, fix: { label: 'Remove line', apply: replaceLines([i]) } });
+                out.push({ level: 'fail', line: i, message: t('seo.robots.notUrl', { at, value }), fix: { label: t('seo.robots.removeLine'), apply: replaceLines([i]) } });
             } else if (!sameSite(url.hostname.toLowerCase())) {
-                out.push({ level: 'warn', line: i, message: `${at}: the sitemap is on ${url.hostname}, another host. That only works if that host also trusts it.`, fix: { label: 'Remove line', manual: true, apply: replaceLines([i]) } });
+                out.push({ level: 'warn', line: i, message: t('seo.robots.otherHost', { at, host: url.hostname }), fix: { label: t('seo.robots.removeLine'), manual: true, apply: replaceLines([i]) } });
             }
         } else if (['allow', 'disallow', 'crawl-delay', 'clean-param'].includes(field)) {
             if (!seenAgent) {
-                out.push({ level: 'warn', line: i, message: `${at}: "${field}" comes before any User-agent line, so it applies to nobody.`, fix: { label: 'Add "User-agent: *" above', apply: (current) => { const l = current.split(/\r?\n/); l.splice(i, 0, 'User-agent: *'); return l.join('\n'); } } });
+                out.push({ level: 'warn', line: i, message: t('seo.robots.beforeAgent', { at, field }), fix: { label: t('seo.robots.addAgent'), apply: (current) => { const l = current.split(/\r?\n/); l.splice(i, 0, 'User-agent: *'); return l.join('\n'); } } });
             }
             inRules = true;
             if (field === 'disallow' && value === '/' && agents.includes('*')) blockAll.push(i);
@@ -91,14 +94,14 @@ const findings = computed(() => {
     });
 
     if (blockAll.length) {
-        out.unshift({ level: 'fail', message: '"User-agent: *" has "Disallow: /": search engines will not crawl any page.', fix: { label: 'Allow crawling', apply: replaceLines(blockAll, 'Allow: /') } });
+        out.unshift({ level: 'fail', message: t('seo.robots.blockAll'), fix: { label: t('seo.robots.allowCrawl'), apply: replaceLines(blockAll, 'Allow: /') } });
     }
     if (!sitemapLines.length) {
         const urls = props.sitemaps.length ? props.sitemaps : [`${props.baseUrl}/sitemap.xml`];
-        out.push({ level: 'warn', message: 'No Sitemap line, so crawlers only find your sitemap through Search Console.', fix: { label: `Add ${urls.length === 1 ? 'Sitemap line' : `${urls.length} Sitemap lines`}`, apply: (current) => `${current.replace(/\s+$/, '')}\n\n${urls.map((u) => `Sitemap: ${u}`).join('\n')}` } });
+        out.push({ level: 'warn', message: t('seo.robots.noSitemap'), fix: { label: urls.length === 1 ? t('seo.robots.addSitemap') : t('seo.robots.addSitemaps', { count: urls.length }), apply: (current) => `${current.replace(/\s+$/, '')}\n\n${urls.map((u) => `Sitemap: ${u}`).join('\n')}` } });
     }
     if (new Blob([text.value]).size > 512000) {
-        out.push({ level: 'warn', message: 'Larger than 500 KiB; Google ignores everything after that.' });
+        out.push({ level: 'warn', message: t('seo.robots.tooLarge') });
     }
     return out;
 });
@@ -118,7 +121,7 @@ const lineCount = computed(() => text.value.split('\n').length);
 const levelClass = { fail: 'bi-x-circle-fill text-red-600 dark:text-red-400', warn: 'bi-exclamation-triangle-fill text-amber-500' };
 
 const close = () => {
-    if (dirty.value && !confirm('Discard your unsaved changes to robots.txt?')) return;
+    if (dirty.value && !confirm(t('seo.robots.discardConfirm'))) return;
     emit('close');
 };
 </script>
@@ -132,7 +135,7 @@ const close = () => {
                     <a :href="robots?.url" target="_blank" rel="noopener noreferrer" class="block truncate font-mono text-xs text-blue-600 hover:underline dark:text-blue-400">{{ robots?.url }}</a>
                 </div>
                 <button type="button" @click="close" class="rounded-md p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-600 dark:hover:bg-slate-800">
-                    <span class="sr-only">Close</span><i class="bi bi-x-lg"></i>
+                    <span class="sr-only">{{ t('common.close') }}</span><i class="bi bi-x-lg"></i>
                 </button>
             </div>
 
@@ -140,10 +143,10 @@ const close = () => {
                 <p class="text-xs text-slate-500 dark:text-slate-400">
                     <template v-if="editable">
                         <i class="bi bi-pencil-square"></i>
-                        Editable · {{ robots.file.exists ? 'saves to' : 'no file yet; saving creates' }} <span class="font-mono">{{ robots.file.path }}</span>
-                        <template v-if="!robots.file.exists && served"> (it replaces the robots.txt your app generates now)</template>
+                        {{ t('seo.robots.editable') }} · {{ robots.file.exists ? t('seo.robots.savesTo') : t('seo.robots.createsFile') }} <span class="font-mono">{{ robots.file.path }}</span>
+                        <template v-if="!robots.file.exists && served"> {{ t('seo.robots.replacesApp') }}</template>
                     </template>
-                    <template v-else><i class="bi bi-lock"></i> Read-only · {{ robots?.file?.reason }}</template>
+                    <template v-else><i class="bi bi-lock"></i> {{ t('seo.robots.readOnly') }} · {{ robots?.file?.reason }}</template>
                 </p>
 
                 <!-- The textarea grows with its content and this box scrolls, so the line numbers stay aligned. -->
@@ -158,21 +161,21 @@ const close = () => {
                         wrap="off"
                         :rows="Math.max(lineCount, 8)"
                         class="min-w-0 flex-1 resize-none overflow-y-hidden border-0 bg-white px-3 py-2 font-mono text-xs leading-5 focus:ring-0 dark:bg-slate-900"
-                        :placeholder="editable ? 'Empty: use the fix below to create a standard robots.txt.' : ''"
+                        :placeholder="editable ? t('seo.robots.placeholder') : ''"
                     ></textarea>
                 </div>
 
                 <div>
                     <div class="mb-2 flex items-center justify-between">
                         <h3 class="text-sm font-semibold">
-                            {{ findings.length ? `${findings.length} ${findings.length === 1 ? 'issue' : 'issues'}` : 'No issues' }}
+                            {{ findings.length ? (findings.length === 1 ? t('seo.robots.issue', { count: 1 }) : t('seo.robots.issues', { count: findings.length })) : t('seo.robots.noIssues') }}
                         </h3>
                         <button v-if="editable && fixable > 1" type="button" @click="applyAll" class="rounded-md border border-slate-300 px-2.5 py-1 text-xs font-medium hover:bg-slate-50 dark:border-slate-600 dark:hover:bg-slate-800">
-                            <i class="bi bi-magic mr-1"></i>Fix all ({{ fixable }})
+                            <i class="bi bi-magic mr-1"></i>{{ t('seo.robots.fixAll', { count: fixable }) }}
                         </button>
                     </div>
                     <p v-if="!findings.length" class="flex items-center gap-2 text-sm text-emerald-600 dark:text-emerald-400">
-                        <i class="bi bi-check-circle-fill"></i> Crawlers can read this file and find your sitemap.
+                        <i class="bi bi-check-circle-fill"></i> {{ t('seo.robots.ok') }}
                     </p>
                     <ul class="space-y-2">
                         <li v-for="(finding, i) in findings" :key="i" class="flex items-start gap-3 rounded-lg border border-slate-200 px-3 py-2 dark:border-slate-700">
@@ -193,10 +196,10 @@ const close = () => {
 
             <div v-if="editable" class="flex flex-wrap items-center justify-end gap-2 border-t border-slate-200 px-5 py-3 dark:border-slate-700">
                 <p v-if="saveError" class="mr-auto text-sm text-red-600">{{ saveError }}</p>
-                <p v-else-if="dirty" class="mr-auto text-xs text-amber-600">Unsaved changes. Fixes only change the text until you save.</p>
-                <button type="button" :disabled="!dirty || saving" @click="text = original" class="rounded-md border border-slate-300 px-3 py-2 text-sm disabled:opacity-50 dark:border-slate-600">Reset</button>
+                <p v-else-if="dirty" class="mr-auto text-xs text-amber-600">{{ t('seo.robots.unsaved') }}</p>
+                <button type="button" :disabled="!dirty || saving" @click="text = original" class="rounded-md border border-slate-300 px-3 py-2 text-sm disabled:opacity-50 dark:border-slate-600">{{ t('seo.robots.reset') }}</button>
                 <button type="button" :disabled="!dirty || saving" @click="emit('save', text)" class="rounded-md bg-blue-600 px-3 py-2 text-sm text-white hover:bg-blue-700 disabled:opacity-50">
-                    <i v-if="saving" class="bi bi-arrow-repeat mr-1 inline-block animate-spin"></i>Save robots.txt
+                    <i v-if="saving" class="bi bi-arrow-repeat mr-1 inline-block animate-spin"></i>{{ t('seo.robots.save') }}
                 </button>
             </div>
         </div>

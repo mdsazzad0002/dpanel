@@ -1,0 +1,8 @@
+{
+    "title": "Secure access for server operations",
+    "subtitle": "A focused admin surface for production control, recovery, and daily maintenance with a cleaner visual hierarchy.",
+    "operations": "Operations",
+    "operationsText": "Centralized tools for production workflows and quick recovery.",
+    "security": "Security",
+    "securityText": "Protected access with a calm login flow and password checks."
+}

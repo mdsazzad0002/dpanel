@@ -1,0 +1,60 @@
+{
+    "card": {
+        "badge": {
+            "running": "قيد التشغيل",
+            "error": "فشل",
+            "stopped": "متوقف",
+            "starting": "جارٍ التشغيل…"
+        },
+        "port": "المنفذ",
+        "user": "المستخدم",
+        "publicOn": "عام على",
+        "notPublic": "غير عام. {link}.",
+        "publishLink": "انشره من القواعد ← مشاركة المنفذ",
+        "listening": "المنفذ يستمع",
+        "notListening": "المنفذ لا يستمع",
+        "start": "تشغيل",
+        "stop": "إيقاف",
+        "restart": "إعادة التشغيل",
+        "status": "الحالة",
+        "edit": "تعديل",
+        "delete": "حذف",
+        "default": "افتراضي",
+        "workers": "{n} عمّال",
+        "runs": "يشغّل",
+        "settingUp": "جارٍ الإعداد في الخلفية (Python وvenv والحزم). قد يستغرق التشغيل الأول بضع دقائق."
+    },
+    "index": {
+        "title": "تطبيقات Python",
+        "subtitle": "Django وFlask وFastAPI… تعمل من أي مجلد في دليلك الرئيسي.",
+        "new": "تطبيق Python جديد",
+        "empty": "لا توجد تطبيقات Python بعد",
+        "noHome": "لا يوجد دليل رئيسي متاح",
+        "emptyHelp": "أنشئ واحدًا، ثم انشره من القواعد ← مشاركة المنفذ.",
+        "noHomeHelp": "تعمل التطبيقات داخل الدليل الرئيسي لمستخدم موقع. أنشئ موقعًا أولًا."
+    },
+    "form": {
+        "editTitle": "تعديل {name}",
+        "newTitle": "تطبيق Python جديد",
+        "subtitle": "يحصل على .venv خاص به وتثبيت requirements.txt، ويعمل عبر gunicorn بصفة مستخدم Linux الخاص بالدليل الرئيسي. انشره من القواعد ← مشاركة المنفذ.",
+        "name": "اسم التطبيق",
+        "home": "الدليل الرئيسي",
+        "workdir": "دليل العمل",
+        "workdirHelp": "المجلد الذي يحتوي شيفرتك وrequirements.txt. إذا تُرك فارغًا يعمل من الدليل الرئيسي نفسه.",
+        "optional": "(اختياري)",
+        "port": "المنفذ",
+        "auto": "تلقائي",
+        "startAfter": "التشغيل بعد الإنشاء",
+        "portNote": "المنفذ {port}. يُعاد تشغيل التطبيق العامل بالإعدادات الجديدة.",
+        "create": "إنشاء التطبيق",
+        "overrides": "يتجاوز {cmd}. يجب أن يستمع التطبيق على 127.0.0.1 و{port}.",
+        "startCommand": "أمر التشغيل",
+        "entryHelp": "مثل {flask} (Flask)، {django} (Django)",
+        "version": "إصدار Python",
+        "workers": "العمّال",
+        "mode": "الوضع",
+        "production": "الإنتاج",
+        "development": "التطوير",
+        "timeout": "المهلة (ث)"
+    }
+}

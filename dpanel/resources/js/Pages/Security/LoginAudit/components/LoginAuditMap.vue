@@ -3,6 +3,9 @@ import { onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import { flag, formatTime } from '../loginEventFormat';
+import { useI18n } from 'vue-i18n';
+
+const { t } = useI18n();
 
 const props = defineProps({
     points: { type: Array, default: () => [] },
@@ -31,13 +34,13 @@ const popup = (point) => {
     const where = [point.city, point.region, point.country].filter(Boolean);
     return `
         <div style="min-width:180px;font-size:12px;line-height:1.5">
-            <strong>${flag(point.country_code)} ${escape([...new Set(where)].join(', ') || 'Unknown place')}</strong><br>
+            <strong>${flag(point.country_code)} ${escape([...new Set(where)].join(', ') || t('security.loginAudit.map.unknownPlace'))}</strong><br>
             ${Number(point.latitude).toFixed(6)}, ${Number(point.longitude).toFixed(6)}<br>
-            <em>${Number(point.device) ? 'Device location (GPS / Wi-Fi)' : 'IP location (city level)'}</em><br>
-            <span style="color:#059669">${point.success} success</span> ·
-            <span style="color:#dc2626">${point.failed} failed</span><br>
-            Panel ${point.panel} · SSH ${point.ssh} · ${point.ips} IP${Number(point.ips) === 1 ? '' : 's'}<br>
-            Last: ${escape(formatTime(point.last_seen))}
+            <em>${Number(point.device) ? t('security.loginAudit.map.deviceLoc') : t('security.loginAudit.map.ipLoc')}</em><br>
+            <span style="color:#059669">${t('security.loginAudit.map.success', { count: point.success })}</span> ·
+            <span style="color:#dc2626">${t('security.loginAudit.map.failed', { count: point.failed })}</span><br>
+            ${t('security.loginAudit.map.channels', { panel: point.panel, ssh: point.ssh })} · ${Number(point.ips) === 1 ? t('security.loginAudit.map.ipOne') : t('security.loginAudit.map.ipMany', { count: point.ips })}<br>
+            ${t('security.loginAudit.map.last', { time: escape(formatTime(point.last_seen)) })}
         </div>`;
 };
 
@@ -88,7 +91,7 @@ const showTest = (latitude, longitude, accuracy) => {
     testLayer = L.layerGroup([
         L.circle([latitude, longitude], { radius: Math.max(accuracy || 0, 5), color: '#2563eb', weight: 1, fillOpacity: 0.12 }),
         L.circleMarker([latitude, longitude], { radius: 6, color: '#ffffff', weight: 2, fillColor: '#2563eb', fillOpacity: 1 })
-            .bindPopup(`<div style="font-size:12px"><strong>Your test location</strong><br>${latitude.toFixed(6)}, ${longitude.toFixed(6)}<br>±${accuracy} m</div>`),
+            .bindPopup(`<div style="font-size:12px"><strong>${t('security.loginAudit.map.testLocation')}</strong><br>${latitude.toFixed(6)}, ${longitude.toFixed(6)}<br>±${accuracy} m</div>`),
     ]).addTo(map);
     container.value?.scrollIntoView({ behavior: 'smooth', block: 'center' });
     map.flyTo([latitude, longitude], accuracy > 2000 ? 11 : 16);
@@ -128,25 +131,25 @@ watch(() => props.points, draw);
     <section class="rounded-xl border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-900">
         <div class="mb-3 flex flex-wrap items-center justify-between gap-2">
             <div>
-                <h2 class="text-base font-semibold">Where logins come from</h2>
+                <h2 class="text-base font-semibold">{{ t('security.loginAudit.map.title') }}</h2>
                 <p class="text-xs text-slate-500 dark:text-slate-400">
-                    {{ points.length }} {{ points.length === 1 ? 'place' : 'places' }}. Green: successful logins, red: failed attempts, amber: both. Bigger circles mean more events. A white ring marks a device (GPS / Wi-Fi) location; the rest are IP locations.
+                    {{ points.length === 1 ? t('security.loginAudit.map.placeOne') : t('security.loginAudit.map.placeMany', { count: points.length }) }} {{ t('security.loginAudit.map.legend') }}
                 </p>
             </div>
             <div class="flex items-center gap-2 text-xs text-slate-500 dark:text-slate-400">
-                <span v-if="geoip.installed">DB-IP database from {{ new Date(geoip.updated_at).toLocaleDateString() }}</span>
+                <span v-if="geoip.installed">{{ t('security.loginAudit.map.dbFrom', { date: new Date(geoip.updated_at).toLocaleDateString() }) }}</span>
                 <button
                     type="button"
                     :disabled="busy === 'geoip'"
                     class="rounded-md border border-slate-300 px-3 py-1.5 hover:bg-slate-100 disabled:opacity-60 dark:border-slate-700 dark:hover:bg-slate-800"
                     @click="emit('download-geoip')"
                 >
-                    {{ busy === 'geoip' ? 'Starting…' : (geoip.installed ? 'Update now' : 'Download database') }}
+                    {{ busy === 'geoip' ? t('security.loginAudit.map.starting') : (geoip.installed ? t('security.loginAudit.map.updateNow') : t('security.loginAudit.map.download')) }}
                 </button>
             </div>
         </div>
         <div v-if="!geoip.installed" class="mb-3 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800 dark:border-amber-900 dark:bg-amber-950 dark:text-amber-200">
-            The IP location database is not downloaded yet, so logins are saved without a place. Download it once (about 130 MB); it then updates itself every month and fills in the saved rows.
+            {{ t('security.loginAudit.map.notDownloaded') }}
         </div>
         <div ref="container" class="relative z-0 h-[420px] w-full overflow-hidden rounded-lg" />
     </section>

@@ -2,6 +2,9 @@
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
 import { Head, useForm, usePage, router } from '@inertiajs/vue3';
 import { computed } from 'vue';
+import { useI18n } from 'vue-i18n';
+
+const { t } = useI18n();
 
 const props = defineProps({
     versions: {
@@ -49,13 +52,13 @@ const submit = () => {
 </script>
 
 <template>
-    <Head title="PHP Extensions" />
+    <Head :title="t('php.extensions.title')" />
 
     <AuthenticatedLayout>
         <template #header>
             <div>
-                <h1 class="text-lg font-semibold">PHP Extensions</h1>
-                <p class="text-sm text-slate-500 dark:text-slate-400">Enable or disable PHP modules for each PHP version.</p>
+                <h1 class="text-lg font-semibold">{{ t('php.extensions.title') }}</h1>
+                <p class="text-sm text-slate-500 dark:text-slate-400">{{ t('php.extensions.subtitle') }}</p>
             </div>
         </template>
 
@@ -69,7 +72,7 @@ const submit = () => {
 
             <form class="space-y-4 rounded-xl border border-slate-200 bg-white p-6 dark:border-slate-800 dark:bg-slate-900" @submit.prevent="submit">
                 <div>
-                    <label class="mb-1 block text-sm">PHP Version</label>
+                    <label class="mb-1 block text-sm">{{ t('php.extensions.version') }}</label>
                     <select
                         v-model="form.version"
                         class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm md:max-w-xs dark:border-slate-700 dark:bg-slate-800"
@@ -99,7 +102,7 @@ const submit = () => {
                 </div>
 
                 <button type="submit" :disabled="form.processing" class="rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-60">
-                    Save PHP Extensions
+                    {{ t('php.extensions.save') }}
                 </button>
             </form>
         </div>

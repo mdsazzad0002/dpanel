@@ -1,0 +1,12 @@
+{
+    "language": "语言",
+    "refresh": "刷新",
+    "loading": "加载中…",
+    "sessionExpired": "会话已过期 — 请重新加载页面后重试。",
+    "search": "搜索",
+    "save": "保存",
+    "cancel": "取消",
+    "close": "关闭",
+    "none": "无",
+    "back": "返回管理"
+}

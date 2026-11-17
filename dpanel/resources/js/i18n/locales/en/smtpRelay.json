@@ -1,0 +1,16 @@
+{
+    "title": "SMTP Relay",
+    "subtitle": "Send all outgoing mail through another server",
+    "now": "Outgoing mail now",
+    "direct": "Sent directly from this server",
+    "through": "Through {host}:{port}",
+    "host": "Relay server",
+    "port": "Port",
+    "username": "Username",
+    "password": "Password",
+    "help": "TLS is always required. The password goes to Postfix and is not stored by the panel, so enter it again whenever you save.",
+    "save": "Save and apply",
+    "disable": "Send directly",
+    "disableConfirm": "Send outgoing mail directly from this server again?",
+    "failed": "Postfix was not changed."
+}

@@ -1,0 +1,39 @@
+{
+    "bulk": {
+        "confirm": "{count}টি trash backup স্থায়ীভাবে মুছবেন? মুছে ফেলা archive আর restore করা যাবে না।",
+        "httpFailed": "মুছতে ব্যর্থ, HTTP {status}।",
+        "failed": "Trash backup মোছা যায়নি।",
+        "selected": "{count}টি নির্বাচিত",
+        "selectAll": "সব নির্বাচন",
+        "deleting": "মোছা হচ্ছে...",
+        "delete": "নির্বাচিতগুলো মুছুন"
+    },
+    "index": {
+        "downloadHttp": "Download ব্যর্থ, HTTP {status}।",
+        "downloadFailed": "Trash backup download করা যায়নি।",
+        "restoreConfirm": "Trash backup থেকে {domain} restore করবেন?",
+        "recoverHttp": "পুনরুদ্ধার ব্যর্থ, HTTP {status}।",
+        "recovered": "Website সফলভাবে পুনরুদ্ধার হয়েছে।",
+        "recoverFailed": "Website পুনরুদ্ধার করা যায়নি।",
+        "title": "Trash backup",
+        "subtitle": "মুছে ফেলা website পুনরুদ্ধার করুন বা তাদের স্বয়ংক্রিয় archive download করুন।",
+        "cleanup": "স্বয়ংক্রিয় পরিষ্কার",
+        "cleanupHelp": "স্বয়ংক্রিয়ভাবে configure করা। কোনো manual Artisan command লাগবে না।",
+        "enabled": "চালু",
+        "keepFor": "কতদিন রাখবেন",
+        "days": "দিন",
+        "dailyTime": "দৈনিক সময়",
+        "saving": "Save হচ্ছে...",
+        "schedule": "{days} দিন · প্রতিদিন {time}-এ",
+        "disabled": "বন্ধ",
+        "empty": "মুছে ফেলা কোনো website-এর backup নেই",
+        "emptyHelp": "কোনো website মুছে ফেলার পর এখানে download করার মতো একটি ZIP দেখা যাবে।",
+        "deleted": "মোছা হয়েছে {date}",
+        "recovering": "পুনরুদ্ধার হচ্ছে...",
+        "restore": "Website restore করুন",
+        "exists": "Website আগে থেকেই আছে",
+        "downloading": "Download হচ্ছে...",
+        "download": "ZIP download করুন",
+        "missing": "Archive নেই"
+    }
+}

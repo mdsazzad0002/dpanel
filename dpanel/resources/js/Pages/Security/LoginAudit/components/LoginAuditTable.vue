@@ -1,5 +1,8 @@
 <script setup>
 import { CHANNEL_BADGES, RESULT_BADGES, accuracyText, coordinates, flag, formatTime, parseAgent, place } from '../loginEventFormat';
+import { useI18n } from 'vue-i18n';
+
+const { t } = useI18n();
 
 defineProps({
     events: { type: Array, default: () => [] },
@@ -20,29 +23,29 @@ const agentLine = (event) => {
 <template>
     <section class="rounded-xl border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900">
         <div class="flex items-center justify-between px-4 py-3">
-            <h2 class="text-base font-semibold">Login history</h2>
-            <span class="text-xs text-slate-500 dark:text-slate-400">{{ meta.total.toLocaleString() }} events</span>
+            <h2 class="text-base font-semibold">{{ t('security.loginAudit.table.title') }}</h2>
+            <span class="text-xs text-slate-500 dark:text-slate-400">{{ t('security.loginAudit.table.events', { count: meta.total.toLocaleString() }) }}</span>
         </div>
 
         <div class="overflow-x-auto">
             <table class="min-w-full text-sm">
                 <thead class="border-y border-slate-200 bg-slate-50 text-left text-xs uppercase text-slate-500 dark:border-slate-800 dark:bg-slate-800/50 dark:text-slate-400">
                     <tr>
-                        <th class="px-4 py-2">Time</th>
-                        <th class="px-4 py-2">User</th>
-                        <th class="px-4 py-2">Result</th>
-                        <th class="px-4 py-2">IP address</th>
-                        <th class="px-4 py-2">Location</th>
-                        <th class="px-4 py-2">Device</th>
-                        <th class="px-4 py-2"><span class="sr-only">Actions</span></th>
+                        <th class="px-4 py-2">{{ t('security.loginAudit.table.time') }}</th>
+                        <th class="px-4 py-2">{{ t('security.loginAudit.table.user') }}</th>
+                        <th class="px-4 py-2">{{ t('security.loginAudit.table.result') }}</th>
+                        <th class="px-4 py-2">{{ t('security.loginAudit.table.ip') }}</th>
+                        <th class="px-4 py-2">{{ t('security.loginAudit.table.location') }}</th>
+                        <th class="px-4 py-2">{{ t('security.loginAudit.table.device') }}</th>
+                        <th class="px-4 py-2"><span class="sr-only">{{ t('security.loginAudit.table.actions') }}</span></th>
                     </tr>
                 </thead>
                 <tbody class="divide-y divide-slate-100 dark:divide-slate-800">
                     <tr v-if="loading && !events.length">
-                        <td colspan="7" class="px-4 py-8 text-center text-slate-500">Loading…</td>
+                        <td colspan="7" class="px-4 py-8 text-center text-slate-500">{{ t('common.loading') }}</td>
                     </tr>
                     <tr v-else-if="!events.length">
-                        <td colspan="7" class="px-4 py-8 text-center text-slate-500">No logins match these filters.</td>
+                        <td colspan="7" class="px-4 py-8 text-center text-slate-500">{{ t('security.loginAudit.table.empty') }}</td>
                     </tr>
                     <tr
                         v-for="event in events"
@@ -53,31 +56,31 @@ const agentLine = (event) => {
                         <td class="whitespace-nowrap px-4 py-2 text-xs">{{ formatTime(event.occurred_at) }}</td>
                         <td class="px-4 py-2">
                             <div class="flex items-center gap-2">
-                                <span :class="CHANNEL_BADGES[event.channel]?.class" class="rounded px-1.5 py-0.5 text-[10px] font-medium">{{ CHANNEL_BADGES[event.channel]?.label }}</span>
+                                <span :class="CHANNEL_BADGES[event.channel]?.class" class="rounded px-1.5 py-0.5 text-[10px] font-medium">{{ CHANNEL_BADGES[event.channel] ? t(`security.loginAudit.channels.${event.channel}`) : event.channel }}</span>
                                 <span class="font-medium">{{ who(event) }}</span>
                             </div>
-                            <div v-if="event.actor" class="text-xs text-amber-600 dark:text-amber-400">by admin {{ event.actor.name }}</div>
+                            <div v-if="event.actor" class="text-xs text-amber-600 dark:text-amber-400">{{ t('security.loginAudit.table.byAdmin', { name: event.actor.name }) }}</div>
                         </td>
                         <td class="px-4 py-2">
-                            <span :class="RESULT_BADGES[event.result]?.class" class="rounded px-2 py-0.5 text-xs">{{ RESULT_BADGES[event.result]?.label }}</span>
+                            <span :class="RESULT_BADGES[event.result]?.class" class="rounded px-2 py-0.5 text-xs">{{ RESULT_BADGES[event.result] ? t(`security.loginAudit.results.${event.result}`) : event.result }}</span>
                             <div class="mt-0.5 text-xs text-slate-500 dark:text-slate-400">{{ event.reason || event.method }}</div>
                         </td>
                         <td class="whitespace-nowrap px-4 py-2 font-mono text-xs">
                             {{ event.ip_address }}
-                            <span v-if="event.ip_address === clientIp" class="ml-1 rounded bg-blue-100 px-1 text-[10px] text-blue-700 dark:bg-blue-900/40 dark:text-blue-300">you</span>
+                            <span v-if="event.ip_address === clientIp" class="ml-1 rounded bg-blue-100 px-1 text-[10px] text-blue-700 dark:bg-blue-900/40 dark:text-blue-300">{{ t('security.loginAudit.table.you') }}</span>
                         </td>
                         <td class="px-4 py-2 text-xs">
                             {{ flag(event.country_code) }} {{ place(event) }}
-                            <div v-if="event.device_latitude != null" class="mt-0.5 font-mono text-[11px] text-emerald-700 dark:text-emerald-400" title="Device location from the browser">
+                            <div v-if="event.device_latitude != null" class="mt-0.5 font-mono text-[11px] text-emerald-700 dark:text-emerald-400" :title="t('security.loginAudit.table.deviceLocation')">
                                 <i class="bi bi-crosshair" /> {{ event.device_latitude.toFixed(5) }}, {{ event.device_longitude.toFixed(5) }} {{ accuracyText(event.device_accuracy) }}
                             </div>
                         </td>
-                        <td class="px-4 py-2 text-xs text-slate-500 dark:text-slate-400">{{ agentLine(event) || (event.channel === 'ssh' ? 'SSH client' : '—') }}</td>
+                        <td class="px-4 py-2 text-xs text-slate-500 dark:text-slate-400">{{ agentLine(event) || (event.channel === 'ssh' ? t('security.loginAudit.table.sshClient') : '—') }}</td>
                         <td class="whitespace-nowrap px-4 py-2 text-right">
                             <button
                                 v-if="coordinates(event)"
                                 type="button"
-                                title="Show on map"
+                                :title="t('security.loginAudit.table.showOnMap')"
                                 class="rounded p-1 text-slate-500 hover:bg-slate-100 hover:text-blue-600 dark:hover:bg-slate-800"
                                 @click.stop="emit('locate', event)"
                             >
@@ -90,9 +93,9 @@ const agentLine = (event) => {
         </div>
 
         <div v-if="meta.last_page > 1" class="flex items-center justify-between border-t border-slate-200 px-4 py-3 text-xs dark:border-slate-800">
-            <button type="button" :disabled="meta.page <= 1 || loading" class="rounded-md border border-slate-300 px-3 py-1.5 disabled:opacity-50 dark:border-slate-700" @click="emit('page', meta.page - 1)">Previous</button>
-            <span>Page {{ meta.page }} of {{ meta.last_page }}</span>
-            <button type="button" :disabled="meta.page >= meta.last_page || loading" class="rounded-md border border-slate-300 px-3 py-1.5 disabled:opacity-50 dark:border-slate-700" @click="emit('page', meta.page + 1)">Next</button>
+            <button type="button" :disabled="meta.page <= 1 || loading" class="rounded-md border border-slate-300 px-3 py-1.5 disabled:opacity-50 dark:border-slate-700" @click="emit('page', meta.page - 1)">{{ t('security.loginAudit.table.previous') }}</button>
+            <span>{{ t('security.loginAudit.table.page', { page: meta.page, last: meta.last_page }) }}</span>
+            <button type="button" :disabled="meta.page >= meta.last_page || loading" class="rounded-md border border-slate-300 px-3 py-1.5 disabled:opacity-50 dark:border-slate-700" @click="emit('page', meta.page + 1)">{{ t('security.loginAudit.table.next') }}</button>
         </div>
     </section>
 </template>

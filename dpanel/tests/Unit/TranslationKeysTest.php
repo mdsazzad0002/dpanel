@@ -21,9 +21,39 @@ class TranslationKeysTest extends TestCase
         return $keys;
     }
 
+    /** locales/<code>/<namespace>.json, keyed by namespace, as i18n/index.js loads them. */
     private static function load(string $code): array
     {
-        return json_decode((string) file_get_contents(self::LOCALES."/{$code}.json"), true, flags: JSON_THROW_ON_ERROR);
+        $messages = [];
+        foreach (glob(self::LOCALES."/{$code}/*.json") ?: [] as $file) {
+            $messages[basename($file, '.json')] = self::decode($file);
+        }
+
+        return $messages;
+    }
+
+    private static function decode(string $file): array
+    {
+        return json_decode((string) file_get_contents($file), true, flags: JSON_THROW_ON_ERROR);
+    }
+
+    public function test_module_files_exist_in_both_languages(): void
+    {
+        $names = fn (string $code) => array_map('basename', glob(self::LOCALES."/{$code}/*.json") ?: []);
+
+        $this->assertSame($names('en'), $names('bn'));
+    }
+
+    public function test_every_language_is_a_folder_of_namespace_files(): void
+    {
+        $this->assertSame([], glob(self::LOCALES.'/*.json') ?: [], 'Put keys in locales/<code>/<namespace>.json');
+
+        $english = array_flip(self::keys(self::load('en')));
+        foreach (glob(self::LOCALES.'/*', GLOB_ONLYDIR) ?: [] as $dir) {
+            $code = basename($dir);
+            $extra = array_values(array_filter(self::keys(self::load($code)), fn (string $key) => ! isset($english[$key])));
+            $this->assertSame([], $extra, "Keys in {$code} that English does not have");
+        }
     }
 
     public function test_english_and_bangla_have_the_same_keys(): void

@@ -1,4 +1,7 @@
 <script setup>
+import { useI18n } from 'vue-i18n';
+
+const { t } = useI18n();
 defineProps({
     fm: {
         type: Object,
@@ -15,15 +18,15 @@ defineProps({
                     <i class="bi bi-file-earmark-code text-sky-400"></i>
                     <span class="truncate font-medium">{{ fm.editorFileName }}</span>
                     <span v-if="fm.hasUnsavedChanges" class="h-2 w-2 rounded-full bg-amber-400"></span>
-                    <span v-if="fm.selectedFile?.readonly" class="rounded-full border border-amber-500/30 bg-amber-500/10 px-2 py-0.5 text-[10px] uppercase tracking-wide text-amber-700 dark:text-amber-300">Readonly</span>
+                    <span v-if="fm.selectedFile?.readonly" class="rounded-full border border-amber-500/30 bg-amber-500/10 px-2 py-0.5 text-[10px] uppercase tracking-wide text-amber-700 dark:text-amber-300">{{ t('fileManager.editor.readonly') }}</span>
                 </div>
                 <p class="mt-1 truncate text-[11px] text-slate-500 dark:text-slate-400">{{ fm.saveForm.file_path }}</p>
             </div>
 
             <div class="flex shrink-0 items-center gap-2">
-                <button type="button" class="rounded-md border border-slate-300/80 bg-white px-3 py-1.5 text-xs text-slate-700 shadow-sm transition hover:bg-slate-50 dark:border-white/10 dark:bg-white/5 dark:text-slate-200 dark:hover:bg-white/10" @click="fm.closeModal">Close</button>
+                <button type="button" class="rounded-md border border-slate-300/80 bg-white px-3 py-1.5 text-xs text-slate-700 shadow-sm transition hover:bg-slate-50 dark:border-white/10 dark:bg-white/5 dark:text-slate-200 dark:hover:bg-white/10" @click="fm.closeModal">{{ t('common.close') }}</button>
                 <button type="button" class="rounded-md bg-sky-600 px-4 py-1.5 text-xs font-medium text-white shadow-sm transition hover:bg-sky-500 disabled:cursor-not-allowed disabled:opacity-50" :disabled="fm.saveInProgress || !fm.hasUnsavedChanges || fm.selectedFile?.readonly" @click="fm.submitSaveFile">
-                    {{ fm.saveInProgress ? 'Saving...' : 'Save' }}
+                    {{ fm.saveInProgress ? t('fileManager.editor.saving') : t('common.save') }}
                 </button>
             </div>
         </div>
@@ -31,27 +34,27 @@ defineProps({
         <div class="flex min-h-0 flex-1 overflow-hidden">
             <aside class="hidden w-64 shrink-0 flex-col border-r border-slate-200/80 bg-slate-100/80 lg:flex dark:border-white/10 dark:bg-[#1f1f1f]">
                 <div class="border-b border-slate-200/80 px-4 py-3 dark:border-white/10">
-                    <p class="text-[10px] font-semibold uppercase tracking-[0.2em] text-slate-500 dark:text-slate-400">Explorer</p>
+                    <p class="text-[10px] font-semibold uppercase tracking-[0.2em] text-slate-500 dark:text-slate-400">{{ t('fileManager.editor.explorer') }}</p>
                 </div>
                 <div class="space-y-4 px-4 py-4 text-sm">
                     <div>
-                        <p class="text-[10px] uppercase tracking-[0.2em] text-slate-500 dark:text-slate-500">File</p>
+                        <p class="text-[10px] uppercase tracking-[0.2em] text-slate-500 dark:text-slate-500">{{ t('fileManager.editor.file') }}</p>
                         <p class="mt-1 break-all font-mono text-xs text-slate-800 dark:text-slate-200">{{ fm.editorFileName }}</p>
                     </div>
                     <div>
-                        <p class="text-[10px] uppercase tracking-[0.2em] text-slate-500 dark:text-slate-500">Folder</p>
+                        <p class="text-[10px] uppercase tracking-[0.2em] text-slate-500 dark:text-slate-500">{{ t('fileManager.editor.folder') }}</p>
                         <p class="mt-1 break-all font-mono text-xs text-slate-800 dark:text-slate-200">{{ fm.editorFileFolder }}</p>
                     </div>
                     <div>
-                        <p class="text-[10px] uppercase tracking-[0.2em] text-slate-500 dark:text-slate-500">Lines</p>
+                        <p class="text-[10px] uppercase tracking-[0.2em] text-slate-500 dark:text-slate-500">{{ t('fileManager.editor.lines') }}</p>
                         <p class="mt-1 font-mono text-xs text-slate-800 dark:text-slate-200">{{ fm.editorLineCount }}</p>
                     </div>
                     <div class="rounded-lg border border-slate-200 bg-white p-3 text-xs text-slate-600 shadow-sm dark:border-white/10 dark:bg-black/20 dark:text-slate-300">
-                        <p class="font-medium text-slate-800 dark:text-slate-100">Tips</p>
+                        <p class="font-medium text-slate-800 dark:text-slate-100">{{ t('fileManager.editor.tips') }}</p>
                         <ul class="mt-2 space-y-1 text-slate-500 dark:text-slate-400">
-                            <li>Ctrl/Cmd+S to save</li>
-                            <li>Use full-screen code editing</li>
-                            <li>Keep files split by responsibility</li>
+                            <li>{{ t('fileManager.editor.tipSave') }}</li>
+                            <li>{{ t('fileManager.editor.tipFullscreen') }}</li>
+                            <li>{{ t('fileManager.editor.tipSplit') }}</li>
                         </ul>
                     </div>
                 </div>
@@ -64,8 +67,8 @@ defineProps({
                         <span class="truncate text-slate-500 dark:text-slate-400">{{ fm.editorFileFolder }}</span>
                     </div>
                     <div class="flex items-center gap-3 text-[11px] text-slate-500 dark:text-slate-400">
-                        <span>{{ fm.hasUnsavedChanges ? 'Unsaved changes' : 'Saved' }}</span>
-                        <span>{{ fm.editorLineCount }} lines</span>
+                        <span>{{ fm.hasUnsavedChanges ? t('fileManager.editor.unsaved') : t('fileManager.editor.saved') }}</span>
+                        <span>{{ t('fileManager.editor.lineCount', { count: fm.editorLineCount }) }}</span>
                     </div>
                 </div>
 
@@ -76,7 +79,7 @@ defineProps({
                         type="button"
                         class="rounded-md border border-amber-500/40 bg-white px-3 py-1 font-medium text-amber-800 transition hover:bg-amber-100 dark:bg-white/5 dark:text-amber-200 dark:hover:bg-white/10"
                         @click="fm.loadFullFile"
-                    >Open full file</button>
+                    >{{ t('fileManager.editor.openFull') }}</button>
                 </div>
 
                 <div class="editor-shell flex min-h-0 flex-1 bg-white dark:bg-[#1e1e1e]">
@@ -95,7 +98,7 @@ defineProps({
 
                 <div class="flex items-center justify-between border-t border-slate-200/80 bg-white px-4 py-2 text-[11px] text-slate-500 dark:border-white/10 dark:bg-[#252526] dark:text-slate-400">
                     <span>{{ fm.saveForm.file_path }}</span>
-                    <span>{{ fm.hasUnsavedChanges ? 'Modified' : 'No changes' }}</span>
+                    <span>{{ fm.hasUnsavedChanges ? t('fileManager.editor.modified') : t('fileManager.editor.noChanges') }}</span>
                 </div>
             </div>
         </div>

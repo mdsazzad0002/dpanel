@@ -3,6 +3,9 @@ import PrimaryButton from '@/Components/PrimaryButton.vue';
 import { useForm, usePage } from '@inertiajs/vue3';
 import QRCode from 'qrcode';
 import { computed, ref, watch } from 'vue';
+import { useI18n } from 'vue-i18n';
+
+const { t } = useI18n();
 
 const page = usePage();
 const user = computed(() => page.props.auth?.user ?? {});
@@ -117,7 +120,7 @@ const requestEmailCode = () => {
             emailCode.value = '';
         })
         .catch((error) => {
-            emailError.value = String(error?.response?.data?.errors?.confirmation_code?.[0] ?? error?.response?.data?.message ?? 'Unable to send verification email.');
+            emailError.value = String(error?.response?.data?.errors?.confirmation_code?.[0] ?? error?.response?.data?.message ?? t('profile.twoFactor.sendFailed'));
         })
         .finally(() => {
             emailSending.value = false;
@@ -133,10 +136,10 @@ const refreshGoogleQr = async () => {
     <section class="space-y-6">
         <header class="space-y-2">
             <h2 class="text-lg font-semibold text-slate-900 dark:text-slate-100">
-                Security
+                {{ t('profile.twoFactor.title') }}
             </h2>
             <p class="text-sm text-slate-600 dark:text-slate-300">
-                Use the verification cards below to manage your two-factor settings.
+                {{ t('profile.twoFactor.subtitle') }}
             </p>
         </header>
 
@@ -150,17 +153,17 @@ const refreshGoogleQr = async () => {
                     <div class="min-w-0 flex-1">
                         <div class="flex items-center justify-between gap-3">
                             <h3 class="text-base font-semibold text-slate-900 dark:text-slate-100">
-                                Email Verification
+                                {{ t('profile.twoFactor.emailTitle') }}
                             </h3>
                             <span
                                 class="rounded-full px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.2em]"
                                 :class="isEmailVerified ? 'bg-emerald-500 text-white' : 'bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-300'"
                             >
-                                {{ isEmailVerified ? 'Verified' : 'Pending' }}
+                                {{ isEmailVerified ? t('profile.twoFactor.verified') : t('profile.twoFactor.pending') }}
                             </span>
                         </div>
                         <p class="mt-2 text-sm leading-6 text-slate-600 dark:text-slate-300">
-                            Send a verification email to confirm your account address.
+                            {{ t('profile.twoFactor.emailText') }}
                         </p>
                     </div>
                 </div>
@@ -173,24 +176,24 @@ const refreshGoogleQr = async () => {
 
                         class="mt-2 text-sm font-medium text-emerald-600 dark:text-emerald-400"
                     >
-                        Verification email sent.
+                        {{ t('profile.twoFactor.emailSent') }}
                     </p>
                 </div>
 
                 <div class="mt-5">
                     <label class="mb-2 block text-xs font-semibold uppercase tracking-[0.2em] text-slate-500 dark:text-slate-400">
-                        Confirmation Code
+                        {{ t('profile.twoFactor.code') }}
                     </label>
                     <input
                         v-model="emailCode"
                         type="text"
                         inputmode="numeric"
                         autocomplete="one-time-code"
-                        placeholder="Enter code"
+                        :placeholder="t('profile.twoFactor.codePlaceholder')"
                         class="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-blue-500 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100"
                     />
                     <p class="mt-2 text-xs text-slate-500 dark:text-slate-400">
-                        {{ emailStatus === 'email-code-sent' ? 'Code sent to your email address.' : 'Use the code sent to your email to confirm enable or disable.' }}
+                        {{ emailStatus === 'email-code-sent' ? t('profile.twoFactor.codeSent') : t('profile.twoFactor.codeHint') }}
                     </p>
                     <p
                         v-if="emailError"
@@ -207,7 +210,7 @@ const refreshGoogleQr = async () => {
                         :disabled="form.processing || emailSending"
                         @click="requestEmailCode"
                     >
-                        Send Email
+                        {{ t('profile.twoFactor.sendEmail') }}
                     </button>
 
                     <button
@@ -217,7 +220,7 @@ const refreshGoogleQr = async () => {
                         :disabled="form.processing"
                         @click="enableEmailVerification"
                     >
-                        Enable
+                        {{ t('profile.twoFactor.enable') }}
                     </button>
 
                     <button
@@ -227,7 +230,7 @@ const refreshGoogleQr = async () => {
                         :disabled="form.processing"
                         @click="disableEmailVerification"
                     >
-                        Disable
+                        {{ t('profile.twoFactor.disable') }}
                     </button>
 
                 </div>
@@ -248,33 +251,33 @@ const refreshGoogleQr = async () => {
                     <div class="min-w-0 flex-1">
                         <div class="flex items-center justify-between gap-3">
                             <h3 class="text-base font-semibold text-slate-900 dark:text-slate-100">
-                                Google Authenticator
+                                {{ t('profile.twoFactor.googleTitle') }}
                             </h3>
                             <span
                                 class="rounded-full px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.2em]"
                                 :class="googleEnabled ? 'bg-blue-600 text-white' : 'bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-300'"
                             >
-                                {{ googleEnabled ? 'Enabled' : 'Ready' }}
+                                {{ googleEnabled ? t('profile.twoFactor.enabled') : t('profile.twoFactor.ready') }}
                             </span>
                         </div>
                         <p class="mt-2 text-sm leading-6 text-slate-600 dark:text-slate-300">
-                            Scan the QR code with Google Authenticator or another TOTP app.
+                            {{ t('profile.twoFactor.googleText') }}
                         </p>
                     </div>
                 </div>
 
                 <div class="mt-5 grid gap-4 lg:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]">
                     <div class="rounded-2xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-700 dark:border-slate-800 dark:bg-slate-950/30 dark:text-slate-200">
-                        <p class="font-semibold text-slate-900 dark:text-slate-100">Confirmation</p>
+                        <p class="font-semibold text-slate-900 dark:text-slate-100">{{ t('profile.twoFactor.confirmation') }}</p>
                         <label class="mt-4 block text-xs font-semibold uppercase tracking-[0.2em] text-slate-500 dark:text-slate-400">
-                            Confirmation Code
+                            {{ t('profile.twoFactor.code') }}
                         </label>
                         <input
                             v-model="googleCode"
                             type="text"
                             inputmode="numeric"
                             autocomplete="one-time-code"
-                            placeholder="Enter authenticator code"
+                            :placeholder="t('profile.twoFactor.appPlaceholder')"
                             class="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-blue-500 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100"
                         />
                         <p
@@ -287,7 +290,7 @@ const refreshGoogleQr = async () => {
                             v-if="status === 'google-code-required'"
                             class="mt-2 text-xs text-blue-600 dark:text-blue-400"
                         >
-                            Scan the QR code, then enter the app code to enable Google Authenticator.
+                            {{ t('profile.twoFactor.googleRequired') }}
                         </p>
 
                         <div class="mt-5 flex items-center gap-3">
@@ -297,7 +300,7 @@ const refreshGoogleQr = async () => {
                                 :disabled="form.processing"
                                 @click="enableGoogleAuth"
                             >
-                                Enable
+                                {{ t('profile.twoFactor.enable') }}
                             </PrimaryButton>
 
                             <button
@@ -307,14 +310,14 @@ const refreshGoogleQr = async () => {
                                 :disabled="form.processing"
                                 @click="disableGoogleAuth"
                             >
-                                Disable
+                                {{ t('profile.twoFactor.disable') }}
                             </button>
                         </div>
                     </div>
 
                     <div class="rounded-2xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-700 dark:border-slate-800 dark:bg-slate-950/30 dark:text-slate-200">
                         <div class="flex items-center justify-between gap-3">
-                            <p class="font-semibold text-slate-900 dark:text-slate-100">QR code</p>
+                            <p class="font-semibold text-slate-900 dark:text-slate-100">{{ t('profile.twoFactor.qr') }}</p>
                             <button
                                 v-if="!googleEnabled"
                                 type="button"
@@ -323,7 +326,7 @@ const refreshGoogleQr = async () => {
                                 @click="refreshGoogleQr"
                             >
                                 <i class="bi bi-arrow-clockwise" />
-                                Retry
+                                {{ t('profile.twoFactor.retry') }}
                             </button>
                         </div>
 
@@ -335,21 +338,21 @@ const refreshGoogleQr = async () => {
                                 <img
                                     v-if="qrCodeDataUrl"
                                     :src="qrCodeDataUrl"
-                                    alt="Google Authenticator QR code"
+                                    :alt="t('profile.twoFactor.qrAlt')"
                                     class="h-52 w-52 rounded-xl border border-slate-200 bg-white p-2 dark:border-slate-800"
                                 />
                                 <div
                                     v-else
                                     class="flex h-52 w-52 items-center justify-center rounded-xl border border-dashed border-slate-300 text-center text-xs text-slate-500 dark:border-slate-700 dark:text-slate-400"
                                 >
-                                    Enable Google Authenticator to generate the QR code.
+                                    {{ t('profile.twoFactor.qrHint') }}
                                 </div>
                             </div>
                             <div
                                 v-else
                                 class="flex min-h-52 items-center justify-center rounded-2xl border border-dashed border-slate-300 bg-white px-4 py-6 text-center text-sm text-slate-500 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-400"
                             >
-                                Google Authenticator is already enabled, so the QR code is hidden.
+                                {{ t('profile.twoFactor.qrHidden') }}
                             </div>
                         </div>
                         <p
