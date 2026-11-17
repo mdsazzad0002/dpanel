@@ -206,5 +206,9 @@
         "ai": "AI",
         "general": "General"
     },
-    "notInstalled": "Not installed — open for setup steps"
+    "notInstalled": "Not installed — open for setup steps",
+    "toolsHashForge": "Hash Forge",
+    "toolsHashForgeHint": "MD5, SHA, bcrypt, Argon2 — generate and verify hashes",
+    "toolsLoadTest": "Load Test",
+    "toolsLoadTestHint": "Capped load test for your own sites"
 }

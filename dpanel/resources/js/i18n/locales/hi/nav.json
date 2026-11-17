@@ -206,5 +206,9 @@
         "ai": "AI",
         "general": "सामान्य"
     },
-    "notInstalled": "इंस्टॉल नहीं — सेटअप चरणों के लिए खोलें"
+    "notInstalled": "इंस्टॉल नहीं — सेटअप चरणों के लिए खोलें",
+    "toolsHashForge": "हैश फ़ोर्ज",
+    "toolsHashForgeHint": "MD5, SHA, bcrypt, Argon2 — हैश बनाएँ और जाँचें",
+    "toolsLoadTest": "लोड टेस्ट",
+    "toolsLoadTestHint": "अपनी साइटों के लिए सीमित लोड टेस्ट"
 }

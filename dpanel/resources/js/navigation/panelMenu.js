@@ -256,6 +256,8 @@ export const buildPanelMenu = (userRoles = []) => [
     { section: 'System', label: t('nav.systemIpAddressesIndex'), hint: t('nav.systemIpAddressesIndexHint'), icon: 'IP', iconClass: 'bi bi-diagram-3', routeName: 'system.ip-addresses.index', roles: ['admin', 'reseller'], color: 'sky' },
     { section: 'System', label: t('nav.systemUpdatesIndex'), hint: t('nav.systemUpdatesIndexHint'), icon: 'UP', iconClass: 'bi bi-cloud-arrow-down', routeName: 'system.updates.index', roles: ['admin'], color: 'emerald' },
     { section: 'System', label: t('nav.settingsBranding'), hint: t('nav.settingsBrandingHint'), icon: 'BR', iconClass: 'bi bi-palette', routeName: 'settings.branding', roles: ['admin', 'reseller'], color: 'violet' },
+    { section: 'System', label: t('nav.toolsHashForge'), hint: t('nav.toolsHashForgeHint'), icon: 'HF', iconClass: 'bi bi-hash', routeName: 'tools.hash-forge.index', color: 'teal' },
+    { section: 'System', label: t('nav.toolsLoadTest'), hint: t('nav.toolsLoadTestHint'), icon: 'LT', iconClass: 'bi bi-speedometer2', routeName: 'tools.load-test.index', color: 'amber' },
     { section: 'System', label: t('nav.systemExtensionsIndex'), hint: t('nav.systemExtensionsIndexHint'), icon: 'EX', iconClass: 'bi bi-puzzle', routeName: 'system.extensions.index', roles: ['admin'], color: 'violet' },
     {
         section: 'AI',

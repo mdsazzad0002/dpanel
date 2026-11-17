@@ -962,6 +962,32 @@ Route::prefix('dpt{token}')
                 ->where('id', '[^/]+')
                 ->name('databases.phpmyadmin');
 
+            // Tools → Hash Forge (any signed-in user; nothing is stored).
+            Route::get('/tools/hash-forge', [\App\Http\Controllers\Tools\HashForgeController::class, 'index'])
+                ->name('tools.hash-forge.index');
+            Route::post('/tools/hash-forge/generate', [\App\Http\Controllers\Tools\HashForgeController::class, 'generate'])
+                ->middleware('throttle:60,1')
+                ->name('tools.hash-forge.generate');
+            Route::post('/tools/hash-forge/verify', [\App\Http\Controllers\Tools\HashForgeController::class, 'verify'])
+                ->middleware('throttle:60,1')
+                ->name('tools.hash-forge.verify');
+            Route::post('/tools/hash-forge/identify', [\App\Http\Controllers\Tools\HashForgeController::class, 'identify'])
+                ->middleware('throttle:60,1')
+                ->name('tools.hash-forge.identify');
+            Route::post('/tools/hash-forge/crack', [\App\Http\Controllers\Tools\HashForgeController::class, 'crack'])
+                ->middleware('throttle:30,1')
+                ->name('tools.hash-forge.crack');
+            Route::post('/tools/hash-forge/audit', [\App\Http\Controllers\Tools\HashForgeController::class, 'audit'])
+                ->middleware('throttle:60,1')
+                ->name('tools.hash-forge.audit');
+
+            // Tools → Load Test (capped; only against the account's own domains).
+            Route::get('/tools/load-test', [\App\Http\Controllers\Tools\LoadTestController::class, 'index'])
+                ->name('tools.load-test.index');
+            Route::post('/tools/load-test/run', [\App\Http\Controllers\Tools\LoadTestController::class, 'run'])
+                ->middleware('throttle:6,1')
+                ->name('tools.load-test.run');
+
             include __DIR__.'/website.php';
 
             Route::patch('/databases/{id}', [DatabaseController::class, 'update'])

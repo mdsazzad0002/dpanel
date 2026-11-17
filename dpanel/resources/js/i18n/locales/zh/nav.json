@@ -206,5 +206,9 @@
         "ai": "AI",
         "general": "常规"
     },
-    "notInstalled": "未安装——打开查看设置步骤"
+    "notInstalled": "未安装——打开查看设置步骤",
+    "toolsHashForge": "哈希工坊",
+    "toolsHashForgeHint": "MD5、SHA、bcrypt、Argon2 — 生成和校验哈希",
+    "toolsLoadTest": "负载测试",
+    "toolsLoadTestHint": "对你自己站点的受限负载测试"
 }

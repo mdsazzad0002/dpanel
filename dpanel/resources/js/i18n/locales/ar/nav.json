@@ -206,5 +206,9 @@
         "ai": "الذكاء الاصطناعي",
         "general": "عام"
     },
-    "notInstalled": "غير مثبّت — افتحه لرؤية خطوات الإعداد"
+    "notInstalled": "غير مثبّت — افتحه لرؤية خطوات الإعداد",
+    "toolsHashForge": "مصنع التجزئة",
+    "toolsHashForgeHint": "MD5 وSHA وbcrypt وArgon2 — إنشاء التجزئات والتحقق منها",
+    "toolsLoadTest": "اختبار الحِمل",
+    "toolsLoadTestHint": "اختبار حِمل محدود لمواقعك الخاصة"
 }

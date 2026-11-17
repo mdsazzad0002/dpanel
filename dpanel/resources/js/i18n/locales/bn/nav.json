@@ -206,5 +206,9 @@
         "ai": "AI",
         "general": "সাধারণ"
     },
-    "notInstalled": "Install করা নেই — setup-এর ধাপ দেখতে খুলুন"
+    "notInstalled": "Install করা নেই — setup-এর ধাপ দেখতে খুলুন",
+    "toolsHashForge": "Hash Forge",
+    "toolsHashForgeHint": "MD5, SHA, bcrypt, Argon2 — hash তৈরি ও যাচাই",
+    "toolsLoadTest": "লোড টেস্ট",
+    "toolsLoadTestHint": "নিজের সাইটের জন্য সীমিত লোড টেস্ট"
 }
