@@ -166,6 +166,9 @@ const messageFilter = ref('all');
 const filterMenuOpen = ref(false);
 const messages = ref([...props.messages]);
 const activeFolder = ref(props.selectedFolder || 'INBOX');
+// Inbox category (primary/promotions/updates/social); '' shows the whole Inbox.
+const activeCategory = ref('');
+const categoryCounts = ref({});
 const activeMessage = ref(props.message);
 const composeTo = ref(props.composeDefaults.to || '');
 const composeSubject = ref(props.composeDefaults.subject || '');
@@ -228,6 +231,23 @@ function mergeFolders(incoming = []) {
 }
 
 const folders = ref(mergeFolders(props.folders));
+
+// A list holding only INBOX means the server could not list folders this
+// time; keep the folders already shown (with the fresh Inbox counts) so
+// Sent/Drafts/Spam/Trash do not disappear from the sidebar.
+function applyFolders(incoming) {
+    if (!Array.isArray(incoming) || incoming.length === 0) return;
+    const next = mergeFolders(incoming);
+    if (next.length === 1 && folders.value.length > 1) {
+        const inbox = next[0];
+        folders.value = folders.value.map((folder) => (normalizeFolderName(folder.name) === 'inbox' ? { ...folder, unread: inbox.unread, exists: inbox.exists } : folder));
+        return;
+    }
+    folders.value = next;
+}
+
+const isInbox = (name) => normalizeFolderName(name) === 'inbox';
+const categoryParam = (folder) => (activeCategory.value && isInbox(folder) ? { category: activeCategory.value } : {});
 
 function removeToast(id) {
     toasts.value = toasts.value.filter((toast) => toast.id !== id);
@@ -313,7 +333,12 @@ const folderLabel = (name) => {
     if (normalized === 'all mail') return t('email.mailbox.folders.allShort');
     return name;
 };
-const activeFolderUnread = computed(() => Number(folders.value.find((f) => f.name === activeFolder.value)?.unread) || 0);
+const activeFolderUnread = computed(() => (activeCategory.value && isInbox(activeFolder.value)
+    ? Number(categoryCounts.value?.[activeCategory.value]?.unread) || 0
+    : Number(folders.value.find((f) => f.name === activeFolder.value)?.unread) || 0));
+const activeViewLabel = computed(() => (activeCategory.value && isInbox(activeFolder.value)
+    ? t(`email.mailbox.categories.${activeCategory.value}`)
+    : folderLabel(activeFolder.value)));
 const folderOrder = ['inbox', 'sent', 'outbox', 'drafts', 'spam', 'junk', 'trash', 'all mail'];
 
 const compactFolders = computed(() => {
@@ -396,6 +421,7 @@ const openMailbox = (id) => {
 };
 
 const loadMailbox = async (folder = activeFolder.value, uid = null, forceSync = false, followUp = false) => {
+    const requestedCategory = activeCategory.value;
     loading.value = !followUp;
     errorMessage.value = '';
     statusMessage.value = '';
@@ -404,6 +430,7 @@ const loadMailbox = async (folder = activeFolder.value, uid = null, forceSync = 
         const response = await window.axios.get(props.loadEndpoint, {
             params: {
                 folder,
+                ...categoryParam(folder),
                 ...(uid ? { uid } : {}),
                 ...(forceSync ? { refresh: 1 } : {}),
             },
@@ -411,9 +438,8 @@ const loadMailbox = async (folder = activeFolder.value, uid = null, forceSync = 
         });
 
         const data = response?.data || {};
-        if (Array.isArray(data.folders) && data.folders.length > 0) {
-            folders.value = mergeFolders(data.folders);
-        }
+        applyFolders(data.folders);
+        if (data.categories && typeof data.categories === 'object') categoryCounts.value = data.categories;
         const previousFolder = activeFolder.value;
         messages.value = Array.isArray(data.messages) ? data.messages : [];
         activeFolder.value = folder;
@@ -435,7 +461,7 @@ const loadMailbox = async (folder = activeFolder.value, uid = null, forceSync = 
         else if (data.cached && data.syncing && !followUp) {
             // The cached list is shown instantly; pick up the background sync result once.
             setTimeout(() => {
-                if (activeFolder.value === folder) {
+                if (activeFolder.value === folder && activeCategory.value === requestedCategory) {
                     loadMailbox(folder, null, false, true);
                 }
             }, 3000);
@@ -462,18 +488,18 @@ const pollMailbox = async () => {
     if (polling || loading.value || document.hidden) return;
 
     const folder = activeFolder.value;
+    const category = activeCategory.value;
     polling = true;
     try {
         const response = await window.axios.get(props.loadEndpoint, {
-            params: { folder },
+            params: { folder, ...categoryParam(folder) },
             headers: { Accept: 'application/json' },
         });
         const data = response?.data || {};
-        if (!data.success || loading.value || activeFolder.value !== folder) return;
+        if (!data.success || loading.value || activeFolder.value !== folder || activeCategory.value !== category) return;
 
-        if (Array.isArray(data.folders) && data.folders.length > 0) {
-            folders.value = mergeFolders(data.folders);
-        }
+        applyFolders(data.folders);
+        if (data.categories && typeof data.categories === 'object') categoryCounts.value = data.categories;
         if (Array.isArray(data.messages)) {
             messages.value = data.messages;
         }
@@ -499,7 +525,16 @@ const handleVisibilityChange = () => {
 const openFolder = async (folder) => {
     activeView.value = 'mail';
     filterMenuOpen.value = false;
+    activeCategory.value = '';
     await loadMailbox(folder.name);
+};
+
+const openCategory = async (category) => {
+    activeView.value = 'mail';
+    filterMenuOpen.value = false;
+    activeCategory.value = activeCategory.value === category ? '' : category;
+    currentPage.value = 1;
+    await loadMailbox('INBOX');
 };
 
 // Opening a message fetches only that message; the list and folders stay as they are.
@@ -860,7 +895,9 @@ watch(() => messageFilter.value, () => {
         <!-- Fixed Sidebar -->
         <MailboxSidebar
             :folders="compactFolders"
-            :active-folder="activeView === 'mail' ? activeFolder : ''"
+            :active-folder="activeView === 'mail' && !activeCategory ? activeFolder : ''"
+            :categories="categoryCounts"
+            :active-category="activeView === 'mail' && isInbox(activeFolder) ? activeCategory : ''"
             :contacts-active="activeView === 'contacts'"
             :loading="loading"
             :is-dark="isDark"
@@ -870,6 +907,7 @@ watch(() => messageFilter.value, () => {
             class="fixed inset-y-0 left-0 z-50"
             @compose="startCompose"
             @open-folder="openFolder"
+            @open-category="openCategory"
             @close-mobile="sidebarOpen = false"
             @toggle-collapse="toggleSidebar"
             @open-contacts="openContacts"
@@ -894,7 +932,7 @@ watch(() => messageFilter.value, () => {
                 :related-mailboxes="relatedMailboxesToShow"
                 :mailboxes-href="mailboxesHref"
                 :logout-href="logoutHref"
-                :active-folder-label="folderLabel(activeFolder)"
+                :active-folder-label="activeViewLabel"
                 :unread-count="activeFolderUnread"
                 :loading="loading"
                 @refresh-inbox="refreshInbox"

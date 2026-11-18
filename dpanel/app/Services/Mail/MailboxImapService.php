@@ -39,7 +39,7 @@ class MailboxImapService
      *
      * @return array{folders: array<int, array<string, mixed>>, messages: array<int, array<string, mixed>>, message: null}|null
      */
-    public function cachedMailbox(Mailbox $mailbox, string $folder = 'INBOX', int $limit = 40): ?array
+    public function cachedMailbox(Mailbox $mailbox, string $folder = 'INBOX', int $limit = 40, ?string $category = null): ?array
     {
         $state = MailboxSyncState::query()
             ->where('mailbox_id', $mailbox->id)
@@ -50,16 +50,57 @@ class MailboxImapService
             return null;
         }
 
-        $messages = MailboxMessageMetadata::query()
-            ->where('mailbox_id', $mailbox->id)
-            ->where('folder', $folder)
+        $messages = $this->categoryScope($this->cacheQuery($mailbox, $folder), $folder, $category)
             ->orderByDesc('uid')
             ->limit(max(1, $limit))
             ->get()
             ->map(fn (MailboxMessageMetadata $metadata): array => $this->metadataRow($metadata))
             ->all();
 
-        return ['folders' => $state->folders, 'messages' => $messages, 'message' => null];
+        return [
+            'folders' => $state->folders,
+            'messages' => $messages,
+            'message' => null,
+            'categories' => $this->categoryCounts($mailbox),
+        ];
+    }
+
+    /**
+     * Unread and total counts of each Inbox category, from the cache.
+     *
+     * @return array<string, array{unread: int, total: int}>
+     */
+    public function categoryCounts(Mailbox $mailbox): array
+    {
+        $counts = array_fill_keys(MailCategoryClassifier::ALL, ['unread' => 0, 'total' => 0]);
+        $rows = $this->cacheQuery($mailbox, 'INBOX')
+            ->whereNotNull('category')
+            ->selectRaw('category, COUNT(*) AS total, SUM(CASE WHEN seen THEN 0 ELSE 1 END) AS unread')
+            ->groupBy('category')
+            ->get();
+        foreach ($rows as $row) {
+            if (isset($counts[$row->category])) {
+                $counts[$row->category] = ['unread' => (int) $row->unread, 'total' => (int) $row->total];
+            }
+        }
+
+        return $counts;
+    }
+
+    /**
+     * Categories only split the Inbox; other folders ignore the filter.
+     * Primary also holds mail not classified yet, so nothing goes missing.
+     */
+    private function categoryScope(\Illuminate\Database\Eloquent\Builder $query, string $folder, ?string $category): \Illuminate\Database\Eloquent\Builder
+    {
+        if (strcasecmp($folder, 'INBOX') !== 0 || ! in_array($category, MailCategoryClassifier::ALL, true)) {
+            return $query;
+        }
+        if ($category === MailCategoryClassifier::PRIMARY) {
+            return $query->where(fn ($q) => $q->where('category', $category)->orWhereNull('category'));
+        }
+
+        return $query->where('category', $category);
     }
 
     /**
@@ -157,11 +198,11 @@ class MailboxImapService
     /**
      * @return array{folders: array<int, array{name: string, unread: int, exists: int}>, messages: array<int, array<string, mixed>>, message: array<string, mixed>|null}
      */
-    public function loadMailbox(Mailbox $mailbox, string $folder = 'INBOX', ?int $uid = null, int $limit = 40): array
+    public function loadMailbox(Mailbox $mailbox, string $folder = 'INBOX', ?int $uid = null, int $limit = 40, ?string $category = null): array
     {
         $stream = $this->open($mailbox, $folder);
         $folders = $this->folders($stream, $mailbox, $folder);
-        $messages = $this->messages($stream, $mailbox, $folder, $limit);
+        $messages = $this->messages($stream, $mailbox, $folder, $limit, $category);
         $message = $uid !== null ? $this->message($stream, $mailbox, $folder, $uid) : null;
         $this->close($stream);
 
@@ -169,6 +210,7 @@ class MailboxImapService
             'folders' => $folders,
             'messages' => $messages,
             'message' => $message,
+            'categories' => $this->categoryCounts($mailbox),
         ];
     }
 
@@ -629,8 +671,20 @@ class MailboxImapService
 
         $prefix = $this->mailboxPrefix();
         $mailboxes = @imap_getmailboxes($stream, $prefix, '*');
-        if (! is_array($mailboxes)) {
-            return [['name' => 'INBOX', 'unread' => 0, 'exists' => 0]];
+        if (! is_array($mailboxes) || $mailboxes === []) {
+            // A failed LIST is usually transient. Answering with INBOX alone
+            // made Sent/Drafts/Spam/Trash vanish from the sidebar, so keep the
+            // last list this mailbox had and retry on the next load.
+            imap_errors();
+            $known = MailboxSyncState::query()
+                ->where('mailbox_id', $mailbox->id)
+                ->whereNotNull('folders')
+                ->orderByDesc('folders_synced_at')
+                ->value('folders');
+
+            return is_array($known) && $known !== []
+                ? $known
+                : [['name' => 'INBOX', 'unread' => 0, 'exists' => 0]];
         }
 
         $folders = [];
@@ -721,7 +775,7 @@ class MailboxImapService
      * @param  resource  $stream
      * @return array<int, array<string, mixed>>
      */
-    private function messages($stream, Mailbox $mailbox, string $folder, int $limit): array
+    private function messages($stream, Mailbox $mailbox, string $folder, int $limit, ?string $category = null): array
     {
         $status = @imap_status($stream, $this->mailboxPath($folder), SA_ALL);
         if (is_object($status)) {
@@ -772,7 +826,12 @@ class MailboxImapService
             ])->save();
         }
 
-        $rows = $this->cacheQuery($mailbox, $folder)->orderByDesc('uid')->limit(max(1, $limit))->get();
+        if (strcasecmp($folder, 'INBOX') === 0) {
+            $this->classifyNewest($stream, $mailbox);
+        }
+
+        $rows = $this->categoryScope($this->cacheQuery($mailbox, $folder), $folder, $category)
+            ->orderByDesc('uid')->limit(max(1, $limit))->get();
 
         // Snippets need a body fetch, so they are only built for the visible page.
         foreach ($rows as $row) {
@@ -782,6 +841,25 @@ class MailboxImapService
         }
 
         return $rows->map(fn (MailboxMessageMetadata $metadata): array => $this->metadataRow($metadata))->all();
+    }
+
+    /**
+     * Headers decide the category, so one small FETCH per message. Newest
+     * first and capped per load, so a large first sync spreads over a few
+     * background syncs instead of one slow request.
+     *
+     * @param  resource  $stream
+     */
+    private function classifyNewest($stream, Mailbox $mailbox, int $max = 150): void
+    {
+        $classifier = new MailCategoryClassifier($this->analyzer);
+        $rows = $this->cacheQuery($mailbox, 'INBOX')->whereNull('category')->orderByDesc('uid')->limit($max)->get(['id', 'uid']);
+        foreach ($rows as $row) {
+            $headers = @imap_fetchheader($stream, (int) $row->uid, FT_UID);
+            $category = is_string($headers) && $headers !== '' ? $classifier->classify($headers) : MailCategoryClassifier::PRIMARY;
+            MailboxMessageMetadata::query()->whereKey($row->id)->update(['category' => $category]);
+        }
+        imap_errors();
     }
 
     /**
@@ -879,6 +957,7 @@ class MailboxImapService
             'seen' => $metadata->seen,
             'size' => $metadata->size,
             'snippet' => MailText::toUtf8((string) $metadata->snippet),
+            'category' => $metadata->category,
         ];
     }
 

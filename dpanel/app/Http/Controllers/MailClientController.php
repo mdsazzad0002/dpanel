@@ -7,6 +7,7 @@ use App\Models\Mailbox;
 use App\Models\MailboxMessageMetadata;
 use App\Services\Mail\MailAvatarResolver;
 use App\Services\Mail\MailboxImapService;
+use App\Services\Mail\MailCategoryClassifier;
 use App\Services\Mail\MailImageProxy;
 use App\Services\Mail\MailMessageAnalyzer;
 use App\Services\Mail\MailSpamAnalyzer;
@@ -83,9 +84,11 @@ class MailClientController extends Controller
 
         $folder = (string) $request->query('folder', 'INBOX');
         $uid = $request->integer('uid') ?: null;
+        $category = $request->query('category');
+        $category = in_array($category, MailCategoryClassifier::ALL, true) ? $category : null;
 
         if (! $request->boolean('refresh')) {
-            $cached = $mailboxImapService->cachedMailbox($mailbox, $folder);
+            $cached = $mailboxImapService->cachedMailbox($mailbox, $folder, 40, $category);
             $cachedMessage = $uid !== null ? $mailboxImapService->cachedMessage($mailbox, $folder, $uid) : null;
             if ($cached !== null && ($uid === null || $cachedMessage !== null)) {
                 SyncMailboxMetadataJob::dispatch((string) $mailbox->id, $folder)->afterResponse();
@@ -95,6 +98,7 @@ class MailClientController extends Controller
                     'message' => null,
                     'folders' => $cached['folders'],
                     'messages' => $cached['messages'],
+                    'categories' => $cached['categories'],
                     'messageData' => $cachedMessage,
                     'cached' => true,
                     'syncing' => true,
@@ -103,7 +107,7 @@ class MailClientController extends Controller
         }
 
         try {
-            $data = $mailboxImapService->loadMailbox($mailbox, $folder, $uid);
+            $data = $mailboxImapService->loadMailbox($mailbox, $folder, $uid, 40, $category);
         } catch (RuntimeException $e) {
             return response()->json([
                 'success' => false,
@@ -120,6 +124,7 @@ class MailClientController extends Controller
             'message' => null,
             'folders' => $data['folders'],
             'messages' => $data['messages'],
+            'categories' => $data['categories'],
             'messageData' => $data['message'],
             'cached' => false,
             'syncing' => false,

@@ -38,9 +38,25 @@ const props = defineProps({
         type: Boolean,
         default: false,
     },
+    // { primary: { unread, total }, promotions: …, updates: …, social: … }
+    categories: {
+        type: Object,
+        default: () => ({}),
+    },
+    activeCategory: {
+        type: String,
+        default: '',
+    },
 });
 
-const emit = defineEmits(['compose', 'open-folder', 'close-mobile', 'toggle-collapse', 'open-contacts']);
+const emit = defineEmits(['compose', 'open-folder', 'open-category', 'close-mobile', 'toggle-collapse', 'open-contacts']);
+
+const categoryItems = computed(() => [
+    { key: 'primary', icon: 'bi-person' },
+    { key: 'promotions', icon: 'bi-tag' },
+    { key: 'updates', icon: 'bi-info-circle' },
+    { key: 'social', icon: 'bi-people' },
+].map((item) => ({ ...item, unread: Number(props.categories?.[item.key]?.unread) || 0 })));
 
 const ui = computed(() => (props.isDark
     ? {
@@ -175,6 +191,33 @@ const barColor = computed(() => {
 
                 <span
                     v-if="folder.unread > 0 && compact"
+                    :class="['absolute right-3 top-2 h-2 w-2 rounded-full bg-blue-600 ring-2', isDark ? 'ring-slate-950' : 'ring-white']"
+                ></span>
+            </button>
+
+            <div :class="[ui.divider, 'my-2 border-t']"></div>
+            <p v-if="!compact" :class="[ui.muted, 'px-3 pb-1.5 pt-1 text-[11px] font-semibold uppercase tracking-wider']">{{ t('email.mailbox.categories.title') }}</p>
+            <button
+                v-for="category in categoryItems"
+                :key="category.key"
+                type="button"
+                :class="[
+                    'group relative mb-0.5 flex w-full items-center gap-3 rounded-md text-left text-sm transition disabled:cursor-wait',
+                    compact ? 'h-10 justify-center' : 'h-9 px-3',
+                    category.key === activeCategory ? [ui.itemActive, 'font-semibold'] : [ui.item, category.unread > 0 ? 'font-semibold' : 'font-medium'],
+                ]"
+                :aria-current="category.key === activeCategory ? 'page' : undefined"
+                :disabled="loading"
+                :title="compact ? `${t(`email.mailbox.categories.${category.key}`)}${category.unread ? ` (${category.unread})` : ''}` : ''"
+                @click="emit('open-category', category.key)"
+            >
+                <i :class="['bi shrink-0 text-[15px]', category.icon, category.key === activeCategory ? ui.iconActive : ui.icon]"></i>
+                <span v-if="!compact" class="flex-1 truncate">{{ t(`email.mailbox.categories.${category.key}`) }}</span>
+                <span v-if="category.unread > 0 && !compact" :class="['text-xs tabular-nums', category.key === activeCategory ? '' : ui.strong]">
+                    {{ category.unread > 999 ? '999+' : category.unread }}
+                </span>
+                <span
+                    v-if="category.unread > 0 && compact"
                     :class="['absolute right-3 top-2 h-2 w-2 rounded-full bg-blue-600 ring-2', isDark ? 'ring-slate-950' : 'ring-white']"
                 ></span>
             </button>

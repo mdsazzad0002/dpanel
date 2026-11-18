@@ -3,6 +3,7 @@ import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
 import { Head, Link, useForm, usePage } from '@inertiajs/vue3';
 import { computed, ref } from 'vue';
 import { useI18n } from 'vue-i18n';
+import AppSmtpSnippets from './AppSmtpSnippets.vue';
 
 const { t } = useI18n();
 
@@ -83,6 +84,7 @@ const sections = computed(() => [
                 </div>
                 <div class="border-t border-slate-200 bg-slate-50 p-4 text-sm dark:border-slate-800 dark:bg-slate-950/50"><h3 class="font-semibold">{{ t('email.connectGuide.steps') }}</h3><ol class="mt-2 list-decimal space-y-1.5 pl-5 text-slate-600 dark:text-slate-300"><li><i18n-t keypath="email.connectGuide.step1" scope="global"><template #add><strong>{{ t('email.connectGuide.addAccount') }}</strong></template><template #imap><strong>IMAP</strong></template><template #manual><strong>{{ t('email.connectGuide.manualSetup') }}</strong></template></i18n-t></li><li><i18n-t keypath="email.connectGuide.step2" scope="global"><template #email><strong>{{ mailbox.email }}</strong></template></i18n-t></li><li>{{ t('email.connectGuide.step3') }}</li><li><i18n-t keypath="email.connectGuide.step4" scope="global"><template #host><span class="font-mono">{{ mailHost }}</span></template></i18n-t></li></ol></div>
             </section>
+            <AppSmtpSnippets :email="mailbox.email" :host="mailHost" />
         </div>
     </AuthenticatedLayout>
 </template>

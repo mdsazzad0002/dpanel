@@ -55,7 +55,24 @@
         "manualSetup": "Manual setup",
         "step2": "Use {email} as the username for incoming and outgoing servers.",
         "step3": "Use the mailbox password created in dPanel and enable SMTP authentication.",
-        "step4": "Accept only a valid TLS certificate matching {host}."
+        "step4": "Accept only a valid TLS certificate matching {host}.",
+        "apps": {
+            "title": "Use in your website or app",
+            "help": "Copy-paste SMTP settings for this mailbox. Host and username are already filled in; only add the mailbox password.",
+            "copyCode": "Copy",
+            "copied": "Copied",
+            "terminal": "Terminal (test)",
+            "laravelNote": "Add these lines to your project's .env, then clear the config cache.",
+            "wordpressNote": "Put the constants in wp-config.php (above \"That's all, stop editing\") and save the second file as a must-use plugin. No extra plugin needed.",
+            "ci4Note": "Add to the project's .env. Values override app/Config/Email.php.",
+            "ci3Note": "Create this file; the email library loads it automatically.",
+            "phpmailerNote": "For plain PHP sites. Install PHPMailer with Composer first.",
+            "symfonyNote": "The {'@'} in the username is URL-encoded as %40. URL-encode the password too if it has special characters.",
+            "nodeNote": "Uses Nodemailer. Keep the password in an environment variable.",
+            "pythonNote": "Standard library only, no packages needed.",
+            "djangoNote": "Add to settings.py; send_mail() then uses this mailbox.",
+            "passwordHint": "Replace {placeholder} with the mailbox password. Keep it in .env or server config, never commit it to Git. Port 587 with STARTTLS (tls) also works if 465 is blocked."
+        }
     },
     "form": {
         "domain": "Website Domain",
@@ -733,6 +750,13 @@
             "outbox": "Outbox",
             "all": "All mail",
             "allShort": "All"
+        },
+        "categories": {
+            "title": "Categories",
+            "primary": "Primary",
+            "promotions": "Promotions",
+            "updates": "Updates",
+            "social": "Social"
         }
     }
 }

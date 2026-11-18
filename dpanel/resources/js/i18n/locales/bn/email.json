@@ -55,7 +55,24 @@
         "manualSetup": "Manual setup",
         "step2": "Incoming ও outgoing দুই server-এর username হিসেবে {email} ব্যবহার করুন।",
         "step3": "dPanel-এ তৈরি করা mailbox password ব্যবহার করুন এবং SMTP authentication চালু করুন।",
-        "step4": "শুধু {host}-এর সাথে মেলে এমন বৈধ TLS certificate গ্রহণ করুন।"
+        "step4": "শুধু {host}-এর সাথে মেলে এমন বৈধ TLS certificate গ্রহণ করুন।",
+        "apps": {
+            "title": "ওয়েবসাইট বা অ্যাপে ব্যবহার করুন",
+            "help": "এই মেইলবক্সের SMTP সেটিংস কপি-পেস্ট করুন। হোস্ট ও ইউজারনেম বসানো আছে; শুধু মেইলবক্সের পাসওয়ার্ড দিন।",
+            "copyCode": "কপি",
+            "copied": "কপি হয়েছে",
+            "terminal": "টার্মিনাল (টেস্ট)",
+            "laravelNote": "প্রজেক্টের .env ফাইলে এই লাইনগুলো দিন, তারপর config cache ক্লিয়ার করুন।",
+            "wordpressNote": "কনস্ট্যান্টগুলো wp-config.php তে (\"That's all, stop editing\" এর উপরে) দিন এবং দ্বিতীয় ফাইলটি must-use plugin হিসেবে সেভ করুন। আলাদা প্লাগইন লাগবে না।",
+            "ci4Note": "প্রজেক্টের .env ফাইলে দিন। এগুলো app/Config/Email.php এর মান override করবে।",
+            "ci3Note": "এই ফাইলটি তৈরি করুন; email library নিজে থেকেই এটি লোড করবে।",
+            "phpmailerNote": "সাধারণ PHP সাইটের জন্য। আগে Composer দিয়ে PHPMailer ইনস্টল করুন।",
+            "symfonyNote": "ইউজারনেমের {'@'} চিহ্ন URL-encode হয়ে %40 হয়েছে। পাসওয়ার্ডে বিশেষ চিহ্ন থাকলে সেটাও URL-encode করুন।",
+            "nodeNote": "Nodemailer ব্যবহার করে। পাসওয়ার্ড environment variable এ রাখুন।",
+            "pythonNote": "শুধু standard library, কোনো প্যাকেজ লাগবে না।",
+            "djangoNote": "settings.py তে দিন; তারপর send_mail() এই মেইলবক্স ব্যবহার করবে।",
+            "passwordHint": "{placeholder} এর জায়গায় মেইলবক্সের পাসওয়ার্ড দিন। এটি .env বা সার্ভার কনফিগে রাখুন, কখনো Git এ commit করবেন না। 465 ব্লক থাকলে 587 পোর্ট STARTTLS (tls) দিয়েও কাজ করবে।"
+        }
     },
     "form": {
         "domain": "Website domain",
@@ -733,6 +750,13 @@
             "outbox": "Outbox",
             "all": "সব mail",
             "allShort": "সব"
+        },
+        "categories": {
+            "title": "ক্যাটাগরি",
+            "primary": "প্রাইমারি",
+            "promotions": "প্রোমোশন",
+            "updates": "আপডেট",
+            "social": "সোশ্যাল"
         }
     }
 }

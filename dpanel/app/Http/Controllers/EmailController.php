@@ -40,6 +40,7 @@ use RuntimeException;
 class EmailController extends Controller
 {
     private const DOVECOT_AUTH_FILE = '/etc/dovecot/conf.d/auth-dpanel.conf.ext';
+    private const DOVECOT_LEGACY_AUTH_FILE = '/etc/dovecot/conf.d/auth-serverpanel.conf.ext';
     private const DOVECOT_AUTH_INCLUDE_FILE = '/etc/dovecot/conf.d/10-auth.conf';
 
     public function __construct(
@@ -976,9 +977,19 @@ class EmailController extends Controller
             return true;
         }
 
-        return is_file(self::DOVECOT_AUTH_FILE)
-            && is_file('/etc/dovecot/dpanel-sql.conf.ext')
+        return $this->hasDovecotSqlAuthConfig()
             && is_file(self::DOVECOT_AUTH_INCLUDE_FILE);
+    }
+
+    /**
+     * Servers set up before the rename keep the SQL passdb/userdb inline in
+     * auth-serverpanel.conf.ext; newer ones split it into auth-dpanel.conf.ext
+     * plus dpanel-sql.conf.ext. Either layout is a working backend.
+     */
+    private function hasDovecotSqlAuthConfig(): bool
+    {
+        return (is_file(self::DOVECOT_AUTH_FILE) && is_file('/etc/dovecot/dpanel-sql.conf.ext'))
+            || is_file(self::DOVECOT_LEGACY_AUTH_FILE);
     }
 
     private function isDovecotMysqlDriverAvailable(): bool
@@ -1059,7 +1070,7 @@ class EmailController extends Controller
             ];
         }
 
-        if (! is_file(self::DOVECOT_AUTH_FILE) || ! is_file('/etc/dovecot/dpanel-sql.conf.ext')) {
+        if (! $this->hasDovecotSqlAuthConfig()) {
             return ['ok' => false, 'message' => 'Dovecot SQL auth is not configured. Run dpanel mail installation/migration.'];
         }
 
