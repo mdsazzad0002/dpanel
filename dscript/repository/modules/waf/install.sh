@@ -8,7 +8,7 @@ source "${SCRIPT_DIR}/../_load.sh" 2>/dev/null || { source "${DPANEL_RUNTIME_DIR
 action="${1:-install}"
 [[ $# -gt 0 ]] && shift
 
-# The web application firewall (backlog S2, spike plans/spikes/waf.md):
+# The web application firewall (backlog S2, spike docs/roadmap/spikes/waf.md):
 # libmodsecurity 3 and the OWASP Core Rule Set. drust loads the library at
 # run time in its `waf-worker` processes, so nothing is linked; installing
 # this module and restarting the edge gateway turns the `waf` capability on.

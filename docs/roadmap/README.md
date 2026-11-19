@@ -1,6 +1,6 @@
-# dPanel Plans
+# dPanel Roadmap
 
-dPanel-এর feature gap, আর Windows ও macOS-এ native চালানোর পুরো plan। Implementation চলছে; অবস্থা [backlog.md](backlog.md)-এর Status-এ।
+dPanel-এর feature gap, আর Windows ও macOS-এ native চালানোর পুরো plan। Implementation চলছে; সংক্ষিপ্ত অবস্থা [Operating system support](../platforms.md)-এ, বিস্তারিত [backlog.md](backlog.md)-এর Status-এ।
 
 dPanel সবার জন্য free। লক্ষ্য তিন OS: Linux, Windows ও macOS, প্রতিটায় local development ও live production।
 

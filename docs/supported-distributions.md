@@ -21,8 +21,9 @@ recommended. Derivatives are not accepted merely because they provide `apt`
 or `dnf`; the installer checks `/etc/os-release` and stops before modifying an
 unsupported host.
 
-Windows is not a supported install target yet. Native support is in progress;
-see [dPanel on Windows](windows.md).
+Windows and macOS are not supported install targets yet. Windows runs for
+local development from source; macOS is not started. See
+[Operating system support](platforms.md).
 
 ## Support boundaries
 

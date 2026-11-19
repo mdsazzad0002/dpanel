@@ -58,7 +58,7 @@ impl Capability {
     }
 }
 
-/// The body of `GET /capabilities`; see section 5 of `plans/platform-spec.md`.
+/// The body of `GET /capabilities`; see section 5 of `docs/roadmap/platform-spec.md`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct Report {
     pub os: &'static str,

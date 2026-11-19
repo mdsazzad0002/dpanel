@@ -6,6 +6,7 @@
 | --- | --- |
 | Install dPanel on a new server | [Installation](installation.md#install-dpanel) |
 | Check whether my Linux distribution is supported | [Supported distributions](supported-distributions.md) |
+| See which OS runs dPanel today (Linux, Windows, macOS) | [Operating system support](platforms.md) |
 | Work on dPanel on a Windows PC | [dPanel on Windows](windows.md) |
 | Update a server, or get a fix from `main` | [Versions and updates](installation.md#versions-and-updates) |
 | Update or roll back from the panel | [Updating from the panel](updates.md) |
@@ -25,6 +26,7 @@
 | --- | --- |
 | [Installation](installation.md) | First install, configuration files, and website permissions |
 | [Supported distributions](supported-distributions.md) | Native OS support, package stacks, and support boundaries |
+| [OS support](platforms.md) | Linux, Windows and macOS status, and the roadmap |
 | [Windows](windows.md) | Native Windows status and development setup |
 | [Architecture](architecture.md) | Components, request flow, PHP execution, and the edge gateway |
 | [Quick Reference](quick-reference.md) | The most-used commands, by task |

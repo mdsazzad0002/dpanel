@@ -18,7 +18,7 @@ use Inertia\Response;
 use Symfony\Component\HttpFoundation\Response as SymfonyResponse;
 
 /**
- * System → Extensions (backlog U7, plans/extension-spec.md). Admins only.
+ * System → Extensions (backlog U7, docs/roadmap/extension-spec.md). Admins only.
  * An extension runs elsewhere and acts through its own scoped API token; its
  * admin page is shown in a sandboxed iframe from its own origin.
  */

@@ -1,5 +1,5 @@
 //! Where things live on each OS and profile; see section 6.1 of
-//! `plans/platform-spec.md`. Linux ignores the profile, so its paths never move.
+//! `docs/roadmap/platform-spec.md`. Linux ignores the profile, so its paths never move.
 
 use super::{Os, PlatformError, Profile};
 use std::{

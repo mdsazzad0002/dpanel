@@ -237,7 +237,7 @@ B7-এর পর নতুন error বেরোলে একই নিয়ম
 
 ## H. Spike (go/no-go)
 
-Spike-এর code ফেলে দেওয়ার জন্য, তাই repo-র বাইরে একটা scratch folder-এ রাখুন। শুধু ফল `plans/spikes/<id>.md`-এ লিখে `main`-এ commit করুন। Spec-এর default বদলালে spec-ও বদলান।
+Spike-এর code ফেলে দেওয়ার জন্য, তাই repo-র বাইরে একটা scratch folder-এ রাখুন। শুধু ফল `docs/roadmap/spikes/<id>.md`-এ লিখে `main`-এ commit করুন। Spec-এর default বদলালে spec-ও বদলান।
 
 | ID | প্রশ্ন | Pass শর্ত | Fail হলে |
 | --- | --- | --- | --- |
@@ -314,7 +314,7 @@ Linux আগে, তবে interface-এর পেছনে। [Feature plan](fe
 
 | ID | কাজ | Depends | Done |
 | --- | --- | --- | --- |
-| S1 | WAF spike: libmodsecurity FFI বনাম Coraza | - | Latency মাপা; `plans/spikes/waf.md`-এ সিদ্ধান্ত |
+| S1 | WAF spike: libmodsecurity FFI বনাম Coraza | - | Latency মাপা; `docs/roadmap/spikes/waf.md`-এ সিদ্ধান্ত |
 | S2 | WAF implementation | S1 | Per-domain; default detection-only; CRS test |
 | S3 | Firewall UI | I2 | Rule add/remove; lock-out test |
 | S4 | Per-site log ও viewer | C1 | Rotation; panel-এ access ও PHP error log |

@@ -6,7 +6,7 @@ use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
 
 /**
- * What drust says this system can do (plans/platform-spec.md, section 5).
+ * What drust says this system can do (docs/roadmap/platform-spec.md, section 5).
  *
  * When drust gives no answer every capability counts as open: a closed one
  * returns 404, so failing shut would take the panel down with drust.

@@ -135,8 +135,10 @@ sudo dpanel doctor
 Full steps, configuration, and permission setup are in the
 [Installation Guide](docs/installation.md).
 
-**On a Windows PC:** native Windows support is in progress and the panel
-is not complete yet. See [dPanel on Windows](docs/windows.md) for what runs today.
+**Operating systems:** Linux is supported for production. Windows runs for
+local development from source and is still in progress; macOS is not started.
+See [Operating system support](docs/platforms.md) and
+[dPanel on Windows](docs/windows.md).
 
 ## Documentation
 
@@ -146,6 +148,7 @@ The same guides are also kept in this repository:
 | Guide | Description |
 | --- | --- |
 | [Installation](docs/installation.md) | First install, configuration files, and website permissions |
+| [OS support](docs/platforms.md) | Linux, Windows and macOS status, and the roadmap |
 | [Windows](docs/windows.md) | Native Windows status and development setup |
 | [Architecture](docs/architecture.md) | Components, request flow, PHP execution, and the edge gateway |
 | [Quick Reference](docs/quick-reference.md) | The most-used commands, by task |

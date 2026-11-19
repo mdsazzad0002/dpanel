@@ -1,5 +1,5 @@
 //! `POST /accounts/{name}/suspend` and `/unsuspend`, `PUT /accounts/{name}/limits`
-//! and `GET /accounts/{name}/usage`: `plans/platform-spec.md` section 8.
+//! and `GET /accounts/{name}/usage`: `docs/roadmap/platform-spec.md` section 8.
 //!
 //! The panel keeps everything it can stop itself (sessions, websites, cron,
 //! queue workers); this blocks the system account's own logins, SSH and SFTP,

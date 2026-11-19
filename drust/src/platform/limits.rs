@@ -1,4 +1,4 @@
-//! CPU, memory and disk limits per account. `plans/platform-spec.md` sections
+//! CPU, memory and disk limits per account. `docs/roadmap/platform-spec.md` sections
 //! 6.6 and 6.7. Linux has both (P2, P4); J2, J3, K2 and K3 bring the rest.
 
 use super::{PlatformError, capabilities::Capability, fs::OwnerId};

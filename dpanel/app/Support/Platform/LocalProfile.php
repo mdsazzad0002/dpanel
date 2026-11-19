@@ -3,7 +3,7 @@
 namespace App\Support\Platform;
 
 /**
- * The desktop profile has no Redis (plans/windows-macos-native-plan.md).
+ * The desktop profile has no Redis (docs/roadmap/windows-macos-native-plan.md).
  *
  * Read env() here only from config files: a cached config never calls them.
  */

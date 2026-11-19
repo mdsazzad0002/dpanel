@@ -1,7 +1,7 @@
 //! The one place that knows which operating system drust runs on. Code above
 //! this layer asks for what it needs and never names an OS, and every
 //! `#[cfg(unix)]`-style attribute stays inside this module. See
-//! `plans/platform-spec.md`.
+//! `docs/roadmap/platform-spec.md`.
 
 pub mod account;
 pub mod acme;

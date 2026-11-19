@@ -6,7 +6,7 @@ use App\Support\ApiScopes;
 use Illuminate\Validation\ValidationException;
 
 /**
- * A validated extension manifest, version 1 (plans/extension-spec.md §2).
+ * A validated extension manifest, version 1 (docs/roadmap/extension-spec.md §2).
  * The format is strict: an unknown key is an error, so a manifest written
  * for a later version is refused instead of being half understood.
  */

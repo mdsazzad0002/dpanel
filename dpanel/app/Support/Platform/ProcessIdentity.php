@@ -3,7 +3,7 @@
 namespace App\Support\Platform;
 
 /**
- * Who this PHP process runs as (plans/windows-macos-native-plan.md, Windows).
+ * Who this PHP process runs as (docs/roadmap/windows-macos-native-plan.md, Windows).
  *
  * ext-posix does not exist on Windows. Without it no answer is known: the
  * process is not root and no system account can be looked up.

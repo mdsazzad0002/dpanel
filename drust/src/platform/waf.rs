@@ -1,4 +1,4 @@
-//! The WAF engine (backlog S2, spike S1 in `plans/spikes/waf.md`):
+//! The WAF engine (backlog S2, spike S1 in `docs/roadmap/spikes/waf.md`):
 //! libmodsecurity 3 with the OWASP CRS. The library is loaded when the
 //! engine starts, not linked, so drust builds and runs without it and the
 //! `waf` capability is simply off. The engine only ever runs inside a

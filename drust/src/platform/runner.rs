@@ -1,4 +1,4 @@
-//! Running a program as another account. `plans/platform-spec.md` section 6.5.
+//! Running a program as another account. `docs/roadmap/platform-spec.md` section 6.5.
 //!
 //! Site owners control what runs here: npm and composer scripts, build
 //! scripts, git hooks. The environment is therefore built from an allowlist,

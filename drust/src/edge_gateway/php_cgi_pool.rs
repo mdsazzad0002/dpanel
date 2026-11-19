@@ -1,4 +1,4 @@
-//! php-cgi workers for systems without PHP-FPM; `plans/platform-spec.md` section 9.
+//! php-cgi workers for systems without PHP-FPM; `docs/roadmap/platform-spec.md` section 9.
 //!
 //! A php-cgi process answers one request at a time and has no master process,
 //! so this pool is the master: one process per port, one request per process.
@@ -6,7 +6,7 @@
 //!
 //! The pool counts requests and stops a process itself. PHP's own limit stays
 //! off: a php-cgi that leaves by itself drops what is waiting on its port, and
-//! a request can be sent to it just as it goes (`plans/spikes/H1.md`).
+//! a request can be sent to it just as it goes (`docs/roadmap/spikes/H1.md`).
 
 use std::{
     collections::{BTreeSet, HashMap, VecDeque},

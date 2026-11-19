@@ -63,9 +63,9 @@ dPanel Windows ও macOS production-এও চলবে, তাই এই phase-
 
 **এখনকার অবস্থা:**
 
-- `is_suspended` শুধু login ([LoginRequest.php:57](../dpanel/app/Http/Requests/Auth/LoginRequest.php#L57)) আর MCP token-এ check হয়।
-- Admin panel থেকে suspend করলে session revoke হয় না ([UserManagementController.php](../dpanel/app/Http/Controllers/UserManagementController.php)), কিন্তু WHMCS path করে। তাই আগে থেকে logged-in user panel ব্যবহার করে যেতে পারার কথা।
-- WHMCS `terminate` শুধু suspended mark করে ([WhmcsController.php:77](../dpanel/app/Http/Controllers/Api/WhmcsController.php#L77)), কিছু মোছে না।
+- `is_suspended` শুধু login ([LoginRequest.php:57](../../dpanel/app/Http/Requests/Auth/LoginRequest.php#L57)) আর MCP token-এ check হয়।
+- Admin panel থেকে suspend করলে session revoke হয় না ([UserManagementController.php](../../dpanel/app/Http/Controllers/UserManagementController.php)), কিন্তু WHMCS path করে। তাই আগে থেকে logged-in user panel ব্যবহার করে যেতে পারার কথা।
+- WHMCS `terminate` শুধু suspended mark করে ([WhmcsController.php:77](../../dpanel/app/Http/Controllers/Api/WhmcsController.php#L77)), কিছু মোছে না।
 - `drust/src`-এ suspend নিয়ে কোনো code নেই, তাই website, mail, FTP ও cron চলতে থাকে।
 
 **যা করতে হবে:**
@@ -80,7 +80,7 @@ dPanel Windows ও macOS production-এও চলবে, তাই এই phase-
 
 ### 1.2 Disk quota
 
-**এখনকার অবস্থা:** `max_storage_mb` শুধু একটা mailbox-এর size-এর সঙ্গে তুলনা হয় ([ResourceQuotaService.php:30](../dpanel/app/Services/ResourceQuotaService.php#L30))। Website বা database-এর জায়গার কোনো limit নেই।
+**এখনকার অবস্থা:** `max_storage_mb` শুধু একটা mailbox-এর size-এর সঙ্গে তুলনা হয় ([ResourceQuotaService.php:30](../../dpanel/app/Services/ResourceQuotaService.php#L30))। Website বা database-এর জায়গার কোনো limit নেই।
 
 **যা করতে হবে:**
 
@@ -95,7 +95,7 @@ dPanel Windows ও macOS production-এও চলবে, তাই এই phase-
 
 ### 1.3 Bandwidth limit
 
-**এখনকার অবস্থা:** Gateway গুনে রাখে ([bandwidth.rs](../drust/src/edge_gateway/bandwidth.rs)) আর panel report দেখায়, কিন্তু `max_bandwidth_gb` কোথাও enforce হয় না।
+**এখনকার অবস্থা:** Gateway গুনে রাখে ([bandwidth.rs](../../drust/src/edge_gateway/bandwidth.rs)) আর panel report দেখায়, কিন্তু `max_bandwidth_gb` কোথাও enforce হয় না।
 
 **যা করতে হবে:** মাসিক হিসাবের সঙ্গে limit মিলিয়ে দেখা, পেরোলে notification, আর admin-এর পছন্দমতো throttle বা "limit exceeded" page। মাস শেষে reset।
 

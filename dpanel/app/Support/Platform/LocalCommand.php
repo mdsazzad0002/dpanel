@@ -7,7 +7,7 @@ use Illuminate\Support\Facades\Process;
 use InvalidArgumentException;
 
 /**
- * Runs programs on the machine PHP runs on (plans/platform-spec.md, LocalCommand).
+ * Runs programs on the machine PHP runs on (docs/roadmap/platform-spec.md, LocalCommand).
  *
  * Commands are argv lists: no shell parses them, so user input cannot become
  * shell syntax on any OS. Pipes and redirects are done in PHP on the output.

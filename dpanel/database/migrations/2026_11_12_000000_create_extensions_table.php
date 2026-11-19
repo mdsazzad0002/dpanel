@@ -5,7 +5,7 @@ use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
 
 /**
- * Installed extensions (backlog U7, plans/extension-spec.md). Each one acts
+ * Installed extensions (backlog U7, docs/roadmap/extension-spec.md). Each one acts
  * through its own API token, owned by its own service account: a `users` row
  * with `is_service_account`, which can never sign in to the panel.
  */

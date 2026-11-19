@@ -137,7 +137,7 @@ Production profile-এ drust-কে SYSTEM বা root হিসেবে চল
 ### Windows
 
 - **PHP-FPM ব্যবহার হবে না।** Windows-এ PHP সাধারণত `php-cgi.exe` দিয়ে FastCGI-তে চলে, আর official docs NTS build-এর কথা বলে।
-- `connect_fpm` ([php.rs:306](../drust/src/edge_gateway/php.rs#L306)) এখন শুধু `UnixStream` নেয়। এতে TCP যোগ করুন। `send_fastcgi_request` আগে থেকেই generic, তাই পরিবর্তন ছোট।
+- `connect_fpm` ([php.rs:306](../../drust/src/edge_gateway/php.rs#L306)) এখন শুধু `UnixStream` নেয়। এতে TCP যোগ করুন। `send_fastcgi_request` আগে থেকেই generic, তাই পরিবর্তন ছোট।
 - drust-কে কয়েকটা `php-cgi.exe` process-এর pool চালাতে হবে, আর নির্দিষ্ট সংখ্যক request-এর পর সেগুলো নতুন করে চালু করতে হবে। Pool-এর আচরণ prototype-এ আগে পরীক্ষা করুন।
 - Laravel-এ `posix_*` call গুলো একটা wrapper-এ আনুন।
 - `pcntl` না থাকায় queue worker-এর timeout কম নির্ভরযোগ্য হবে। Supervisor দিয়ে সামলান।

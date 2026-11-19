@@ -6,7 +6,7 @@ use App\Models\Extension;
 use App\Models\User;
 
 /**
- * HMAC-SHA256 with the extension's secret (plans/extension-spec.md §6).
+ * HMAC-SHA256 with the extension's secret (docs/roadmap/extension-spec.md §6).
  * Webhooks sign "<timestamp>.<body>"; the admin page's context is
  * "<base64url json>.<base64url hmac>", which the extension checks itself.
  */

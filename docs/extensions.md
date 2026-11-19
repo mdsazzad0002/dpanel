@@ -4,7 +4,7 @@ An extension adds a feature to dPanel from outside the panel: an uptime report,
 a billing bridge, a custom dashboard. It runs on its own server or host name,
 and it can only use the parts of the [dPanel API](api.md) that an admin
 approves when installing it. The design is in
-[plans/extension-spec.md](../plans/extension-spec.md).
+[the extension spec](roadmap/extension-spec.md).
 
 ## Contents
 

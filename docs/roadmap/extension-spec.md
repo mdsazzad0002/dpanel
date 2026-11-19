@@ -1,6 +1,6 @@
 # Extension System Spec (U7)
 
-dPanel-এর extension (plugin) ব্যবস্থার নকশা। Backlog-এর U7: "Manifest, permission, sandbox নকশা আলাদা spec-এ"। Public API (U1, [platform-spec.md](platform-spec.md) §8.1)-এর ওপর দাঁড়ানো। User doc: [docs/extensions.md](../docs/extensions.md)।
+dPanel-এর extension (plugin) ব্যবস্থার নকশা। Backlog-এর U7: "Manifest, permission, sandbox নকশা আলাদা spec-এ"। Public API (U1, [platform-spec.md](platform-spec.md) §8.1)-এর ওপর দাঁড়ানো। User doc: [docs/extensions.md](../extensions.md)।
 
 ## 1. লক্ষ্য ও মূল নিয়ম
 

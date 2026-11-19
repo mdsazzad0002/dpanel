@@ -3,8 +3,9 @@
 Native Windows support is in progress. A Windows 10 or 11 PC can run the panel and
 serve PHP websites for local development, built from this repository, on
 `127.0.0.1`. Much of the panel is still untested there, and there is no installer.
-For a public server, install on Linux with `installer.sh`. Status and remaining
-work are in [plans/backlog.md](../plans/backlog.md).
+For a public server, install on Linux with `installer.sh`. Status of every OS is in
+[Operating system support](platforms.md); remaining work is in
+[the backlog](roadmap/backlog.md).
 
 ## What works
 

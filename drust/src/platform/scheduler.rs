@@ -1,4 +1,4 @@
-//! Cron jobs. `plans/platform-spec.md` section 6.13.
+//! Cron jobs. `docs/roadmap/platform-spec.md` section 6.13.
 //!
 //! Linux keeps one file per job in `/etc/cron.d`. Windows and macOS have no
 //! cron that dPanel can write to, so drust keeps the jobs in its own state

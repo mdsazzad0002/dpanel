@@ -1,4 +1,4 @@
-//! File modes, owners and private files. `plans/platform-spec.md` section 6.2.
+//! File modes, owners and private files. `docs/roadmap/platform-spec.md` section 6.2.
 
 use super::PlatformError;
 use std::{

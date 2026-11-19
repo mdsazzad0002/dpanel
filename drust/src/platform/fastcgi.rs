@@ -1,4 +1,4 @@
-//! How the gateway reaches PHP. `plans/platform-spec.md` section 6.8.
+//! How the gateway reaches PHP. `docs/roadmap/platform-spec.md` section 6.8.
 
 use std::{
     io,

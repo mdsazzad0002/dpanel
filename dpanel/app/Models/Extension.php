@@ -7,7 +7,7 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 /**
- * An installed extension (backlog U7, plans/extension-spec.md). It runs
+ * An installed extension (backlog U7, docs/roadmap/extension-spec.md). It runs
  * outside the panel and acts only through its own API token, owned by its
  * service account and limited to `granted_scopes`.
  */

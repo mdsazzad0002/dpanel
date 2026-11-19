@@ -20,7 +20,7 @@ pub struct RuntimeSnapshot {
 }
 
 /// Whether a site serves its visitors. `websites.status` is about provisioning,
-/// so this is separate from it; see section 7 of `plans/platform-spec.md`.
+/// so this is separate from it; see section 7 of `docs/roadmap/platform-spec.md`.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum SiteState {
     #[default]

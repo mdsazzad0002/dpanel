@@ -1,5 +1,5 @@
 //! The web application firewall in the gateway (backlog S2; spike S1 in
-//! `plans/spikes/waf.md`).
+//! `docs/roadmap/spikes/waf.md`).
 //!
 //! libmodsecurity is C++ and parses whatever a visitor sends, so it never
 //! runs in the gateway's process: `drust waf-worker` processes do, as

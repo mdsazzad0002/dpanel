@@ -1,4 +1,4 @@
-//! Starting, stopping and reading system services. `plans/platform-spec.md`
+//! Starting, stopping and reading system services. `docs/roadmap/platform-spec.md`
 //! section 6.3. Only Linux has a backend until the supervisor (E2, F4).
 
 use super::{PlatformError, capabilities::Capability, paths::Tool};

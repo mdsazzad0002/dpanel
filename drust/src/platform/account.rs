@@ -1,4 +1,4 @@
-//! System accounts that own websites and logins. `plans/platform-spec.md`
+//! System accounts that own websites and logins. `docs/roadmap/platform-spec.md`
 //! section 6.4.
 
 use super::{PlatformError, capabilities::Capability, fs::OwnerId};
