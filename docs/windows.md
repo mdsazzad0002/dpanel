@@ -17,7 +17,9 @@ work are in [plans/backlog.md](../plans/backlog.md).
 | Panel reads `/capabilities` from drust with the shared token | Works |
 | Creating a PHP website | Works |
 | Opening that website on port 80, through the gateway and `php-cgi` | Works |
-| Service supervisor, autostart, local SSL, automatic hosts entries | Not built yet (backlog F) |
+| Service supervisor (`drust supervise`) | Works |
+| Sharing sites on the LAN (`DRUST_ALLOW_NETWORK`) | Works |
+| Autostart, local SSL, automatic hosts entries | Not built yet (backlog F) |
 | Features that call Linux commands | Not all ported (backlog C, D); they can fail |
 
 The page checks only confirm that the pages open. Creating and opening a website
@@ -85,10 +87,18 @@ Run these from the repository root in PowerShell.
 
 ## Run
 
-drust runs twice: the API on `127.0.0.1:9500`, and the edge gateway, which serves
-the panel and every website on port 80 through a pool of `php-cgi` workers. PHP
-must be on `PATH`, and nothing else may listen on ports 80 or 443, so stop
-WampServer's Apache first.
+`drust supervise` runs the API on `127.0.0.1:9500` and supervises the edge
+gateway, MariaDB (when installed) and the panel's queue worker. The gateway
+serves the panel and every website on port 80 through a pool of `php-cgi`
+workers. Nothing else may listen on ports 80 or 443.
+
+drust uses the PHP and MariaDB it installed itself before any on `PATH`:
+
+```powershell
+$env:DPANEL_PROFILE = 'local'
+.\drust\target\debug\drust.exe runtime install php 8.3
+.\drust\target\debug\drust.exe runtime install mariadb 11.8
+```
 
 From the repository root, in one PowerShell window:
 
@@ -97,18 +107,47 @@ $token = ((Get-Content dpanel\.env | Where-Object { $_ -like 'dPanel_EXECUTION_A
 $env:DPANEL_PROFILE = 'local'
 $env:DPANEL_PANEL_ROOT = "$PWD\dpanel"
 $env:DRUST_API_TOKEN = $token
-Start-Process .\drust\target\debug\drust.exe -ArgumentList 'serve', '--port', '9500' -WindowStyle Hidden
 $env:DRUST_HTTP_BIND = '127.0.0.1:80'
 $env:DRUST_HTTPS_BIND = '127.0.0.1:443'
-$env:DRUST_PANEL_DOMAIN = 'p.localhost'
-Start-Process .\drust\target\debug\drust.exe -ArgumentList 'edge-gateway' -WindowStyle Hidden
+Start-Process .\drust\target\debug\drust.exe -ArgumentList 'supervise', '--port', '9500' -WindowStyle Hidden
 ```
 
-Open <http://p.localhost/login> and sign in with the seeded admin,
-`test@example.com` and `password`. Change the password in your profile. Do not
-expose this setup to a network. Nothing restarts these processes after a reboot
-yet, so run this again. To stop them, end `drust.exe` and `php-cgi.exe` in Task
-Manager.
+The panel's domain comes from `dpanel\.env`: `PANEL_DOMAIN`, else the host of
+`APP_URL`. Set `DRUST_PANEL_DOMAIN` only to override it.
+
+Open the panel (here <http://p.localhost/login>) and sign in with the seeded
+admin, `test@example.com` and `password`. Change the password in your profile.
+Nothing restarts drust after a reboot yet, so run this again. To stop it, end
+`drust.exe`, `php-cgi.exe`, `php.exe` and `mariadbd.exe` in Task Manager.
+
+## Share sites on the network
+
+By default every port listens on `127.0.0.1` only. To show sites to other
+devices on the LAN, or to the internet through a router's port forward, start
+drust with these as well:
+
+```powershell
+$env:DRUST_ALLOW_NETWORK = '1'
+$env:DRUST_HTTP_BIND = '0.0.0.0:80'
+$env:DRUST_HTTPS_BIND = '0.0.0.0:443'
+```
+
+Only the gateway opens. The drust API, `php-cgi` and MariaDB stay on
+`127.0.0.1`. Every site still runs as your Windows user, with your files.
+
+Other devices need a name that points at this PC. Add a website alias such as
+`mysite.192.168.0.106.nip.io` (your LAN address); nip.io resolves it to that
+address, so no DNS setup is needed.
+
+The panel's own domain answers this PC only, whatever `Host` a client sends.
+To open the panel from other devices too, name the hosts it may answer on:
+
+```powershell
+$env:DRUST_PANEL_HOSTS = '192.168.0.106'
+```
+
+Do this only after the admin password is changed. Anyone who can sign in to the
+panel can run commands on this PC through its terminal and file manager.
 
 ## Websites
 

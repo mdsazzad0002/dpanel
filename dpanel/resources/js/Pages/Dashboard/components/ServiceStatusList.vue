@@ -15,6 +15,7 @@ const statusTone = (status) => {
     const s = String(status).toLowerCase();
     if (OK.includes(s)) return { dot: 'bg-emerald-500', text: 'text-emerald-700 dark:text-emerald-400', ping: true };
     if (DOWN.includes(s)) return { dot: 'bg-red-500', text: 'text-red-600 dark:text-red-400', ping: false };
+    if (s === 'not-installed') return { dot: 'bg-slate-400', text: 'text-slate-500 dark:text-slate-400', ping: false, absent: true };
     return { dot: 'bg-amber-500', text: 'text-amber-600 dark:text-amber-400', ping: false };
 };
 
@@ -31,6 +32,7 @@ const list = computed(() => {
 });
 
 const healthy = computed(() => list.value.filter((s) => s.tone.ping).length);
+const installed = computed(() => list.value.filter((s) => !s.tone.absent).length);
 </script>
 
 <template>
@@ -38,7 +40,7 @@ const healthy = computed(() => list.value.filter((s) => s.tone.ping).length);
         <header class="flex items-center justify-between gap-3 border-b border-slate-200 px-4 py-3.5 sm:px-5 dark:border-white/10">
             <h2 class="font-mono text-xs uppercase tracking-[0.22em] text-slate-500 dark:text-slate-400">{{ t('dashboard.services') }}</h2>
             <span v-if="list.length" class="shrink-0 rounded-full border border-emerald-400/30 bg-emerald-400/10 px-2 py-0.5 text-xs font-medium text-emerald-700 dark:text-emerald-200">
-                {{ t('dashboard.running', { healthy, total: list.length }) }}
+                {{ t('dashboard.running', { healthy, total: installed }) }}
             </span>
         </header>
 
@@ -53,7 +55,7 @@ const healthy = computed(() => list.value.filter((s) => s.tone.ping).length);
                         <span v-if="service.tone.ping" :class="['absolute inline-flex h-full w-full animate-ping rounded-full opacity-60', service.tone.dot]"></span>
                         <span :class="['relative inline-flex h-2 w-2 rounded-full', service.tone.dot]"></span>
                     </span>
-                    {{ service.status }}
+                    {{ service.status === 'not-installed' ? 'not installed' : service.status }}
                 </span>
             </li>
             <li v-if="!list.length" class="bg-white px-5 py-6 dark:bg-slate-900 sm:col-span-2 md:col-span-1 lg:col-span-2 xl:col-span-1 text-center text-sm text-slate-500 dark:text-slate-400">{{ t('dashboard.noServices') }}</li>

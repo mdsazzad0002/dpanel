@@ -362,9 +362,12 @@ fn ensure_issued(
     };
     // certbot here has no DNS plugin, so a wildcard always comes from drust's
     // own client, whatever the engine. The gateway prefers that file.
+    // A PC signs local names (`.test` and the like) itself; a public name
+    // (one pointed at this PC) goes to the public CA like on a server.
+    let local_name = acme::engine() == SslEngine::LocalCa && platform::local_ca::is_local_name(&domain);
     if let Some(target) = wildcard {
-        if acme::engine() == SslEngine::LocalCa {
-            return Err("Wildcard certificates need a public CA; this is a local install.".into());
+        if local_name {
+            return Err("Wildcard certificates need a public CA; local names cannot have one.".into());
         }
         let solver = dns01::solver(target, &domain)?;
         return ensure_with_acme(
@@ -385,9 +388,9 @@ fn ensure_issued(
             .to_socket_addrs()
             .map(|mut addresses| addresses.next().is_some())
             .unwrap_or(false);
-    // A PC (F6): the local CA signs, through the same validity and renew
-    // checks; there is no certbot to keep.
-    if acme::engine() == SslEngine::LocalCa {
+    // A PC (F6): the local CA signs local names, through the same validity
+    // and renew checks; there is no certbot to keep.
+    if local_name {
         let local = AcmeEnsure { certbot: None, ..at() };
         return ensure_with_acme(
             &platform::local_ca::LocalCa::for_system(platform::paths()),
@@ -400,7 +403,7 @@ fn ensure_issued(
             trigger_gateway_reload,
         );
     }
-    if acme::engine() == SslEngine::Acme {
+    if matches!(acme::engine(), SslEngine::Acme | SslEngine::LocalCa) {
         return ensure_with_acme(
             &acme::client(),
             &at(),
@@ -617,7 +620,9 @@ fn ensure_with_acme(
 pub(super) fn renew_due() -> Result<Value, String> {
     ensure_root()?;
     let engine = acme::engine();
-    if engine != SslEngine::Acme {
+    // A PC renews what the public CA issued for its public names; the local
+    // CA's own certificates are reissued by `ssl/ensure`.
+    if !matches!(engine, SslEngine::Acme | SslEngine::LocalCa) {
         return Ok(json!({ "engine": engine.as_str(), "results": [] }));
     }
     let results = acme::client().renew_due().map_err(|error| error.to_string())?;

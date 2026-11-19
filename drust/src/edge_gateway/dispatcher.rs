@@ -108,6 +108,18 @@ pub async fn dispatch(
             "acme-challenge",
         );
     }
+    if !local_panel_host_allowed(site, host, peer_ip(&request)) {
+        return annotated_response(
+            not_found_response(
+                "Site not found",
+                "We could not find a site that matches this domain.",
+                host,
+                &path,
+            ),
+            "",
+            "",
+        );
+    }
     let client_ips = request_client_ips(&request);
     let explicitly_allowed = client_ips.iter().any(|ip| site.allowed_ips.contains(ip));
     let explicitly_banned = client_ips.iter().any(|ip| site.banned_ips.contains(ip));
@@ -425,6 +437,30 @@ fn strip_uri_prefix(uri: &axum::http::Uri, prefix: &str) -> Option<axum::http::U
         None => path.to_string(),
     };
     path_and_query.parse().ok()
+}
+
+/// The address the connection really came from; never a header, which the
+/// client writes itself.
+fn peer_ip(request: &Request<Body>) -> Option<IpAddr> {
+    request
+        .extensions()
+        .get::<ConnectInfo<SocketAddr>>()
+        .map(|peer| peer.0.ip())
+        .or_else(|| request.extensions().get::<SocketAddr>().map(SocketAddr::ip))
+}
+
+/// A PC's panel (the local entry, `id` "panel") answers its own name to this
+/// PC only, even when `DRUST_ALLOW_NETWORK` shares the sites; a client on the
+/// network could otherwise send that name in `Host`. The names added with
+/// `DRUST_PANEL_HOSTS` come after it and answer anyone.
+fn local_panel_host_allowed(site: &super::SiteConfig, host: &str, peer: Option<IpAddr>) -> bool {
+    if site.id != "panel" || site.scope != "system" {
+        return true;
+    }
+    let host = host.rsplit_once(':').filter(|(_, port)| port.bytes().all(|b| b.is_ascii_digit())).map_or(host, |(name, _)| name);
+    let host = host.trim().trim_end_matches('.').to_ascii_lowercase();
+    let shared = site.hostnames.iter().skip(1).any(|name| *name == host);
+    shared || peer.is_some_and(|ip| ip.is_loopback() || ip.to_canonical().is_loopback())
 }
 
 fn request_client_ips(request: &Request<Body>) -> Vec<IpAddr> {
@@ -754,10 +790,12 @@ fn repair_phpmyadmin_sensitive_permissions(root: &Path) -> Result<(), String> {
         let path = root.join(name);
         let metadata =
             fs::metadata(&path).map_err(|error| format!("{}: {error}", path.display()))?;
-        let current_mode = platform::files()
-            .mode_bits(&metadata)
-            .ok_or_else(|| format!("{}: this system has no file modes", path.display()))?
-            & 0o777;
+        // Windows has no file modes and no `www-data`; the file only has
+        // to exist there.
+        let Some(current_mode) = platform::files().mode_bits(&metadata) else {
+            continue;
+        };
+        let current_mode = current_mode & 0o777;
         if current_mode == mode {
             continue;
         }
@@ -1075,6 +1113,29 @@ fn format_http_date(_value: std::time::SystemTime) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_shared_pc_keeps_its_panel_name_to_itself() {
+        let panel = super::super::source::panel_site(
+            vec!["p.localhost".into(), "192.168.0.106".into()],
+            Path::new("panel"),
+        );
+        let lan: IpAddr = "192.168.0.50".parse().unwrap();
+        let mapped_loopback: IpAddr = "::ffff:127.0.0.1".parse().unwrap();
+
+        assert!(local_panel_host_allowed(&panel, "p.localhost", Some("127.0.0.1".parse().unwrap())));
+        assert!(local_panel_host_allowed(&panel, "p.localhost:80", Some(mapped_loopback)));
+        assert!(!local_panel_host_allowed(&panel, "p.localhost", Some(lan)), "Host header from the LAN");
+        assert!(!local_panel_host_allowed(&panel, "P.Localhost.", Some(lan)));
+        assert!(!local_panel_host_allowed(&panel, "p.localhost", None), "no peer, no panel");
+        assert!(local_panel_host_allowed(&panel, "192.168.0.106", Some(lan)), "a name the user shared");
+        assert!(local_panel_host_allowed(&panel, "192.168.0.106:80", Some(lan)));
+
+        let mut site = panel.clone();
+        site.id = "shop".into();
+        site.scope = "user".into();
+        assert!(local_panel_host_allowed(&site, "p.localhost", Some(lan)), "websites are not limited");
+    }
 
     #[tokio::test]
     async fn an_acme_token_is_served_from_the_shared_folder_and_nothing_else_is() {

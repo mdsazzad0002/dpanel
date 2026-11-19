@@ -174,8 +174,11 @@ impl Platform {
 
     /// Section 11 of the spec: a developer's PC serves nobody but itself.
     /// `0.0.0.0` becomes loopback; any other outside address is refused.
+    /// `DRUST_ALLOW_NETWORK=1` lifts this for the gateway only, so a developer
+    /// can show sites on the LAN or through a port forward. Every site still
+    /// runs as the logged-in user. The API and php-cgi stay on loopback.
     pub fn local_bind(&self, bind: &str) -> Result<String, String> {
-        local_bind(bind, self.one_user())
+        local_bind(bind, self.one_user() && !network_allowed(std::env::var("DRUST_ALLOW_NETWORK").ok().as_deref()))
     }
 
     /// Only a machine with real accounts has to be root.
@@ -186,6 +189,10 @@ impl Platform {
 
 fn one_user(os: Os, profile: Profile) -> bool {
     os != Os::Linux && profile == Profile::Local
+}
+
+fn network_allowed(value: Option<&str>) -> bool {
+    matches!(value.map(|value| value.trim().to_ascii_lowercase()).as_deref(), Some("1" | "true" | "yes" | "on"))
 }
 
 fn local_bind(bind: &str, loopback_only: bool) -> Result<String, String> {
@@ -474,6 +481,17 @@ mod tests {
         assert_eq!(local_bind("127.0.0.1:19080", true).unwrap(), "127.0.0.1:19080");
         assert!(local_bind("192.0.2.1:80", true).is_err());
         assert_eq!(local_bind("0.0.0.0:80", false).unwrap(), "0.0.0.0:80");
+    }
+
+    #[test]
+    fn only_a_clear_yes_opens_the_network() {
+        for value in ["1", "true", "YES", " on "] {
+            assert!(network_allowed(Some(value)), "{value}");
+        }
+        for value in ["", "0", "false", "no", "lan"] {
+            assert!(!network_allowed(Some(value)), "{value}");
+        }
+        assert!(!network_allowed(None));
     }
 
     #[test]

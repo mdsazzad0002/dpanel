@@ -56,7 +56,9 @@ class MonitoringController extends Controller
             'cron_jobs_total' => $this->safeCountCronJobs(),
             'services' => [
                 'edge' => $this->serviceStatus('edge-gateway'),
-                'api_service' => $this->serviceStatus('drust'),
+                // drust answered the overview, so it runs; on Windows it is
+                // the supervisor, not a unit a service manager knows.
+                'api_service' => $this->overview() === [] ? 'down' : 'running',
                 'mariadb' => $this->serviceStatus('mariadb'),
                 'mysql' => $this->serviceStatus('mysql'),
                 'redis' => $this->redisServiceStatus(),
@@ -137,6 +139,10 @@ class MonitoringController extends Controller
         try {
             return Redis::connection()->ping() ? 'running' : 'down';
         } catch (\Throwable) {
+            if ($this->serviceStatus('redis-server') === 'not-installed' && $this->serviceStatus('redis') === 'not-installed') {
+                return 'not-installed';
+            }
+
             return $this->serviceStatus('redis-server') === 'unknown' ? 'unknown' : 'down';
         }
     }

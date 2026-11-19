@@ -90,7 +90,10 @@ const latestMetricValue = (metric) => {
     const sample = chartHistory.value.at(-1);
     return sample ? metricValue(sample, metric) : 0;
 };
+// A service this machine does not have (Postfix on Windows) is listed but
+// not counted.
 const serviceEntries = computed(() => Object.entries(liveSnapshot.value.services || {}));
+const installedServiceCount = computed(() => serviceEntries.value.filter(([, status]) => status !== 'not-installed').length);
 const runningServices = computed(() => serviceEntries.value.filter(([, status]) => status === 'running').length);
 const formatMemory = (mb) => {
     if (!mb || mb <= 0) return '0 MB';
@@ -333,7 +336,7 @@ const serviceLabel = (service) => serviceLabels[service]
 
 const serviceTone = (status) => {
     if (status === 'running') return { text: 'text-emerald-600 dark:text-emerald-300', dot: 'bg-emerald-500', icon: 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-300', ping: true };
-    if (status === 'unknown') return { text: 'text-slate-500 dark:text-slate-400', dot: 'bg-slate-400', icon: 'bg-slate-500/10 text-slate-500 dark:text-slate-400', ping: false };
+    if (status === 'unknown' || status === 'not-installed') return { text: 'text-slate-500 dark:text-slate-400', dot: 'bg-slate-400', icon: 'bg-slate-500/10 text-slate-500 dark:text-slate-400', ping: false };
     return { text: 'text-rose-600 dark:text-rose-300', dot: 'bg-rose-500', icon: 'bg-rose-500/10 text-rose-600 dark:text-rose-300', ping: false };
 };
 
@@ -497,7 +500,7 @@ onBeforeUnmount(() => {
                             </div>
                             <div class="stat-tile">
                                 <span class="stat-label">{{ t('monitoring.services') }}</span>
-                                <span class="stat-value">{{ runningServices }}<span class="text-slate-400">/{{ serviceEntries.length }}</span></span>
+                                <span class="stat-value">{{ runningServices }}<span class="text-slate-400">/{{ installedServiceCount }}</span></span>
                             </div>
                         </div>
                     </div>
@@ -823,7 +826,7 @@ onBeforeUnmount(() => {
                     <header class="panel-header">
                         <h3 class="panel-title">{{ t('monitoring.services') }}</h3>
                         <span class="shrink-0 rounded-full border border-emerald-400/30 bg-emerald-400/10 px-2 py-0.5 text-xs font-medium text-emerald-700 dark:text-emerald-200">
-                            {{ t('monitoring.runningCount', { running: runningServices, total: serviceEntries.length }) }}
+                            {{ t('monitoring.runningCount', { running: runningServices, total: installedServiceCount }) }}
                         </span>
                     </header>
                     <ul class="grid grid-cols-1 gap-px bg-slate-100 sm:grid-cols-2 xl:grid-cols-1 dark:bg-white/[0.06]">
@@ -840,7 +843,7 @@ onBeforeUnmount(() => {
                                     <span v-if="serviceTone(status).ping" class="absolute inline-flex h-full w-full animate-ping rounded-full opacity-60" :class="serviceTone(status).dot"></span>
                                     <span class="relative inline-flex h-2 w-2 rounded-full" :class="serviceTone(status).dot"></span>
                                 </span>
-                                {{ status }}
+                                {{ status === 'not-installed' ? 'not installed' : status }}
                             </span>
                         </li>
                         <li v-if="serviceEntries.length === 0" class="bg-white px-5 py-6 text-center text-sm text-slate-500 dark:bg-slate-900 dark:text-slate-400">{{ t('monitoring.noServices') }}</li>

@@ -178,6 +178,9 @@ pub fn overview(services: &[String], disk_path: &Path) -> Overview {
         .map(|name| {
             let state = match manager.status(name) {
                 Ok(status) if status.active => "running",
+                // Not a unit here (MySQL on a PC, Postfix on Windows): not a
+                // failure, so not "down".
+                Ok(status) if !status.installed => "not-installed",
                 Ok(_) => "down",
                 Err(_) => "unknown",
             };

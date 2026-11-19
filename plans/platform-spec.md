@@ -724,7 +724,7 @@ Package page-এ macOS-এ "soft limit" লেখা থাকবে।
 2. Site-এর process `drust.env`, `.env` বা `DRUST_API_TOKEN` পড়তে পারে না।
 3. drust API শুধু loopback-এ, আর token ছাড়া `401`।
 4. Website process admin, SYSTEM বা root হিসেবে চলে না।
-5. Local profile-এর সব port শুধু `127.0.0.1`-এ। Gateway-তে `Platform::local_bind` `0.0.0.0`-কে loopback করে, অন্য address refuse করে।
+5. Local profile-এর সব port শুধু `127.0.0.1`-এ। Gateway-তে `Platform::local_bind` `0.0.0.0`-কে loopback করে, অন্য address refuse করে। ব্যতিক্রম: `DRUST_ALLOW_NETWORK=1` দিলে শুধু gateway network-এ খোলে (site দেখানোর জন্য); API, php-cgi ও MariaDB তখনও loopback-এ। Panel-এর নিজের domain তখনও শুধু loopback peer-কে উত্তর দেয় (`Host` header নয়, socket-এর address দেখে); অন্য device থেকে panel খুলতে `DRUST_PANEL_HOSTS`-এ host দিতে হয়।
 6. Path traversal, symlink ও Windows junction দিয়ে site folder-এর বাইরে যাওয়া যায় না।
 7. Windows-এ `C:\`, UNC, 8.3 নাম, `::$DATA` ও trailing dot path filter পার হতে পারে না।
 8. Log ও error message-এ password বা token থাকে না।

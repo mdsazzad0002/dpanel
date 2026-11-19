@@ -184,7 +184,9 @@ class DashboardController extends Controller
             'disk_total_gb' => $system['disk_total_gb'] ?? null,
             'services' => [
                 'drust_gateway' => $states['edge-gateway'],
-                'drust_api' => $overview === [] ? 'down' : $states['drust'],
+                // drust answered the overview, so it runs; on Windows it is
+                // the supervisor, not a unit a service manager knows.
+                'drust_api' => $overview === [] ? 'down' : 'running',
                 'mail' => $states['postfix'],
                 'dovecot' => $states['dovecot'],
                 'database' => $this->databaseServiceStatus($states),
@@ -235,7 +237,12 @@ class DashboardController extends Controller
         try {
             return Redis::connection()->ping() ? 'running' : 'down';
         } catch (\Throwable) {
-            return in_array('unknown', [$serviceStates['redis-server'] ?? 'unknown', $serviceStates['redis'] ?? 'unknown'], true) ? 'unknown' : 'down';
+            $units = [$serviceStates['redis-server'] ?? 'unknown', $serviceStates['redis'] ?? 'unknown'];
+            if ($units === ['not-installed', 'not-installed']) {
+                return 'not-installed';
+            }
+
+            return in_array('unknown', $units, true) ? 'unknown' : 'down';
         }
     }
 

@@ -350,37 +350,86 @@ fn load_sites(
     }
 
     if crate::platform::current().uses_php_cgi_pool() {
-        add_panel_site(&mut sites, domains, &panel_domain(), crate::platform::paths().panel_root());
+        let extra_hosts = panel_extra_hosts(std::env::var("DRUST_PANEL_HOSTS").ok().as_deref());
+        add_panel_site(&mut sites, domains, &panel_domain(), &extra_hosts, crate::platform::paths().panel_root());
     }
 
     Ok((sites, tls))
 }
 
+/// The panel's own host name. `DRUST_PANEL_DOMAIN` wins; otherwise the panel's
+/// `.env` decides (`PANEL_DOMAIN`, then the host of `APP_URL`), so the name
+/// is set in one place and nothing else has to repeat it.
 pub(super) fn panel_domain() -> String {
-    std::env::var("DRUST_PANEL_DOMAIN")
-        .ok()
-        .map(|value| value.trim().to_string())
+    let panel_env = read_env_file(&crate::platform::paths().panel_root().join(".env")).unwrap_or_default();
+    panel_domain_from(std::env::var("DRUST_PANEL_DOMAIN").ok().as_deref(), &panel_env)
+}
+
+fn panel_domain_from(explicit: Option<&str>, panel_env: &HashMap<String, String>) -> String {
+    let clean = |value: &str| value.trim().trim_matches(|c| c == '"' || c == '\'').trim().to_string();
+    explicit
+        .map(clean)
         .filter(|value| !value.is_empty())
+        .or_else(|| panel_env.get("PANEL_DOMAIN").map(|value| clean(value)).filter(|value| !value.is_empty()))
+        .or_else(|| panel_env.get("APP_URL").and_then(|value| url_host(&clean(value))))
         .unwrap_or_else(|| "dpanel.localhost".to_string())
+}
+
+/// `http://p.example.test:8080/x` gives `p.example.test`.
+fn url_host(url: &str) -> Option<String> {
+    let rest = url.split_once("://").map_or(url, |(_, rest)| rest);
+    let authority = rest.split(['/', '?', '#']).next()?;
+    let authority = authority.rsplit_once('@').map_or(authority, |(_, host)| host);
+    let host = if authority.starts_with('[') {
+        authority.split_inclusive(']').next()?
+    } else {
+        authority.split(':').next()?
+    };
+    let host = normalize_domain(host);
+    (!host.is_empty()).then_some(host)
+}
+
+/// More names the local panel answers to, from `DRUST_PANEL_HOSTS`
+/// (comma-separated), such as the PC's LAN address. Empty unless set, so a
+/// PC that shares its sites does not share its panel by accident.
+fn panel_extra_hosts(value: Option<&str>) -> Vec<String> {
+    value
+        .unwrap_or_default()
+        .split(',')
+        .map(normalize_domain)
+        .filter(|host| !host.is_empty())
+        .collect()
 }
 
 /// On Linux the panel is a row of `websites`. A local panel has no row, so it
 /// is added here, unless a row has the domain or a reload is for other domains.
-fn add_panel_site(sites: &mut Vec<SiteConfig>, wanted: Option<&[String]>, panel_domain: &str, panel_root: &Path) {
+fn add_panel_site(
+    sites: &mut Vec<SiteConfig>,
+    wanted: Option<&[String]>,
+    panel_domain: &str,
+    extra_hosts: &[String],
+    panel_root: &Path,
+) {
     let domain = normalize_domain(panel_domain);
     let is_wanted = wanted.map_or(true, |domains| domains.contains(&domain));
     if is_wanted && !sites.iter().any(|site| site.hostnames.contains(&domain)) {
-        sites.push(panel_site(domain, panel_root));
+        let mut hostnames = vec![domain];
+        for host in extra_hosts {
+            if !hostnames.contains(host) && !sites.iter().any(|site| site.hostnames.contains(host)) {
+                hostnames.push(host.clone());
+            }
+        }
+        sites.push(panel_site(hostnames, panel_root));
     }
 }
 
 /// The static route of any PHP site: files in `public`, the rest to its `index.php`.
-fn panel_site(domain: String, panel_root: &Path) -> SiteConfig {
+pub(super) fn panel_site(hostnames: Vec<String>, panel_root: &Path) -> SiteConfig {
     SiteConfig {
         id: "panel".to_string(),
         scope: "system".to_string(),
         site_owner: None,
-        hostnames: std::sync::Arc::from([domain]),
+        hostnames: std::sync::Arc::from(hostnames),
         document_root: Some(panel_root.join("public")),
         php_version: None,
         runtime: "php".to_string(),
@@ -1038,7 +1087,7 @@ mod tests {
     #[test]
     fn panel_entry_serves_public_as_a_system_php_site_on_the_panel_host() {
         let mut sites = Vec::new();
-        add_panel_site(&mut sites, None, " P.localhost. ", Path::new("panel"));
+        add_panel_site(&mut sites, None, " P.localhost. ", &[], Path::new("panel"));
         let snapshot = RuntimeSnapshot::new(
             1,
             sites.into(),
@@ -1059,16 +1108,50 @@ mod tests {
     #[test]
     fn panel_entry_yields_to_a_row_and_to_a_reload_of_other_domains() {
         let root = Path::new("panel");
-        let mut sites = vec![panel_site("p.localhost".to_string(), Path::new("row"))];
-        add_panel_site(&mut sites, None, "p.localhost", root);
+        let mut sites = vec![panel_site(vec!["p.localhost".to_string()], Path::new("row"))];
+        add_panel_site(&mut sites, None, "p.localhost", &[], root);
         assert_eq!(sites.len(), 1);
         assert_eq!(sites[0].document_root.as_deref(), Some(Path::new("row").join("public").as_path()));
 
         let mut sites = Vec::new();
-        add_panel_site(&mut sites, Some(&["mysite.test".to_string()]), "p.localhost", root);
+        add_panel_site(&mut sites, Some(&["mysite.test".to_string()]), "p.localhost", &[], root);
         assert!(sites.is_empty());
-        add_panel_site(&mut sites, Some(&["p.localhost".to_string()]), "p.localhost", root);
+        add_panel_site(&mut sites, Some(&["p.localhost".to_string()]), "p.localhost", &[], root);
         assert_eq!(sites.len(), 1);
+    }
+
+    #[test]
+    fn the_panel_domain_comes_from_one_place() {
+        let env = |pairs: &[(&str, &str)]| pairs.iter().map(|(k, v)| (k.to_string(), v.to_string())).collect::<HashMap<_, _>>();
+        let app_url = env(&[("APP_URL", "\"http://Panel.Example.test:8080/sub\"")]);
+        assert_eq!(panel_domain_from(None, &app_url), "panel.example.test");
+        assert_eq!(panel_domain_from(Some("  "), &app_url), "panel.example.test");
+        assert_eq!(panel_domain_from(Some("cp.test"), &app_url), "cp.test");
+        assert_eq!(panel_domain_from(None, &env(&[("APP_URL", "http://a.test"), ("PANEL_DOMAIN", "b.test")])), "b.test");
+        assert_eq!(panel_domain_from(None, &env(&[("APP_URL", "http://192.168.0.106")])), "192.168.0.106");
+        assert_eq!(panel_domain_from(None, &env(&[("APP_URL", "")])), "dpanel.localhost");
+        assert_eq!(panel_domain_from(None, &HashMap::new()), "dpanel.localhost");
+    }
+
+    #[test]
+    fn the_panel_answers_on_extra_hosts_only_when_asked_and_never_takes_a_site() {
+        assert!(panel_extra_hosts(None).is_empty());
+        assert_eq!(panel_extra_hosts(Some(" 192.168.0.106 , ,Demo.Local. ")), ["192.168.0.106", "demo.local"]);
+
+        let root = Path::new("panel");
+        let mut sites = vec![panel_site(vec!["shop.test".to_string()], Path::new("shop"))];
+        sites[0].id = "shop".to_string();
+        let extra = panel_extra_hosts(Some("192.168.0.106,shop.test"));
+        add_panel_site(&mut sites, None, "p.localhost", &extra, root);
+        let snapshot = RuntimeSnapshot::new(
+            1,
+            sites.into(),
+            std::sync::Arc::from([]),
+            CachePolicy { enabled: false, ttl: Duration::ZERO, stale_while_revalidate: Duration::ZERO },
+        );
+        assert_eq!(crate::edge_gateway::resolve_site(&snapshot, "192.168.0.106").expect("panel by IP").id, "panel");
+        assert_eq!(crate::edge_gateway::resolve_site(&snapshot, "192.168.0.106:80").expect("panel by IP and port").id, "panel");
+        assert_eq!(crate::edge_gateway::resolve_site(&snapshot, "shop.test").expect("site keeps its host").id, "shop");
     }
 
     #[test]
