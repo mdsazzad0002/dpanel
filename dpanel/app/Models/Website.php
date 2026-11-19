@@ -119,6 +119,7 @@ class Website extends Model
     protected $casts = [
         'enable_ssl' => 'boolean',
         'ssl_wildcard' => 'boolean',
+        'serve_subdomains' => 'boolean',
         'manage_dns' => 'boolean',
         'include_www' => 'boolean',
         'filemanager_show_hidden' => 'boolean',

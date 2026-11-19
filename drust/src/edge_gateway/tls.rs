@@ -1,6 +1,7 @@
 #![allow(dead_code)]
 
 use std::{
+    collections::HashMap,
     fs::File,
     io::BufReader,
     net::IpAddr,
@@ -97,6 +98,10 @@ pub fn load_tls_identity(identity: &TlsIdentity) -> Result<CertifiedKey, String>
 #[derive(Debug)]
 struct CertSet {
     sni: ResolvesServerCertUsingSni,
+    /// "*.example.com" certificates by "example.com", for subdomains with no
+    /// exact entry. A wildcard covers one label, so only the direct parent
+    /// is looked up.
+    wildcards: HashMap<String, Arc<CertifiedKey>>,
     ip_fallback: Option<Arc<CertifiedKey>>,
 }
 
@@ -105,6 +110,7 @@ struct CertSet {
 /// broken site would stop every newly issued certificate from going live.
 fn build_cert_set(store: &TlsStore) -> Result<CertSet, String> {
     let mut resolver = ResolvesServerCertUsingSni::new();
+    let mut wildcards = HashMap::new();
     let mut ip_fallback = None;
     for identity in store.identities.iter() {
         let certified = match load_tls_identity(identity) {
@@ -121,6 +127,11 @@ fn build_cert_set(store: &TlsStore) -> Result<CertSet, String> {
                 }
                 continue;
             }
+            // The source only lists "*.name" when the certificate covers it.
+            if let Some(parent) = hostname.strip_prefix("*.") {
+                wildcards.entry(parent.to_ascii_lowercase()).or_insert_with(|| Arc::new(certified.clone()));
+                continue;
+            }
             // rustls rejects names the certificate does not cover (e.g. an
             // optional www alias); skip just that name.
             if let Err(error) = resolver.add(hostname, certified.clone()) {
@@ -130,6 +141,7 @@ fn build_cert_set(store: &TlsStore) -> Result<CertSet, String> {
     }
     Ok(CertSet {
         sni: resolver,
+        wildcards,
         ip_fallback,
     })
 }
@@ -165,10 +177,13 @@ impl DynamicCertResolver {
 impl ResolvesServerCert for DynamicCertResolver {
     fn resolve(&self, client_hello: ClientHello) -> Option<Arc<CertifiedKey>> {
         let set = self.inner.read().ok()?.clone();
-        if client_hello.server_name().is_none() {
+        let Some(name) = client_hello.server_name().map(str::to_ascii_lowercase) else {
             return set.ip_fallback.clone();
+        };
+        if let Some(found) = set.sni.resolve(client_hello) {
+            return Some(found);
         }
-        set.sni.resolve(client_hello)
+        name.split_once('.').and_then(|(_, parent)| set.wildcards.get(parent).cloned())
     }
 }
 

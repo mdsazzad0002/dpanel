@@ -88,6 +88,9 @@ pub enum RouteAction {
     /// A panel "port share": any local port published on a path of the
     /// site. Never lazy-starts a process; the port's owner keeps it up.
     PortShare { port: u16, strip_prefix: bool },
+    /// A port share pointing at other servers: reverse proxy to one remote
+    /// backend, or load balancing over several.
+    RemoteShare(Arc<super::remote_share::RemoteShare>),
     Redirect { location: String, code: u16 },
 }
 

@@ -8,10 +8,23 @@ pub fn resolve_site<'a>(snapshot: &'a RuntimeSnapshot, host: &str) -> Option<&'a
         .trim()
         .trim_end_matches('.')
         .to_ascii_lowercase();
-    snapshot
-        .hostname_index
-        .get(&normalized)
-        .and_then(|index| snapshot.sites.get(*index))
+    if let Some(index) = snapshot.hostname_index.get(&normalized) {
+        return snapshot.sites.get(*index);
+    }
+    // A site that serves its subdomains lists "*.<domain>" as a host name.
+    // The closest such parent wins, and a subdomain with a site of its own
+    // was already matched exactly above.
+    let mut rest = normalized.as_str();
+    while let Some((_, parent)) = rest.split_once('.') {
+        if !parent.contains('.') {
+            break;
+        }
+        if let Some(index) = snapshot.hostname_index.get(&format!("*.{parent}")) {
+            return snapshot.sites.get(*index);
+        }
+        rest = parent;
+    }
+    None
 }
 
 pub fn resolve_route<'a>(site: &'a SiteConfig, path: &str) -> Option<&'a RouteConfig> {
@@ -54,6 +67,31 @@ mod tests {
     use super::*;
     use crate::edge_gateway::{CachePolicy, RouteAction, RouteConfig, UpstreamConfig};
     use std::{path::PathBuf, sync::Arc, time::Duration};
+
+    #[test]
+    fn wildcard_sites_answer_subdomains_but_exact_sites_win() {
+        let site = |id: &str, names: &[&str]| SiteConfig {
+            id: id.to_string(),
+            hostnames: Arc::from(names.iter().map(|n| n.to_string()).collect::<Vec<_>>()),
+            ..crate::edge_gateway::source::panel_site(Vec::new(), std::path::Path::new("/tmp"))
+        };
+        let snapshot = RuntimeSnapshot::new(
+            1,
+            Arc::from([
+                site("second", &["second.example.com", "*.second.example.com"]),
+                site("own", &["own.second.example.com"]),
+            ]),
+            Arc::from([]),
+            CachePolicy { enabled: false, ttl: Duration::from_secs(60), stale_while_revalidate: Duration::from_secs(30) },
+        );
+        let id = |host: &str| resolve_site(&snapshot, host).map(|site| site.id.clone());
+        assert_eq!(id("second.example.com").as_deref(), Some("second"));
+        assert_eq!(id("a.second.example.com:443").as_deref(), Some("second"));
+        assert_eq!(id("x.y.second.example.com").as_deref(), Some("second"));
+        assert_eq!(id("own.second.example.com").as_deref(), Some("own"));
+        assert_eq!(id("example.com"), None);
+        assert_eq!(id("other.example.com"), None);
+    }
 
     #[test]
     fn resolve_site_matches_host() {
@@ -99,6 +137,7 @@ mod tests {
         assert!(resolve_site(&snapshot, "example.com").is_some());
         assert!(resolve_site(&snapshot, "www.example.com").is_some());
         assert!(resolve_site(&snapshot, "missing.example.com").is_none());
+        assert!(resolve_site(&snapshot, "a.www.example.com").is_none(), "no wildcard without *.");
     }
 
     #[test]

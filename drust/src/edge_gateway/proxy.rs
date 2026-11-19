@@ -6,7 +6,7 @@ use std::{
 
 use axum::{
     body::{Body, Bytes},
-    http::{HeaderName, Method, Request, Response, StatusCode, Uri, header},
+    http::{HeaderName, Method, Request, Response, StatusCode, header},
 };
 use futures_util::{Stream, StreamExt};
 use http_body::{Frame, SizeHint};
@@ -46,6 +46,20 @@ const UPLOAD_TIMEOUT: Duration = Duration::from_secs(300);
 const IDLE_READ_TIMEOUT: Duration = Duration::from_secs(330);
 
 pub fn build_client(config: &ProxyConfig) -> Result<Client, String> {
+    client_builder(config)
+        .build()
+        .map_err(|error| format!("proxy client build failed: {error}"))
+}
+
+/// For remote shares to LAN backends with self-signed certificates only.
+pub fn build_insecure_client(config: &ProxyConfig) -> Result<Client, String> {
+    client_builder(config)
+        .danger_accept_invalid_certs(true)
+        .build()
+        .map_err(|error| format!("proxy client build failed: {error}"))
+}
+
+fn client_builder(config: &ProxyConfig) -> reqwest::ClientBuilder {
     let _preserve_host = config.preserve_host;
     // No total timeout here: it would cut off streamed downloads and
     // server-sent events. proxy_request bounds the response head instead.
@@ -56,8 +70,6 @@ pub fn build_client(config: &ProxyConfig) -> Result<Client, String> {
         // drop the Set-Cookie on the redirect (logins) and fetch the target
         // without the browser's cookies.
         .redirect(reqwest::redirect::Policy::none())
-        .build()
-        .map_err(|error| format!("proxy client build failed: {error}"))
 }
 
 pub async fn proxy_request(
@@ -76,6 +88,20 @@ pub async fn proxy_request_with_timeout(
     request: Request<Body>,
     timeout: Duration,
 ) -> Result<Response<Body>, String> {
+    let base = upstream_base(upstream)?;
+    proxy_to_base(client, &base, request, timeout, false).await
+}
+
+/// Forwards `request` to the base URL `base` (`http://host:port`, no path).
+/// With `keep_host` the visitor's Host header goes along, for backends that
+/// choose a virtual host by name; otherwise the backend sees its own address.
+pub(crate) async fn proxy_to_base(
+    client: &Client,
+    base: &str,
+    request: Request<Body>,
+    timeout: Duration,
+    keep_host: bool,
+) -> Result<Response<Body>, String> {
     let (parts, body) = request.into_parts();
     let uri = parts.uri.clone();
     let method = parts.method.clone();
@@ -86,7 +112,9 @@ pub async fn proxy_request_with_timeout(
         .and_then(|value| value.to_str().ok())
         .and_then(|value| value.trim().parse::<u64>().ok());
 
-    let target = upstream_uri(upstream, &uri)?;
+    let path_and_query = uri.path_and_query().map(|value| value.as_str()).unwrap_or("/");
+    let target = reqwest::Url::parse(&format!("{}{path_and_query}", base.trim_end_matches('/')))
+        .map_err(|error| format!("invalid upstream url: {error}"))?;
     let mut builder = client.request(method_to_reqwest(method)?, target);
     // Large uploads stream to the app. The length header is kept, so the
     // upstream sees a normal length-delimited body (WSGI apps read
@@ -129,7 +157,7 @@ pub async fn proxy_request_with_timeout(
     };
 
     for (name, value) in headers.iter() {
-        if should_skip_header(name) {
+        if should_skip_header(name) && !(keep_host && name == header::HOST) {
             continue;
         }
         builder = builder.header(name, value);
@@ -289,16 +317,9 @@ pub async fn health_check_upstream(
     Ok(response.status().is_success())
 }
 
-fn upstream_uri(upstream: &UpstreamConfig, uri: &Uri) -> Result<reqwest::Url, String> {
+fn upstream_base(upstream: &UpstreamConfig) -> Result<String, String> {
     match upstream {
-        UpstreamConfig::Http(addr) => {
-            let path_and_query = uri
-                .path_and_query()
-                .map(|value| value.as_str())
-                .unwrap_or("/");
-            let url = format!("http://{addr}{path_and_query}");
-            reqwest::Url::parse(&url).map_err(|error| format!("invalid upstream url: {error}"))
-        }
+        UpstreamConfig::Http(addr) => Ok(format!("http://{addr}")),
         UpstreamConfig::Unix(_) => Err("unix socket upstream is not implemented yet".into()),
     }
 }

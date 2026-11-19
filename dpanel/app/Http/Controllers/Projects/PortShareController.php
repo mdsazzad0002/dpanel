@@ -8,23 +8,26 @@ use App\Models\PortShare;
 use App\Models\Website;
 use App\Services\EdgeGatewayReloader;
 use App\Services\Projects\LocalPortScanner;
+use App\Support\Proxy\RemoteTargets;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
+use InvalidArgumentException;
 use Inertia\Inertia;
 use Inertia\Response;
 
 /**
  * Rules → Port Share: publish a Node.js app, a Python app or any local port
- * on a website path through the edge gateway.
+ * on a website path through the edge gateway; admins can also point a path
+ * at other servers (reverse proxy / load balancer).
  */
 class PortShareController extends Controller
 {
     public function index(Request $request, LocalPortScanner $scanner): Response
     {
-        $websites = $this->websites($request)->orderBy('domain')->get(['id', 'domain', 'enable_ssl', 'runtime']);
+        $websites = $this->websites($request)->orderBy('domain')->get(['id', 'domain', 'enable_ssl', 'runtime', 'ssl_wildcard', 'serve_subdomains']);
         $shares = PortShare::query()
             ->whereIn('website_id', $websites->pluck('id'))
             ->orderBy('path_prefix')
@@ -38,6 +41,8 @@ class PortShareController extends Controller
                 'domain' => (string) $website->domain,
                 'enable_ssl' => (bool) $website->enable_ssl,
                 'runtime' => (string) ($website->runtime ?: 'php'),
+                'ssl_wildcard' => (bool) $website->ssl_wildcard,
+                'serve_subdomains' => (bool) $website->serve_subdomains,
                 'shares' => ($shares->get($website->id) ?? collect())->map->toRow()->values(),
             ])->values(),
             'projects' => $projects->map(fn (AppProject $project): array => [
@@ -48,6 +53,8 @@ class PortShareController extends Controller
                 'status' => $project->status,
             ])->values(),
             'listening' => $this->shareablePorts($request, $scanner),
+            'canRemote' => $this->canRemote($request),
+            'lbPolicies' => RemoteTargets::POLICIES,
         ]);
     }
 
@@ -82,6 +89,23 @@ class PortShareController extends Controller
         return $this->applied($reloader, $website, $share->enabled ? 'Port share enabled' : 'Port share disabled');
     }
 
+    /**
+     * Wildcard hosting: *.domain reaches this website (and so its shares).
+     * Only for a domain with a dot, so nobody can catch a whole TLD.
+     */
+    public function subdomains(Request $request, string $token, string $website, EdgeGatewayReloader $reloader): RedirectResponse
+    {
+        $site = $this->website($request, $website);
+        $enabled = (bool) $request->validate(['enabled' => ['required', 'boolean']])['enabled'];
+        $domain = strtolower(trim((string) $site->domain));
+        if ($enabled && (! str_contains($domain, '.') || str_starts_with($domain, 'www.') || filter_var($domain, FILTER_VALIDATE_IP) !== false)) {
+            throw ValidationException::withMessages(['enabled' => "{$domain} cannot serve subdomains."]);
+        }
+        $site->forceFill(['serve_subdomains' => $enabled])->save();
+
+        return $this->applied($reloader, $site, $enabled ? "*.{$domain} now reaches {$domain}" : "Subdomains of {$domain} no longer reach it");
+    }
+
     public function destroy(Request $request, string $token, string $share, EdgeGatewayReloader $reloader): RedirectResponse
     {
         $share = PortShare::query()->findOrFail($share);
@@ -96,10 +120,16 @@ class PortShareController extends Controller
     {
         return [
             'path_prefix' => ['required', 'string', 'max:200'],
-            'source' => ['required', Rule::in(['node', 'python', 'port'])],
-            'app_project_id' => ['nullable', 'required_unless:source,port', 'integer'],
+            'source' => ['required', Rule::in(['node', 'python', 'rust', 'port', 'remote'])],
+            'app_project_id' => ['nullable', 'required_unless:source,port,remote', 'integer'],
             'target_port' => ['nullable', 'required_if:source,port', 'integer', 'between:1,65535'],
             'strip_prefix' => ['required', 'boolean'],
+            'targets' => ['nullable', 'required_if:source,remote', 'array', 'max:'.RemoteTargets::MAX],
+            'targets.*' => ['nullable', 'string', 'max:255'],
+            'lb_policy' => ['nullable', Rule::in(RemoteTargets::POLICIES)],
+            'preserve_host' => ['nullable', 'boolean'],
+            'verify_tls' => ['nullable', 'boolean'],
+            'timeout_seconds' => ['nullable', 'integer', 'between:5,300'],
         ];
     }
 
@@ -114,6 +144,12 @@ class PortShareController extends Controller
             ->exists();
         if ($duplicate) {
             throw ValidationException::withMessages(['path_prefix' => "This website already shares {$path}."]);
+        }
+
+        if ($validated['source'] === 'remote') {
+            $this->fillRemote($request, $share, $path, $validated);
+
+            return;
         }
 
         if ($validated['source'] === 'port') {
@@ -135,9 +171,47 @@ class PortShareController extends Controller
         $share->fill([
             'path_prefix' => $path,
             'target_port' => $port,
+            'target_type' => 'local',
+            'targets' => null,
             'app_project_id' => $projectId,
             'strip_prefix' => $path !== '/' && (bool) $validated['strip_prefix'],
         ]);
+    }
+
+    /**
+     * Remote backends can reach anything this server can (the LAN included),
+     * so only admins may point a share at them.
+     *
+     * @param  array<string, mixed>  $validated
+     */
+    private function fillRemote(Request $request, PortShare $share, string $path, array $validated): void
+    {
+        if (! $this->canRemote($request)) {
+            throw ValidationException::withMessages(['targets' => 'Only administrators can forward to other servers.']);
+        }
+        try {
+            $targets = RemoteTargets::normalize($validated['targets'] ?? []);
+        } catch (InvalidArgumentException $e) {
+            throw ValidationException::withMessages(['targets' => $e->getMessage()]);
+        }
+
+        $share->fill([
+            'path_prefix' => $path,
+            'target_port' => null,
+            'target_type' => 'remote',
+            'targets' => implode(' ', $targets),
+            'lb_policy' => $validated['lb_policy'] ?? 'round_robin',
+            'preserve_host' => (bool) ($validated['preserve_host'] ?? true),
+            'verify_tls' => (bool) ($validated['verify_tls'] ?? true),
+            'timeout_seconds' => (int) ($validated['timeout_seconds'] ?? 30),
+            'app_project_id' => null,
+            'strip_prefix' => $path !== '/' && (bool) $validated['strip_prefix'],
+        ]);
+    }
+
+    private function canRemote(Request $request): bool
+    {
+        return (bool) $request->user()?->hasRole('admin');
     }
 
     private function normalizePath(string $input): string

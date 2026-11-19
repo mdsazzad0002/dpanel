@@ -20,6 +20,8 @@ const props = defineProps({
     projects: { type: Array, default: () => [] },
     listening: { type: Array, default: () => [] },
     panelRoute: { type: Function, required: true },
+    canRemote: { type: Boolean, default: false },
+    lbPolicies: { type: Array, default: () => ['round_robin', 'ip_hash', 'failover'] },
 });
 const emit = defineEmits(['close']);
 
@@ -28,10 +30,15 @@ const sources = computed(() => [
     { value: 'python', label: t('rules.portShares.form.src.python'), icon: 'bi bi-filetype-py' },
     { value: 'rust', label: t('rules.portShares.form.src.rust'), icon: 'bi bi-gear-wide-connected' },
     { value: 'port', label: t('rules.portShares.form.src.port'), icon: 'bi bi-ethernet' },
+    ...(props.canRemote || props.share?.target_type === 'remote'
+        ? [{ value: 'remote', label: t('rules.portShares.form.src.remote'), icon: 'bi bi-diagram-3' }]
+        : []),
 ]);
+const isAppSource = (source) => !['port', 'remote'].includes(source);
 const appsOf = (source) => props.projects.filter((p) => p.runtime === source);
 
-const form = useForm({ website_id: '', path_prefix: '/', source: 'node', app_project_id: '', target_port: '', strip_prefix: false });
+const remoteDefaults = () => ({ targets: [''], lb_policy: 'round_robin', preserve_host: true, verify_tls: true, timeout_seconds: 30 });
+const form = useForm({ website_id: '', path_prefix: '/', source: 'node', app_project_id: '', target_port: '', strip_prefix: false, ...remoteDefaults() });
 const editing = computed(() => !!props.share);
 
 watch(() => props.show, (open) => {
@@ -41,23 +48,29 @@ watch(() => props.show, (open) => {
     if (props.share) {
         const s = props.share;
         const project = props.projects.find((p) => p.id === s.app_project_id);
+        const remote = s.target_type === 'remote';
         Object.assign(form, {
             website_id: s.website_id,
             path_prefix: s.path_prefix,
-            source: project ? project.runtime : 'port',
+            source: remote ? 'remote' : (project ? project.runtime : 'port'),
             app_project_id: s.app_project_id ?? '',
-            target_port: s.target_port,
+            target_port: s.target_port ?? '',
             strip_prefix: s.strip_prefix,
+            targets: remote && s.targets?.length ? [...s.targets] : [''],
+            lb_policy: s.lb_policy || 'round_robin',
+            preserve_host: s.preserve_host ?? true,
+            verify_tls: s.verify_tls ?? true,
+            timeout_seconds: s.timeout_seconds || 30,
         });
         return;
     }
     const source = appsOf('node').length ? 'node' : (appsOf('python').length ? 'python' : (appsOf('rust').length ? 'rust' : 'port'));
-    Object.assign(form, { website_id: props.websiteId, path_prefix: '/', source, app_project_id: appsOf(source)[0]?.id ?? '', target_port: '', strip_prefix: false });
+    Object.assign(form, { website_id: props.websiteId, path_prefix: '/', source, app_project_id: appsOf(source)[0]?.id ?? '', target_port: '', strip_prefix: false, ...remoteDefaults() });
 });
 
 const pickSource = (source) => {
     form.source = source;
-    if (source !== 'port' && !appsOf(source).some((p) => p.id === form.app_project_id)) {
+    if (isAppSource(source) && !appsOf(source).some((p) => p.id === form.app_project_id)) {
         form.app_project_id = appsOf(source)[0]?.id ?? '';
     }
 };
@@ -69,7 +82,20 @@ const port = computed(() => (form.source === 'port' ? form.target_port : appsOf(
 const publicUrl = computed(() => (website.value
     ? `${website.value.enable_ssl ? 'https' : 'http'}://${website.value.domain}${cleanPath.value}`
     : `https://your-site.com${cleanPath.value}`));
-const upstream = computed(() => `127.0.0.1:${port.value || '…'}${form.strip_prefix || cleanPath.value === '/' ? '/' : cleanPath.value}`);
+const filledTargets = computed(() => form.targets.map((x) => String(x || '').trim()).filter(Boolean));
+const upstream = computed(() => {
+    const path = form.strip_prefix || cleanPath.value === '/' ? '/' : cleanPath.value;
+    if (form.source === 'remote') {
+        const first = filledTargets.value[0] || 'http://192.168.0.10:80';
+        const more = filledTargets.value.length > 1 ? ` (+${filledTargets.value.length - 1})` : '';
+        return `${first.replace(/\/+$/, '')}${path}${more}`;
+    }
+    return `127.0.0.1:${port.value || '…'}${path}`;
+});
+const canSubmit = computed(() => !!form.website_id && (form.source === 'remote' ? filledTargets.value.length > 0 : !!port.value));
+const addTarget = () => { if (form.targets.length < 16) form.targets.push(''); };
+const removeTarget = (index) => { form.targets.splice(index, 1); if (!form.targets.length) form.targets.push(''); };
+const targetError = computed(() => form.errors.targets || Object.entries(form.errors).find(([key]) => key.startsWith('targets.'))?.[1]);
 const baseLabel = computed(() => (website.value?.runtime === 'docker' ? 'Docker' : 'PHP'));
 const appsPage = computed(() => ({ python: 'apps.python.index', rust: 'apps.rust.index' }[form.source] || 'apps.node.index'));
 const sourceLabel = computed(() => ({ node: 'Node.js', python: 'Python', rust: 'Rust' }[form.source] || ''));
@@ -77,9 +103,10 @@ const sourceLabel = computed(() => ({ node: 'Node.js', python: 'Python', rust: '
 const submit = () => {
     form.transform((data) => ({
         ...data,
-        app_project_id: data.source === 'port' ? null : data.app_project_id,
+        app_project_id: isAppSource(data.source) ? data.app_project_id : null,
         target_port: data.source === 'port' ? data.target_port : null,
         strip_prefix: cleanPath.value !== '/' && data.strip_prefix,
+        targets: data.source === 'remote' ? filledTargets.value : null,
     }));
     const options = { preserveScroll: true, onSuccess: () => emit('close') };
     if (editing.value) {
@@ -131,7 +158,47 @@ const submit = () => {
                     ><i :class="option.icon"></i>{{ option.label }}</button>
                 </div>
 
-                <template v-if="form.source !== 'port'">
+                <template v-if="form.source === 'remote'">
+                    <div class="space-y-2">
+                        <div v-for="(target, index) in form.targets" :key="index" class="flex items-center gap-2">
+                            <input
+                                v-model="form.targets[index]"
+                                type="text"
+                                :placeholder="index === 0 ? 'http://192.168.0.106:80' : 'http://192.168.0.107:80'"
+                                class="min-w-0 flex-1 rounded-lg border-slate-300 font-mono text-sm dark:border-slate-600 dark:bg-slate-900"
+                            />
+                            <button type="button" @click="removeTarget(index)" :title="t('rules.portShares.form.removeBackend')" class="rounded p-1.5 text-slate-400 hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-900/30"><i class="bi bi-x-lg"></i></button>
+                        </div>
+                        <button type="button" @click="addTarget" :disabled="form.targets.length >= 16" class="text-sm font-medium text-blue-600 hover:underline disabled:opacity-50 dark:text-blue-400"><i class="bi bi-plus-lg"></i> {{ t('rules.portShares.form.addBackend') }}</button>
+                        <p class="text-xs text-slate-500 dark:text-slate-400">{{ t('rules.portShares.form.backendsHelp') }}</p>
+                        <InputError :message="targetError" class="mt-1" />
+                    </div>
+
+                    <div class="mt-4 grid gap-3 sm:grid-cols-2">
+                        <div>
+                            <label class="mb-1 block text-xs font-medium text-slate-600 dark:text-slate-300">{{ t('rules.portShares.form.policy') }}</label>
+                            <select v-model="form.lb_policy" :disabled="filledTargets.length < 2" class="w-full rounded-lg border-slate-300 text-sm disabled:opacity-60 dark:border-slate-600 dark:bg-slate-900">
+                                <option v-for="policy in lbPolicies" :key="policy" :value="policy">{{ t(`rules.portShares.form.policies.${policy}`) }}</option>
+                            </select>
+                            <p class="mt-1 text-xs text-slate-500 dark:text-slate-400">{{ t(`rules.portShares.form.policyHelp.${form.lb_policy}`) }}</p>
+                        </div>
+                        <div>
+                            <label class="mb-1 block text-xs font-medium text-slate-600 dark:text-slate-300">{{ t('rules.portShares.form.timeout') }}</label>
+                            <input v-model.number="form.timeout_seconds" type="number" min="5" max="300" class="w-full rounded-lg border-slate-300 text-sm dark:border-slate-600 dark:bg-slate-900" />
+                            <InputError :message="form.errors.timeout_seconds" class="mt-1" />
+                        </div>
+                    </div>
+
+                    <label class="mt-3 flex items-start gap-2 text-sm">
+                        <input v-model="form.preserve_host" type="checkbox" class="mt-0.5 rounded border-slate-300" />
+                        <span>{{ t('rules.portShares.form.preserveHost') }}<span class="block text-xs text-slate-500 dark:text-slate-400">{{ t('rules.portShares.form.preserveHostHelp') }}</span></span>
+                    </label>
+                    <label class="mt-2 flex items-start gap-2 text-sm">
+                        <input v-model="form.verify_tls" type="checkbox" class="mt-0.5 rounded border-slate-300" />
+                        <span>{{ t('rules.portShares.form.verifyTls') }}<span class="block text-xs text-slate-500 dark:text-slate-400">{{ t('rules.portShares.form.verifyTlsHelp') }}</span></span>
+                    </label>
+                </template>
+                <template v-else-if="form.source !== 'port'">
                     <select v-if="appsOf(form.source).length" v-model="form.app_project_id" class="w-full rounded-lg border-slate-300 text-sm dark:border-slate-600 dark:bg-slate-900">
                         <option v-for="p in appsOf(form.source)" :key="p.id" :value="p.id">{{ p.status === 'running' ? t('rules.portShares.form.appOption', { name: p.name, port: p.port }) : t('rules.portShares.form.appOptionStopped', { name: p.name, port: p.port }) }}</option>
                     </select>
@@ -173,7 +240,7 @@ const submit = () => {
 
             <div class="flex justify-end gap-2 border-t border-slate-200 pt-4 dark:border-slate-700">
                 <button type="button" @click="emit('close')" class="rounded-md border border-slate-300 px-3 py-2 text-sm dark:border-slate-600">{{ t('common.cancel') }}</button>
-                <button type="submit" :disabled="form.processing || !form.website_id || !port" class="rounded-md bg-blue-600 px-3 py-2 text-sm text-white hover:bg-blue-700 disabled:opacity-50">
+                <button type="submit" :disabled="form.processing || !canSubmit" class="rounded-md bg-blue-600 px-3 py-2 text-sm text-white hover:bg-blue-700 disabled:opacity-50">
                     {{ editing ? t('common.save') : t('rules.portShares.form.deploy') }}
                 </button>
             </div>

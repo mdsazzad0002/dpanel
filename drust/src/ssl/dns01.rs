@@ -142,6 +142,24 @@ async fn wait_until_served(nameservers: &[String], name: &str, value: &str) -> R
     ))
 }
 
+/// Drops `name` from the running server's packet and query caches.
+/// `pdnsutil` writes the database only, so for up to `cache-ttl` seconds
+/// PowerDNS kept answering the old TXT set. `example.com` and
+/// `*.example.com` are proved one after the other at the same name, and the
+/// CA's validators then saw the first value: "Incorrect TXT record".
+fn purge_cache(name: &str) {
+    let Ok(binary) = crate::platform::paths().binary(crate::platform::paths::Tool::PdnsControl) else {
+        tracing::warn!("pdns_control not found; a cached TXT answer may linger");
+        return;
+    };
+    let exact = format!("{}$", name.trim_end_matches('.'));
+    match std::process::Command::new(binary).args(["purge", &exact]).output() {
+        Ok(output) if output.status.success() => {}
+        Ok(output) => tracing::warn!(stderr = %String::from_utf8_lossy(&output.stderr), "pdns_control purge failed"),
+        Err(error) => tracing::warn!(%error, "pdns_control purge failed"),
+    }
+}
+
 /// This server's PowerDNS, through `pdnsutil`, which writes the same
 /// database the panel does.
 struct PowerDns {
@@ -190,6 +208,7 @@ impl PowerDns {
         }
         // A signed zone needs its NSEC3 chain to know the new name.
         let _ = pdnsutil(&["rectify-zone", &self.zone]);
+        purge_cache(name);
         Ok(())
     }
 

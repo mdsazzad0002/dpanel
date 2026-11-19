@@ -62,7 +62,8 @@
                 "node": "Node.js app",
                 "python": "Python app",
                 "rust": "Rust app",
-                "port": "Any local port"
+                "port": "Any local port",
+                "remote": "Remote server / load balancer"
             },
             "editTitle": "Edit port share",
             "subtitle": "The edge gateway reverse-proxies the website path to an app or local port.",
@@ -82,7 +83,34 @@
             "stripHelp": "On for apps that expect to live at {root}.",
             "preview": "Preview",
             "previewNote": "SSL, IP rules and redirects of the website still apply. Certificate checks under /.well-known/acme-challenge/ are never forwarded.",
-            "deploy": "Deploy"
+            "deploy": "Deploy",
+            "removeBackend": "Remove backend",
+            "addBackend": "Add backend",
+            "backendsHelp": "Another server's address, e.g. http://192.168.0.106:80 or https://app.lan:8443. Add more than one to load balance; a backend that stops answering is skipped for 15 seconds.",
+            "policy": "Load balancing",
+            "timeout": "Timeout (seconds)",
+            "policies": {
+                "round_robin": "Round robin",
+                "ip_hash": "Sticky (by visitor IP)",
+                "failover": "Failover (primary + standby)"
+            },
+            "policyHelp": {
+                "round_robin": "Each request goes to the next backend in turn.",
+                "ip_hash": "A visitor always lands on the same backend, so logins and sessions keep working.",
+                "failover": "Everything goes to the first backend; the others take over only while it is down."
+            },
+            "preserveHost": "Send the website's domain as Host",
+            "preserveHostHelp": "On when the backend picks the site by domain name (nginx/Apache virtual hosts). Off sends the backend's own address.",
+            "verifyTls": "Verify the backend's HTTPS certificate",
+            "verifyTlsHelp": "Turn off only for https backends on your own network with a self-signed certificate."
+        },
+        "remoteServer": "Remote server",
+        "loadBalancer": "Load balancer · {count} servers · {policy}",
+        "subdomains": {
+            "label": "All subdomains",
+            "toggle": "Serve all subdomains",
+            "help": "Any name under {domain} (a.{domain}, b.{domain}…) uses this website and its shares, unless that subdomain has a website of its own. Point a *.{domain} DNS record at this server.",
+            "needWildcardSsl": "HTTP works now. For HTTPS on subdomains, turn on Wildcard SSL for this website (Websites → SSL)."
         }
     },
     "redirects": {

@@ -169,7 +169,7 @@ pub async fn dispatch(
         || site.runtime == "node"
         || site.runtime == "python"
         || site.runtime == "docker"
-        || site.routes.iter().any(|route| matches!(route.action, RouteAction::PortShare { .. })))
+        || site.routes.iter().any(|route| matches!(route.action, RouteAction::PortShare { .. } | RouteAction::RemoteShare(_))))
         && path.starts_with("/.well-known/acme-challenge/")
     {
         if let Some(document_root) = site.document_root.as_ref() {
@@ -416,6 +416,20 @@ pub async fn dispatch(
                         &format!("Nothing is answering on shared port {port} yet ({error})"),
                     )
                 });
+            return annotated_response(response, site_match, route_match);
+        }
+        RouteAction::RemoteShare(share) => {
+            let mut request = match super::waf::screen(site, request).await {
+                Ok(request) => request,
+                Err(response) => return annotated_response(response, site_match, route_match),
+            };
+            if share.strip_prefix {
+                if let Some(uri) = strip_uri_prefix(request.uri(), route_match) {
+                    *request.uri_mut() = uri;
+                }
+            }
+            let peer = peer_ip(&request);
+            let response = super::remote_share::forward(proxy_client, share, request, peer).await;
             return annotated_response(response, site_match, route_match);
         }
         RouteAction::Redirect { location, code } => {

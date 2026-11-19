@@ -581,6 +581,9 @@ Route::put('/rules/port-shares/{share}', [PortShareController::class, 'update'])
 Route::patch('/rules/port-shares/{share}/toggle', [PortShareController::class, 'toggle'])
     ->middleware('role_or_permission:admin|reseller|manage_websites')
     ->name('rules.port-shares.toggle');
+Route::patch('/rules/port-shares/websites/{website}/subdomains', [PortShareController::class, 'subdomains'])
+    ->middleware('role_or_permission:admin|reseller|manage_websites')
+    ->name('rules.port-shares.subdomains');
 Route::delete('/rules/port-shares/{share}', [PortShareController::class, 'destroy'])
     ->middleware('role_or_permission:admin|reseller|manage_websites')
     ->name('rules.port-shares.destroy');

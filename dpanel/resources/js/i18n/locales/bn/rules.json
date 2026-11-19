@@ -62,7 +62,8 @@
                 "node": "Node.js app",
                 "python": "Python app",
                 "rust": "Rust app",
-                "port": "যেকোনো local port"
+                "port": "যেকোনো local port",
+                "remote": "রিমোট সার্ভার / লোড ব্যালান্সার"
             },
             "editTitle": "Port share সম্পাদনা",
             "subtitle": "Edge gateway website-এর path-টি একটি app বা local port-এ reverse-proxy করে।",
@@ -82,7 +83,34 @@
             "stripHelp": "যে app {root}-এ থাকার আশা করে তার জন্য চালু রাখুন।",
             "preview": "Preview",
             "previewNote": "Website-এর SSL, IP rule ও redirect তবুও প্রযোজ্য। /.well-known/acme-challenge/-এর অধীনে certificate check কখনো forward করা হয় না।",
-            "deploy": "Deploy"
+            "deploy": "Deploy",
+            "removeBackend": "ব্যাকএন্ড মুছুন",
+            "addBackend": "ব্যাকএন্ড যোগ করুন",
+            "backendsHelp": "অন্য সার্ভারের ঠিকানা, যেমন http://192.168.0.106:80 বা https://app.lan:8443। লোড ব্যালান্স করতে একাধিক দিন; কোনো ব্যাকএন্ড সাড়া না দিলে ১৫ সেকেন্ড সেটি বাদ থাকে।",
+            "policy": "লোড ব্যালান্সিং",
+            "timeout": "টাইমআউট (সেকেন্ড)",
+            "policies": {
+                "round_robin": "রাউন্ড রবিন",
+                "ip_hash": "স্টিকি (ভিজিটরের IP অনুযায়ী)",
+                "failover": "ফেইলওভার (প্রাইমারি + স্ট্যান্ডবাই)"
+            },
+            "policyHelp": {
+                "round_robin": "প্রতিটি রিকোয়েস্ট পালাক্রমে পরের ব্যাকএন্ডে যায়।",
+                "ip_hash": "একজন ভিজিটর সবসময় একই ব্যাকএন্ডে যায়, তাই লগইন ও সেশন ঠিক থাকে।",
+                "failover": "সব রিকোয়েস্ট প্রথম ব্যাকএন্ডে যায়; সেটি বন্ধ থাকলে তবেই বাকিগুলো কাজ নেয়।"
+            },
+            "preserveHost": "ওয়েবসাইটের ডোমেইন Host হিসেবে পাঠান",
+            "preserveHostHelp": "ব্যাকএন্ড যদি ডোমেইন দেখে সাইট বাছে (nginx/Apache virtual host) তাহলে চালু রাখুন। বন্ধ করলে ব্যাকএন্ডের নিজের ঠিকানা যাবে।",
+            "verifyTls": "ব্যাকএন্ডের HTTPS সার্টিফিকেট যাচাই করুন",
+            "verifyTlsHelp": "শুধু নিজের নেটওয়ার্কের self-signed সার্টিফিকেটওয়ালা https ব্যাকএন্ডের জন্য বন্ধ করুন।"
+        },
+        "remoteServer": "রিমোট সার্ভার",
+        "loadBalancer": "লোড ব্যালান্সার · {count}টি সার্ভার · {policy}",
+        "subdomains": {
+            "label": "সব সাবডোমেইন",
+            "toggle": "সব সাবডোমেইন চালু করুন",
+            "help": "{domain} এর নিচের যেকোনো নাম (a.{domain}, b.{domain}…) এই ওয়েবসাইট ও এর শেয়ার ব্যবহার করবে, যদি না সেই সাবডোমেইনের নিজস্ব ওয়েবসাইট থাকে। *.{domain} DNS রেকর্ড এই সার্ভারের দিকে দিন।",
+            "needWildcardSsl": "HTTP এখনই কাজ করবে। সাবডোমেইনে HTTPS এর জন্য এই ওয়েবসাইটে Wildcard SSL চালু করুন (Websites → SSL)।"
         }
     },
     "redirects": {

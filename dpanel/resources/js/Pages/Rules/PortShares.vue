@@ -17,6 +17,8 @@ const props = defineProps({
     websites: { type: Array, default: () => [] },
     projects: { type: Array, default: () => [] },
     listening: { type: Array, default: () => [] },
+    canRemote: { type: Boolean, default: false },
+    lbPolicies: { type: Array, default: () => ['round_robin', 'ip_hash', 'failover'] },
 });
 
 const search = ref('');
@@ -31,11 +33,17 @@ const visibleWebsites = computed(() => {
 });
 
 const projectOf = (share) => props.projects.find((p) => p.id === share.app_project_id);
+const isRemote = (share) => share.target_type === 'remote';
 const targetLabel = (share) => {
+    if (isRemote(share)) {
+        return share.targets.length > 1
+            ? t('rules.portShares.loadBalancer', { count: share.targets.length, policy: t(`rules.portShares.form.policies.${share.lb_policy}`) })
+            : t('rules.portShares.remoteServer');
+    }
     const project = projectOf(share);
     return project ? t('rules.portShares.appTarget', { runtime: project.runtime === 'node' ? 'Node.js' : 'Python', name: project.name }) : t('rules.portShares.localPort');
 };
-const targetIcon = (share) => ({ node: 'bi-hexagon', python: 'bi-filetype-py' }[projectOf(share)?.runtime] || 'bi-ethernet');
+const targetIcon = (share) => (isRemote(share) ? 'bi-diagram-3' : null) || ({ node: 'bi-hexagon', python: 'bi-filetype-py' }[projectOf(share)?.runtime] || 'bi-ethernet');
 const publicUrl = (website, share) => `${website.enable_ssl ? 'https' : 'http'}://${website.domain}${share.path_prefix === '/' ? '/' : share.path_prefix}`;
 const rootLabel = (website) => {
     const root = website.shares.find((s) => s.path_prefix === '/' && s.enabled);
@@ -49,6 +57,11 @@ const presetWebsite = ref('');
 const openCreate = (websiteId = '') => { editing.value = null; presetWebsite.value = websiteId; panelOpen.value = true; };
 const openEdit = (share) => { editing.value = share; panelOpen.value = true; };
 
+const toggleSubdomains = (website) => router.patch(
+    panelRoute('rules.port-shares.subdomains', { website: website.id }),
+    { enabled: !website.serve_subdomains },
+    { preserveScroll: true },
+);
 const toggle = (share) => router.patch(panelRoute('rules.port-shares.toggle', { share: share.id }), {}, { preserveScroll: true });
 const remove = (website, share) => {
     if (!confirm(t('rules.portShares.stopConfirm', { url: publicUrl(website, share) }))) return;
@@ -109,6 +122,28 @@ const remove = (website, share) => {
                         </button>
                     </div>
 
+                    <div class="flex items-start gap-3 border-b border-slate-100 bg-slate-50/60 px-4 py-2.5 dark:border-slate-700 dark:bg-slate-900/30">
+                        <button
+                            @click="toggleSubdomains(website)"
+                            role="switch"
+                            :aria-checked="website.serve_subdomains"
+                            :title="t('rules.portShares.subdomains.toggle')"
+                            class="relative mt-0.5 inline-flex h-5 w-9 shrink-0 rounded-full transition"
+                            :class="website.serve_subdomains ? 'bg-emerald-500' : 'bg-slate-300 dark:bg-slate-600'"
+                        >
+                            <span class="absolute top-0.5 h-4 w-4 rounded-full bg-white shadow transition" :class="website.serve_subdomains ? 'left-[18px]' : 'left-0.5'"></span>
+                        </button>
+                        <div class="min-w-0 text-xs">
+                            <p class="font-medium text-slate-700 dark:text-slate-200">
+                                {{ t('rules.portShares.subdomains.label') }} <code class="font-mono">*.{{ website.domain }}</code>
+                            </p>
+                            <p class="mt-0.5 text-slate-500 dark:text-slate-400">{{ t('rules.portShares.subdomains.help', { domain: website.domain }) }}</p>
+                            <p v-if="website.serve_subdomains && !website.ssl_wildcard" class="mt-1 text-amber-600 dark:text-amber-400">
+                                <i class="bi bi-exclamation-triangle"></i> {{ t('rules.portShares.subdomains.needWildcardSsl') }}
+                            </p>
+                        </div>
+                    </div>
+
                     <ul v-if="website.shares.length" class="divide-y divide-slate-100 dark:divide-slate-700">
                         <li v-for="share in website.shares" :key="share.id" class="flex items-start gap-3 px-4 py-3" :class="{ 'opacity-60': !share.enabled }">
                             <i class="bi mt-0.5 text-slate-400" :class="targetIcon(share)"></i>
@@ -116,7 +151,8 @@ const remove = (website, share) => {
                                 <p class="flex flex-wrap items-center gap-1 font-mono text-xs">
                                     <a :href="publicUrl(website, share)" target="_blank" rel="noopener" class="truncate text-blue-600 hover:underline dark:text-blue-400">{{ publicUrl(website, share) }}</a>
                                     <i class="bi bi-arrow-right text-slate-400"></i>
-                                    <span class="text-slate-500 dark:text-slate-400">127.0.0.1:{{ share.target_port }}</span>
+                                    <span v-if="isRemote(share)" class="break-all text-slate-500 dark:text-slate-400">{{ share.targets.join(', ') }}</span>
+                                    <span v-else class="text-slate-500 dark:text-slate-400">127.0.0.1:{{ share.target_port }}</span>
                                 </p>
                                 <p class="mt-0.5 text-xs text-slate-500 dark:text-slate-400">
                                     {{ targetLabel(share) }}<template v-if="projectOf(share)?.status === 'stopped'"> · <span class="text-amber-600">{{ t('rules.portShares.appStopped') }}</span></template><template v-if="share.strip_prefix"> · {{ t('rules.portShares.stripped') }}</template>
@@ -148,6 +184,8 @@ const remove = (website, share) => {
             :websites="websites"
             :projects="projects"
             :listening="listening"
+            :can-remote="canRemote"
+            :lb-policies="lbPolicies"
             :panel-route="panelRoute"
             @close="panelOpen = false"
         />

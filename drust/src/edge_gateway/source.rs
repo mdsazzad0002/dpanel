@@ -196,12 +196,29 @@ fn load_sites(
         Some(filter) => format!("{PORT_SHARES_SQL} AND website_id IN (SELECT w.id FROM websites w WHERE {filter})"),
         None => PORT_SHARES_SQL.to_string(),
     };
-    let mut port_shares = match run_mysql(env, &share_sql) {
+    // Sites that also answer every subdomain (*.domain); optional like the
+    // shares, so a panel without the column keeps exact names only.
+    let wildcard_sites: std::collections::HashSet<String> =
+        match run_mysql(env, &format!("{WILDCARD_SITES_SQL}{}", site_filter("AND"))) {
+            Ok(rows) => rows.lines().map(|line| line.trim().to_string()).filter(|id| !id.is_empty()).collect(),
+            Err(_) => std::collections::HashSet::new(),
+        };
+
+    // The remote columns arrived with a later migration; without them the
+    // old query still loads local shares.
+    let remote_share_sql = match &domain_filter {
+        Some(filter) => format!("{REMOTE_PORT_SHARES_SQL} AND website_id IN (SELECT w.id FROM websites w WHERE {filter})"),
+        None => REMOTE_PORT_SHARES_SQL.to_string(),
+    };
+    let mut port_shares = match run_mysql(env, &remote_share_sql) {
         Ok(rows) => parse_port_shares(&rows),
-        Err(error) => {
-            tracing::warn!(%error, "port shares unavailable; none applied");
-            HashMap::new()
-        }
+        Err(_) => match run_mysql(env, &share_sql) {
+            Ok(rows) => parse_port_shares(&rows),
+            Err(error) => {
+                tracing::warn!(%error, "port shares unavailable; none applied");
+                HashMap::new()
+            }
+        },
     };
 
     // Optional as well (tasks S5, S6). An alias row takes its main site's guards.
@@ -313,12 +330,16 @@ fn load_sites(
             Some(shares) => merge_port_shares(&routes, shares),
             None => routes,
         };
+        // The domain stays first: reloads find a site by its first name.
+        let wildcard = format!("*.{domain}");
+        let serves_subdomains = wildcard_sites.contains(cols[0].trim()) && domain.contains('.');
+        let hostnames: Vec<String> = if serves_subdomains { vec![domain.clone(), wildcard.clone()] } else { vec![domain.clone()] };
         sites.push(SiteConfig {
             id: cols[0].trim().to_string(),
             scope,
             site_owner,
             // www.<domain> is its own alias row, never implied by the main site.
-            hostnames: std::sync::Arc::from([domain.clone()]),
+            hostnames: std::sync::Arc::from(hostnames),
             document_root,
             php_version,
             runtime,
@@ -341,9 +362,15 @@ fn load_sites(
             guards: guards.remove(cols[0].trim()).unwrap_or_default(),
         });
         if enable_ssl {
+            let cert_path = default_cert_path(&domain);
+            // Subdomains get HTTPS only from a certificate that covers them.
+            let mut tls_names = vec![domain.clone()];
+            if serves_subdomains && CertInfo::read(&cert_path).is_some_and(|info| info.names.contains(&wildcard)) {
+                tls_names.push(wildcard);
+            }
             tls.push(super::TlsConfig {
-                hostnames: std::sync::Arc::from([domain.clone()]),
-                cert_path: default_cert_path(&domain),
+                hostnames: std::sync::Arc::from(tls_names),
+                cert_path,
                 key_path: default_key_path(&domain),
             });
         }
@@ -631,7 +658,9 @@ fn add_protected_directories(guards: &mut HashMap<String, super::SiteGuards>, ro
     }
 }
 
+const WILDCARD_SITES_SQL: &str = "SELECT w.id FROM websites w WHERE w.serve_subdomains=1";
 const PORT_SHARES_SQL: &str = "SELECT website_id,path_prefix,target_port,strip_prefix FROM port_shares WHERE enabled=1";
+const REMOTE_PORT_SHARES_SQL: &str = "SELECT website_id,path_prefix,COALESCE(target_port,0),strip_prefix,COALESCE(target_type,'local'),REPLACE(REPLACE(COALESCE(targets,''),'\\t',' '),'\\n',' '),COALESCE(lb_policy,'round_robin'),COALESCE(preserve_host,1),COALESCE(verify_tls,1),COALESCE(timeout_seconds,30) FROM port_shares WHERE enabled=1";
 
 fn parse_port_shares(rows: &str) -> HashMap<String, Vec<RouteConfig>> {
     let mut shares: HashMap<String, Vec<RouteConfig>> = HashMap::new();
@@ -641,10 +670,30 @@ fn parse_port_shares(rows: &str) -> HashMap<String, Vec<RouteConfig>> {
             continue;
         }
         let prefix = cols[1].trim();
+        if !prefix.starts_with('/') {
+            continue;
+        }
+        if cols.len() >= 10 && cols[4].trim() == "remote" {
+            let share = super::remote_share::RemoteShare::new(
+                super::remote_share::parse_targets(cols[5]),
+                super::remote_share::BalancePolicy::parse(cols[6]),
+                cols[3].trim() == "1",
+                cols[7].trim() == "1",
+                cols[8].trim() == "1",
+                cols[9].trim().parse().unwrap_or(30),
+            );
+            if let Some(share) = share {
+                shares.entry(cols[0].trim().to_string()).or_default().push(RouteConfig {
+                    path_prefix: prefix.to_string(),
+                    action: RouteAction::RemoteShare(std::sync::Arc::new(share)),
+                });
+            }
+            continue;
+        }
         let Ok(port) = cols[2].trim().parse::<u16>() else {
             continue;
         };
-        if !prefix.starts_with('/') || port == 0 {
+        if port == 0 {
             continue;
         }
         shares.entry(cols[0].trim().to_string()).or_default().push(RouteConfig {
@@ -1217,6 +1266,23 @@ mod tests {
         assert_eq!(rows["b"].workers, None);
         assert!(!rows["b"].development);
         assert!(!rows["c"].development);
+    }
+
+    #[test]
+    fn remote_port_shares_become_remote_routes() {
+        let rows = "site-1\t/\t0\t0\tremote\thttp://192.168.0.106:80 http://192.168.0.107\tip_hash\t1\t0\t60\n\
+                    site-1\t/x\t3000\t1\tlocal\t\tround_robin\t1\t1\t30\n\
+                    site-2\t/\t0\t0\tremote\t\tround_robin\t1\t1\t30\n";
+        let shares = parse_port_shares(rows);
+        assert!(!shares.contains_key("site-2"), "a remote share without targets is dropped");
+        let site = &shares["site-1"];
+        assert_eq!(site.len(), 2);
+        let RouteAction::RemoteShare(remote) = &site[0].action else { panic!("expected a remote share") };
+        assert_eq!(remote.targets.len(), 2);
+        assert_eq!(remote.policy, super::super::remote_share::BalancePolicy::IpHash);
+        assert!(remote.preserve_host && !remote.verify_tls);
+        assert_eq!(remote.timeout.as_secs(), 60);
+        assert!(matches!(site[1].action, RouteAction::PortShare { port: 3000, strip_prefix: true }));
     }
 
     #[test]
