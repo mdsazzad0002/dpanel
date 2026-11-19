@@ -70,6 +70,11 @@ impl LocalUnits {
             args: vec![
                 artisan.into_os_string(),
                 "queue:work".into(),
+                // One worker for every queue the panel uses: installers and
+                // exports go to `heavy`, so `default` alone leaves them waiting.
+                "--queue=heavy,server-commands,default".into(),
+                // Installers run for minutes; the default 60 s would kill them.
+                "--timeout=3600".into(),
                 "--sleep=3".into(),
                 "--tries=3".into(),
                 // Exits hourly so a code change is picked up; the supervisor
