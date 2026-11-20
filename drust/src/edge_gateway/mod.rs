@@ -12,6 +12,7 @@ mod node_process;
 pub(crate) mod php;
 pub(crate) mod php_fpm_master;
 pub(crate) mod php_workers;
+pub(crate) mod php_worker_autoscale;
 pub mod php_alerts;
 pub(crate) mod php_cgi_pool;
 mod precompress;
@@ -23,6 +24,7 @@ mod remote_share;
 mod server;
 mod site_guards;
 mod waf;
+mod waf_autoban;
 pub use waf::{WafMode, run_worker as run_waf_worker};
 pub mod site_logs;
 mod source;
@@ -41,7 +43,7 @@ pub use h3_listener::run_h3_listener;
 pub use ip_binding::{AddressRule, IpBindings, LocalAddr, select_site};
 pub use matching::{normalize_request_path, resolve_route, resolve_site};
 pub use node_process::{
-    NodeProcessStatus, ensure_node_process_running, node_process_status, remove_node_process,
+    ensure_node_process_running, node_process_status, remove_node_process,
     reprovision_and_restart_node_process, restart_node_process, stop_node_process,
 };
 pub use php::{
@@ -54,7 +56,7 @@ pub use proxy::{
     ProxyConfig, build_client, health_check_upstream, proxy_request, proxy_request_with_timeout,
 };
 pub use python_process::{
-    PythonProcessStatus, PythonRunOptions, ensure_python_process_running, python_process_status,
+    PythonRunOptions, ensure_python_process_running, python_process_status,
     forget_python_liveness, python_static_file, reprovision_and_restart_python_process, remove_python_process, restart_python_process, stop_python_process,
 };
 pub use server::{

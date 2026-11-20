@@ -11,15 +11,6 @@ pub(crate) fn current_epoch() -> u64 {
         .as_secs()
 }
 
-pub fn backup_file(path: &Path) -> Result<(), String> {
-    if path.exists() {
-        let backup = format!("{}.bak.{}", path.display(), current_epoch());
-        fs::copy(path, &backup)
-            .map_err(|error| format!("failed to backup {}: {error}", path.display()))?;
-    }
-    Ok(())
-}
-
 pub fn write_string(path: &Path, contents: &str) -> Result<(), String> {
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent)

@@ -169,7 +169,7 @@ impl WafEngine for ModSecurity {
         unsafe {
             let t = (api.new_transaction)(self.engine, self.rules, &mut messages as *mut Vec<String> as *mut c_void);
             let mut it = Intervention { status: 200, pause: 0, url: std::ptr::null_mut(), log: std::ptr::null_mut(), disruptive: 0 };
-            let mut check = |t: *mut c_void, it: &mut Intervention, messages: &mut Vec<String>| -> bool {
+            let check = |t: *mut c_void, it: &mut Intervention, messages: &mut Vec<String>| -> bool {
                 let hit = (api.intervention)(t, it) != 0 && it.disruptive != 0;
                 // The rule that blocks reports here, not through the log callback.
                 if !it.log.is_null() {

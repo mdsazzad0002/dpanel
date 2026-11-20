@@ -259,9 +259,17 @@ fn buffered_length(request: &Request<Body>) -> Option<usize> {
     (length <= BODY_LIMIT).then_some(length)
 }
 
+fn peer_address(request: &Request<Body>) -> Option<SocketAddr> {
+    request.extensions().get::<ConnectInfo<SocketAddr>>().map(|info| info.0)
+        .or_else(|| request.extensions().get::<SocketAddr>().copied())
+}
+
+fn peer_ip(request: &Request<Body>) -> Option<std::net::IpAddr> {
+    peer_address(request).map(|addr| addr.ip().to_canonical())
+}
+
 pub fn facts(request: &Request<Body>, body: Vec<u8>) -> WafRequest {
-    let peer = request.extensions().get::<ConnectInfo<SocketAddr>>().map(|info| info.0)
-        .or_else(|| request.extensions().get::<SocketAddr>().copied());
+    let peer = peer_address(request);
     WafRequest {
         method: request.method().as_str().to_string(),
         uri: request.uri().path_and_query().map(|value| value.as_str().to_string()).unwrap_or_else(|| "/".into()),
@@ -321,6 +329,9 @@ pub async fn screen(site: &super::SiteConfig, request: Request<Body>) -> Result<
         }
     }
     if blocked {
+        if let Some(peer) = peer_ip(&request) {
+            super::waf_autoban::record_block(peer, request.headers());
+        }
         return Err(simple(
             StatusCode::from_u16(verdict.status).ok().filter(|code| code.is_client_error()).unwrap_or(StatusCode::FORBIDDEN),
             "This request was blocked by the website's firewall.",

@@ -106,10 +106,6 @@ fn search_replace(from: Option<&str>, to: Option<&str>) -> Result<Vec<Step>, Str
 }
 
 /// The wp-cli runs an action is made of.
-pub fn steps(action: &str, names: &[String], fix: Option<&str>) -> Result<Vec<Step>, String> {
-    steps_with_urls(action, names, fix, None, None)
-}
-
 pub fn steps_with_urls(action: &str, names: &[String], fix: Option<&str>, from: Option<&str>, to: Option<&str>) -> Result<Vec<Step>, String> {
     let list_fields = "--fields=name,title,status,version,update,update_version";
     Ok(match action {
@@ -212,6 +208,10 @@ fn validate(request: &Request) -> Result<std::path::PathBuf, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn steps(action: &str, names: &[String], fix: Option<&str>) -> Result<Vec<Step>, String> {
+        steps_with_urls(action, names, fix, None, None)
+    }
 
     #[test]
     fn updates_take_only_slugs_and_no_names_means_all() {

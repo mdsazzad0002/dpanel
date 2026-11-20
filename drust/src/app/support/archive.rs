@@ -7,7 +7,7 @@
 use std::{
     fs,
     io::{self, Read},
-    path::{Component, Path, PathBuf},
+    path::{Component, Path},
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -431,6 +431,7 @@ pub fn copy_tree(from: &Path, to: &Path) -> Result<(), String> {
 mod tests {
     use super::*;
     use std::io::Write;
+    use std::path::PathBuf;
 
     fn scratch(name: &str) -> PathBuf {
         let dir = std::env::temp_dir().join(format!("dpanel-archive-{name}-{}", std::process::id()));

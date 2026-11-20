@@ -809,7 +809,9 @@ fn ensure_user_fpm_pool(owner: &str, version: &str, socket: &Path) -> Result<(),
 
 /// A site user's pool, the same in the shared master and in an account's own one.
 pub(super) fn site_pool_content(owner: &str, socket: &Path) -> String {
-    let max_children = super::php_workers::custom_limit(owner).unwrap_or_else(site_pool_max_children);
+    let max_children = super::php_workers::custom_limit(owner)
+        .or_else(|| super::php_worker_autoscale::raised_limit(owner))
+        .unwrap_or_else(site_pool_max_children);
     let error_log = prepare_php_error_log(owner);
     format!(
         "; Managed dynamically by drust edge gateway.\n\

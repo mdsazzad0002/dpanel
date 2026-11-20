@@ -491,19 +491,6 @@ impl Paths {
         &self.panel_root
     }
 
-    /// Where a panel can be, best first. Linux servers from older installs
-    /// keep theirs in one of the other places.
-    pub fn panel_root_candidates(&self) -> Vec<PathBuf> {
-        let mut places = vec![self.panel_root.clone()];
-        if self.os == Os::Linux {
-            places.extend(
-                ["/home/dpanel/dengrweb_com/dpanel", "/var/www/ServerPanel", "/opt/dengrweb/dpanel"]
-                    .map(PathBuf::from),
-            );
-        }
-        places
-    }
-
     pub fn data_dir(&self) -> &Path {
         &self.data_dir
     }
@@ -728,15 +715,6 @@ mod tests {
         let found = |tool| locate(Os::Linux, tool, std::iter::empty(), |path: &Path| path.starts_with("/usr/bin"));
         assert_eq!(found(Tool::Timeout), Some(PathBuf::from("/usr/bin/timeout")));
         assert_eq!(found(Tool::Mariadb), Some(PathBuf::from("/usr/bin/mariadb")));
-    }
-
-    #[test]
-    fn only_linux_looks_for_a_panel_in_the_old_places() {
-        let linux = paths(Os::Linux, Profile::Server).panel_root_candidates();
-        assert_eq!(linux[0], Path::new("/var/www/dpanel"));
-        assert!(linux.contains(&PathBuf::from("/var/www/ServerPanel")));
-        assert_eq!(paths(Os::Macos, Profile::Local).panel_root_candidates().len(), 1);
-        assert_eq!(paths(Os::Windows, Profile::Local).panel_root_candidates().len(), 1);
     }
 
     #[test]

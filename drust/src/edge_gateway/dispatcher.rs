@@ -546,7 +546,7 @@ async fn handle_system_phpmyadmin(
 
     // Directory requests must execute index.php, never expose it as a
     // downloadable static asset.
-    if (local_path == "/" || local_path.ends_with('/')) {
+    if local_path == "/" || local_path.ends_with('/') {
         if root.join("index.php").is_file() {
             let (mut parts, body) = request.into_parts();
             let query = parts

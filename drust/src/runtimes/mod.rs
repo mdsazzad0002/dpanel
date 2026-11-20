@@ -22,7 +22,7 @@ mod jobs;
 mod tests;
 
 pub use cli::run as cli;
-pub use install::{InstallError, Outcome, Stage, install};
+pub use install::{Outcome, Stage, install};
 pub use jobs::{JobState, StartError, job, start};
 
 /// The packages dPanel knows how to install.

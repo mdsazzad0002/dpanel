@@ -264,6 +264,7 @@ pub fn serve(args: Vec<String>) -> ExitCode {
         if let Some(store) = crate::platform::scheduler().timer_store() {
             tokio::spawn(crate::platform::scheduler::run_timer(store.to_path_buf()));
         }
+        crate::edge_gateway::php_worker_autoscale::spawn();
         let router = build_router(state);
         let addr = format!("127.0.0.1:{port}");
         let listener = tokio::net::TcpListener::bind(&addr)
@@ -286,11 +287,11 @@ mod tests {
 
     #[tokio::test]
     async fn unsupported_is_a_501_that_names_the_capability() {
-        let response = PlatformError::Unsupported { capability: Capability::Docker }.into_response();
+        let response = PlatformError::Unsupported { capability: Capability::Firewall }.into_response();
         assert_eq!(response.status(), StatusCode::NOT_IMPLEMENTED);
         let body = axum::body::to_bytes(response.into_body(), 1024).await.unwrap();
         let body: serde_json::Value = serde_json::from_slice(&body).unwrap();
-        assert_eq!(body, serde_json::json!({"error": "unsupported", "capability": "docker"}));
+        assert_eq!(body, serde_json::json!({"error": "unsupported", "capability": "firewall"}));
     }
 
     #[tokio::test]

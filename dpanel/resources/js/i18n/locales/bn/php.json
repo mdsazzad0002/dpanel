@@ -81,6 +81,8 @@
         "last": "সর্বশেষ {time}",
         "custom": "custom",
         "auto": "auto",
+        "autoRaised": "auto-বাড়ানো",
+        "autoRaisedHint": "সাইটের worker শেষ হয়ে যাওয়ায় এবং সার্ভারে জায়গা থাকায় নিজে থেকে বাড়ানো হয়েছে",
         "reset": "Auto-তে ফেরান",
         "extra": "সব worker ব্যস্ত থাকলে সর্বোচ্চ আরও {size} memory",
         "mixed": "PHP version-গুলোর limit আলাদা; save করলে সবগুলো একই হবে।"

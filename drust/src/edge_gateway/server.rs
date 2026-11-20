@@ -119,6 +119,7 @@ pub fn serve_gateway_with_tls(
     runtime.block_on(async move {
         state.bandwidth.spawn_periodic_flush();
         super::site_logs::start(super::site_logs::logs_root());
+        super::waf_autoban::start();
         tokio::spawn(async {
             let mut every = tokio::time::interval(Duration::from_secs(600));
             loop {
@@ -1117,6 +1118,7 @@ pub fn serve_demo_with_tls(
     runtime.block_on(async move {
         state.bandwidth.spawn_periodic_flush();
         super::site_logs::start(super::site_logs::logs_root());
+        super::waf_autoban::start();
         tokio::spawn(async {
             let mut every = tokio::time::interval(Duration::from_secs(600));
             loop {

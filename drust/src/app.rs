@@ -2,10 +2,8 @@ mod admin;
 mod support;
 
 pub use support::{
-    backup_file, conf_basename, detect_app_root, distro_family, ensure_comment_listen,
-    ensure_listen_line, ensure_root, info, normalize_php_version, panel_aliases_for, parse_port,
-    random_hex, read_to_string, run_output, run_status, split_aliases, user_group, valid_username,
-    warn, write_string,
+    ensure_root, info, random_hex, read_to_string, run_status, user_group, valid_username, warn,
+    write_string,
 };
 pub(crate) use support::{Depth, archive, program_exists, try_chown, valid_email};
 

@@ -12,6 +12,7 @@ use axum::{Router, extract::State, http::StatusCode, response::IntoResponse, rou
 use sha2::{Digest, Sha256};
 
 use super::*;
+use super::install::InstallError;
 
 fn zip_of(files: &[(&str, &[u8])]) -> Vec<u8> {
     let mut writer = zip::ZipWriter::new(std::io::Cursor::new(Vec::new()));

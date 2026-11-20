@@ -2,10 +2,6 @@ use std::env;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-pub fn run_script(script_name: &str, args: &[String]) -> Result<String, String> {
-    run_script_with_env(script_name, args, &[])
-}
-
 pub fn run_script_with_env(
     script_name: &str,
     args: &[String],

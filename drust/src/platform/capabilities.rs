@@ -6,51 +6,37 @@ use std::{env, path::Path};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Capability {
-    Websites,
-    PhpMulti,
     Isolation,
     ResourceLimits,
     DiskQuota,
-    Mail,
     Dns,
     Ssl,
     Firewall,
-    Ftp,
     Terminal,
-    Docker,
-    Redis,
-    Reseller,
     /// Exact Unix modes and owners, as the file manager shows and sets them.
+    #[cfg_attr(unix, allow(dead_code))]
     FilePermissions,
-    /// Virus scans. They need `systemd` units and a real `timeout`.
-    Clamav,
     /// Starting and stopping system services; the supervisor brings it to the others.
     Services,
     /// The web application firewall: libmodsecurity and its rules are installed (S2).
+    #[cfg_attr(unix, allow(dead_code))]
     Waf,
     /// Listing the machine's IP addresses for the IP pool (U5).
+    #[cfg_attr(unix, allow(dead_code))]
     IpAddresses,
 }
 
 impl Capability {
     pub fn as_str(self) -> &'static str {
         match self {
-            Self::Websites => "websites",
-            Self::PhpMulti => "php_multi",
             Self::Isolation => "isolation",
             Self::ResourceLimits => "resource_limits",
             Self::DiskQuota => "disk_quota",
-            Self::Mail => "mail",
             Self::Dns => "dns",
             Self::Ssl => "ssl",
             Self::Firewall => "firewall",
-            Self::Ftp => "ftp",
             Self::Terminal => "terminal",
-            Self::Docker => "docker",
-            Self::Redis => "redis",
-            Self::Reseller => "reseller",
             Self::FilePermissions => "file_permissions",
-            Self::Clamav => "clamav",
             Self::Services => "services",
             Self::Waf => "waf",
             Self::IpAddresses => "ip_addresses",

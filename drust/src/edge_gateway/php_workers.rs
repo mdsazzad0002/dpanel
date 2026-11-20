@@ -5,7 +5,8 @@
 //! (`site_pool_max_children`). An admin can pin it per site user instead; the
 //! pinned value lives in `<state_dir>/php-pool-workers.json`, so a pool that
 //! is written again later (a new PHP version, an account's own master) keeps
-//! it.
+//! it. A pool left automatic is stepped up when it runs out of workers and
+//! the server has room (`php_worker_autoscale`).
 //!
 //! Usage is read from `/proc` rather than PHP-FPM's status page: site pools
 //! are `ondemand`, and asking a pool with no workers for its status would
@@ -75,14 +76,14 @@ pub(super) fn custom_limit(owner: &str) -> Option<u16> {
 /// One managed pool file: in the shared master's `pool.d`, or moved to an
 /// account's own master.
 #[derive(Debug, Clone)]
-struct PoolFile {
-    owner: String,
-    pool: String,
-    version: String,
-    path: PathBuf,
-    dedicated: bool,
-    pm: String,
-    max_children: Option<u16>,
+pub(super) struct PoolFile {
+    pub(super) owner: String,
+    pub(super) pool: String,
+    pub(super) version: String,
+    pub(super) path: PathBuf,
+    pub(super) dedicated: bool,
+    pub(super) pm: String,
+    pub(super) max_children: Option<u16>,
 }
 
 fn php_versions() -> Vec<String> {
@@ -96,7 +97,7 @@ fn php_versions() -> Vec<String> {
     versions
 }
 
-fn pool_files() -> Vec<PoolFile> {
+pub(super) fn pool_files() -> Vec<PoolFile> {
     let mut pools = Vec::new();
     for version in php_versions() {
         let root = platform::php_fpm::fpm_dir(&version);
@@ -186,11 +187,11 @@ fn with_max_children(content: &str, limit: u16) -> String {
 
 /// A running PHP-FPM worker.
 #[derive(Debug, Default, Clone)]
-struct Worker {
-    pool: String,
-    version: Option<String>,
-    busy: bool,
-    rss_kb: u64,
+pub(super) struct Worker {
+    pub(super) pool: String,
+    pub(super) version: Option<String>,
+    pub(super) busy: bool,
+    pub(super) rss_kb: u64,
 }
 
 fn version_in_path(text: &str) -> Option<String> {
@@ -229,7 +230,7 @@ fn is_busy(pid: &str) -> bool {
 
 /// `observer` is the worker asking (the panel's own request): it is busy
 /// only with this question, so it counts as idle.
-fn running_workers(observer: Option<u32>) -> Vec<Worker> {
+pub(super) fn running_workers(observer: Option<u32>) -> Vec<Worker> {
     let mut masters: HashMap<u32, String> = HashMap::new();
     let mut found: Vec<(String, Option<u32>, Worker)> = Vec::new();
     for pid in platform::procfs::pids() {
@@ -258,9 +259,9 @@ fn running_workers(observer: Option<u32>) -> Vec<Worker> {
 }
 
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
-struct LimitHits {
-    last_24h: u32,
-    last: Option<NaiveDateTime>,
+pub(super) struct LimitHits {
+    pub(super) last_24h: u32,
+    pub(super) last: Option<NaiveDateTime>,
 }
 
 fn read_tail(path: &Path) -> String {
@@ -313,7 +314,7 @@ fn limit_hits_in(log: &str, now: NaiveDateTime, hits: &mut HashMap<String, Limit
     }
 }
 
-fn limit_hits(log: &Path, now: NaiveDateTime) -> HashMap<String, LimitHits> {
+pub(super) fn limit_hits(log: &Path, now: NaiveDateTime) -> HashMap<String, LimitHits> {
     let mut hits = HashMap::new();
     let mut rotated = log.as_os_str().to_owned();
     rotated.push(".1");
@@ -323,15 +324,15 @@ fn limit_hits(log: &Path, now: NaiveDateTime) -> HashMap<String, LimitHits> {
     hits
 }
 
-fn shared_log(version: &str) -> PathBuf {
+pub(super) fn shared_log(version: &str) -> PathBuf {
     platform::php_fpm::shared_log(version)
 }
 
-fn dedicated_log(owner: &str, version: &str) -> PathBuf {
+pub(super) fn dedicated_log(owner: &str, version: &str) -> PathBuf {
     platform::php_fpm::dedicated_log(owner, version)
 }
 
-fn meminfo_kb(key: &str) -> u64 {
+pub(super) fn meminfo_kb(key: &str) -> u64 {
     platform::procfs::meminfo()
         .and_then(|content| {
             content.lines().find_map(|line| line.strip_prefix(key)?.split_whitespace().next()?.parse().ok())
@@ -348,6 +349,8 @@ pub struct PoolUsage {
     pub pm: String,
     pub max_children: Option<u16>,
     pub custom: bool,
+    /// Raised by the automatic step-up after the pool ran out of workers.
+    pub auto_raised: bool,
     pub running: usize,
     pub active: usize,
     pub idle: usize,
@@ -370,6 +373,7 @@ pub struct Overview {
 /// Every managed site pool with its limit and what it is using now.
 pub fn overview(observer: Option<u32>) -> Overview {
     let store = read_store();
+    let raised = super::php_worker_autoscale::raised_owners();
     let workers = running_workers(observer);
     let now = Local::now().naive_local();
     let mut logs: HashMap<PathBuf, HashMap<String, LimitHits>> = HashMap::new();
@@ -391,6 +395,7 @@ pub fn overview(observer: Option<u32>) -> Overview {
                 .unwrap_or_default();
             PoolUsage {
                 custom: store.contains_key(&file.owner),
+                auto_raised: !store.contains_key(&file.owner) && raised.contains(&file.owner),
                 running: mine.len(),
                 active,
                 idle: mine.len() - active,
@@ -482,20 +487,40 @@ pub fn set_limit(owner: &str, limit: Option<u16>) -> Result<Change, String> {
         }
     }
     let _guard = provision_lock()?;
-
-    let files: Vec<PoolFile> = pool_files().into_iter().filter(|file| file.owner == owner).collect();
     let effective = limit.unwrap_or_else(site_pool_max_children);
+    let (reloads, written) = write_limit(owner, effective)?;
 
+    let mut store = read_store();
+    match limit {
+        Some(limit) => store.insert(owner.to_string(), limit),
+        None => store.remove(owner),
+    };
+    if let Err(error) = write_store(&store) {
+        restore(&written);
+        return Err(error);
+    }
+    // The admin decided: an earlier automatic step-up no longer applies.
+    super::php_worker_autoscale::forget(owner);
+
+    Ok(Change { limit: effective, custom: limit.is_some(), reloads })
+}
+
+fn restore(written: &[(PathBuf, String)]) {
+    for (path, original) in written {
+        let _ = fs::write(path, original);
+    }
+}
+
+/// Writes `limit` into every pool file of `owner` and tests the result,
+/// putting the files back on failure. The caller holds the provision lock.
+/// Returns the masters to reload and each changed file's old content.
+pub(super) fn write_limit(owner: &str, limit: u16) -> Result<(Vec<Reload>, Vec<(PathBuf, String)>), String> {
+    let files: Vec<PoolFile> = pool_files().into_iter().filter(|file| file.owner == owner).collect();
     let mut written: Vec<(PathBuf, String)> = Vec::new();
     let mut reloads = BTreeSet::new();
-    let restore = |written: &[(PathBuf, String)]| {
-        for (path, original) in written {
-            let _ = fs::write(path, original);
-        }
-    };
     for file in &files {
         let original = fs::read_to_string(&file.path).map_err(|error| format!("cannot read {}: {error}", file.path.display()))?;
-        let updated = with_max_children(&original, effective);
+        let updated = with_max_children(&original, limit);
         if updated == original {
             continue;
         }
@@ -517,18 +542,7 @@ pub fn set_limit(owner: &str, limit: Option<u16>) -> Result<Change, String> {
             return Err(format!("PHP {} configuration test failed: {error}", file.version));
         }
     }
-
-    let mut store = read_store();
-    match limit {
-        Some(limit) => store.insert(owner.to_string(), limit),
-        None => store.remove(owner),
-    };
-    if let Err(error) = write_store(&store) {
-        restore(&written);
-        return Err(error);
-    }
-
-    Ok(Change { limit: effective, custom: limit.is_some(), reloads: reloads.into_iter().collect() })
+    Ok((reloads.into_iter().collect(), written))
 }
 
 #[cfg(test)]

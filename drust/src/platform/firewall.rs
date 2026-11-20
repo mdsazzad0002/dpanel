@@ -42,6 +42,24 @@ pub struct IpNet {
     pub prefix: u8,
 }
 
+impl IpNet {
+    /// Whether `ip` falls in this network; an IPv4 one never holds an IPv6 address.
+    pub fn contains(&self, ip: IpAddr) -> bool {
+        let shifted = |bits: u32, value: u128| if bits >= 128 { 0 } else { value >> bits };
+        match (self.addr, ip) {
+            (IpAddr::V4(net), IpAddr::V4(ip)) => {
+                let host = 32 - u32::from(self.prefix.min(32));
+                shifted(host, u128::from(u32::from(net))) == shifted(host, u128::from(u32::from(ip)))
+            }
+            (IpAddr::V6(net), IpAddr::V6(ip)) => {
+                let host = 128 - u32::from(self.prefix.min(128));
+                shifted(host, u128::from(net)) == shifted(host, u128::from(ip))
+            }
+            _ => false,
+        }
+    }
+}
+
 impl FromStr for IpNet {
     type Err = String;
 
@@ -129,7 +147,8 @@ pub trait FirewallBackend: Send + Sync + fmt::Debug {
     fn list(&self) -> Result<Vec<FirewallRule>, PlatformError>;
     fn add(&self, rule: &FirewallRule) -> Result<(), PlatformError>;
     fn remove(&self, id: &str) -> Result<(), PlatformError>;
-    /// `ttl` is not kept yet: a ban stays until `unban` (the watcher is J7/K6).
+    /// The firewall itself has no expiry: a ban stays until `unban`. `ttl` is
+    /// for the caller to keep (the WAF's auto-ban lifts its own bans).
     fn ban(&self, ip: IpAddr, ttl: Option<Duration>) -> Result<(), PlatformError>;
     fn unban(&self, ip: IpAddr) -> Result<(), PlatformError>;
 }

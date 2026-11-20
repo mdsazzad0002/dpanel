@@ -15,6 +15,7 @@ fn unsupported<T>() -> Result<T, PlatformError> {
     Err(PlatformError::Unsupported { capability: Capability::Services })
 }
 
+#[cfg_attr(target_os = "linux", allow(dead_code))]
 fn failed(action: &str) -> impl FnOnce(String) -> PlatformError + '_ {
     move |detail| PlatformError::Failed { action: action.to_string(), detail }
 }

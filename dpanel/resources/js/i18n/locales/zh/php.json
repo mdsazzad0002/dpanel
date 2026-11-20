@@ -81,6 +81,8 @@
         "last": "最近 {time}",
         "custom": "自定义",
         "auto": "自动",
+        "autoRaised": "自动提升",
+        "autoRaisedHint": "站点 worker 用尽且服务器仍有余量时自动提高",
         "reset": "重置为自动",
         "extra": "所有 worker 忙碌时最多再占用 {size} 内存",
         "mixed": "各 PHP 版本的限制不同；保存后将统一设置。"

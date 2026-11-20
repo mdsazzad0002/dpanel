@@ -80,6 +80,7 @@ const sites = computed(() => {
                 versions: [],
                 dedicated: false,
                 custom: pool.custom,
+                autoRaised: Boolean(pool.auto_raised),
                 limits: new Set(),
                 running: 0,
                 active: 0,
@@ -352,9 +353,10 @@ const resetToAuto = (site) => save(site, null);
                                             {{ saving[site.owner] ? t('php.manager.saving') : t('common.save') }}
                                         </button>
                                         <span v-if="site.custom" class="rounded bg-indigo-100 px-1.5 py-0.5 text-xs text-indigo-700 dark:bg-indigo-950 dark:text-indigo-300">{{ t('php.workers.custom') }}</span>
+                                        <span v-else-if="site.autoRaised" :title="t('php.workers.autoRaisedHint')" class="rounded bg-emerald-100 px-1.5 py-0.5 text-xs text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300">{{ t('php.workers.autoRaised') }}</span>
                                         <span v-else class="text-xs text-slate-500 dark:text-slate-400">{{ t('php.workers.auto') }}</span>
                                         <button
-                                            v-if="site.custom && !isDirty(site)"
+                                            v-if="(site.custom || site.autoRaised) && !isDirty(site)"
                                             type="button"
                                             :disabled="saving[site.owner]"
                                             class="text-xs text-slate-500 underline hover:text-slate-700 disabled:opacity-50 dark:text-slate-400 dark:hover:text-slate-200"

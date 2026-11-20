@@ -123,7 +123,7 @@ fn validate_ip(ip: &str) -> Result<String, String> {
         .map_err(|_| format!("'{ip}' is not a valid IP address."))
 }
 
-fn read_whitelist() -> Vec<String> {
+pub(crate) fn read_whitelist() -> Vec<String> {
     fs::read_to_string(WHITELIST_FILE)
         .map(|text| parse_whitelist(&text))
         .unwrap_or_default()

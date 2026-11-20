@@ -650,7 +650,11 @@ pub(super) fn remove(domain: &str) -> Result<Value, String> {
         removed = true;
     }
     // Only what the ACME client issued: /etc/drust/tls also holds the panel's
-    // own certificate, which came from the installer.
+    // own certificate, which came from the installer. It is revoked first, as
+    // its key is about to go: nobody can use it after this. Best effort: a CA
+    // that cannot be reached must not keep the site on a certificate it no
+    // longer wants.
+    let revoked = revoke_acme_certificate(&acme::client(), &domain);
     if acme::client().forget(&domain).map_err(|error| error.to_string())? {
         removed = true;
     }
@@ -670,7 +674,20 @@ pub(super) fn remove(domain: &str) -> Result<Value, String> {
     if removed && !trigger_gateway_reload() {
         return Err("Certificate removed, but notifying the edge gateway to reload failed.".into());
     }
-    Ok(json!({ "status": "removed", "removed": removed }))
+    Ok(json!({ "status": "removed", "removed": removed, "revoked": revoked }))
+}
+
+/// Whether the ACME client's certificate for `domain` was revoked. `false`
+/// when it holds none, or when revoking failed (logged).
+fn revoke_acme_certificate(client: &dyn AcmeClient, domain: &str) -> bool {
+    match client.revoke(domain) {
+        Ok(()) => true,
+        Err(platform::PlatformError::NotFound { .. }) => false,
+        Err(error) => {
+            tracing::warn!(domain, %error, "could not revoke the certificate; removing it anyway");
+            false
+        }
+    }
 }
 
 #[cfg(test)]
@@ -936,5 +953,29 @@ mod tests {
         let error =
             ensure_with_acme(&fixture.client, &fixture.at, "example.com", false, None, 30, false, || false).unwrap_err();
         assert!(error.contains("edge gateway"), "{error}");
+    }
+
+    /// Answers `revoke` with what it was built with.
+    struct Revoker(fn() -> Result<(), PlatformError>);
+
+    impl AcmeClient for Revoker {
+        fn issue(&self, _: &CertRequest) -> Result<IssuedCert, PlatformError> {
+            unreachable!()
+        }
+        fn renew_due(&self) -> Result<Vec<RenewResult>, PlatformError> {
+            unreachable!()
+        }
+        fn revoke(&self, _: &str) -> Result<(), PlatformError> {
+            (self.0)()
+        }
+    }
+
+    #[test]
+    fn uninstall_revokes_only_what_the_acme_client_holds_and_never_fails_on_it() {
+        assert!(revoke_acme_certificate(&Revoker(|| Ok(())), "shop.example"));
+        let none = || Err(PlatformError::NotFound { what: "No ACME certificate".into() });
+        assert!(!revoke_acme_certificate(&Revoker(none), "shop.example"));
+        let offline = || Err(PlatformError::Failed { action: "revoke certificate".into(), detail: "timed out".into() });
+        assert!(!revoke_acme_certificate(&Revoker(offline), "shop.example"));
     }
 }
