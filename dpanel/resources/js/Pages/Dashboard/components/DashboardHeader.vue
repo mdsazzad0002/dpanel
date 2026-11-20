@@ -6,7 +6,6 @@ defineProps({
     userName: { type: String, default: '' },
 });
 
-// TODO: replace with the real GitHub repo / company / docs URLs.
 const { t } = useI18n();
 
 const links = computed(() => [

@@ -82,7 +82,7 @@
         "custom": "custom",
         "auto": "auto",
         "autoRaised": "auto-বাড়ানো",
-        "autoRaisedHint": "সাইটের worker শেষ হয়ে যাওয়ায় এবং সার্ভারে জায়গা থাকায় নিজে থেকে বাড়ানো হয়েছে",
+        "autoRaisedHint": "Server-এ জায়গা থাকা অবস্থায় site-এর worker ফুরিয়ে যাওয়ায় নিজে থেকে বাড়ানো হয়েছে। এক সপ্তাহ না ফুরালে আবার কমে, memory কমে গেলে আগেই",
         "reset": "Auto-তে ফেরান",
         "extra": "সব worker ব্যস্ত থাকলে সর্বোচ্চ আরও {size} memory",
         "mixed": "PHP version-গুলোর limit আলাদা; save করলে সবগুলো একই হবে।"

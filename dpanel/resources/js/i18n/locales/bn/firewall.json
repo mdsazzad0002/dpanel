@@ -29,5 +29,15 @@
     "empty": "dPanel থেকে এখনও কোনো rule যোগ হয়নি।",
     "onlyOurs": "শুধু dPanel যে ধরনের rule লেখে সেগুলো দেখায়। Server-এ হাতে লেখা rule এখানে আসে না, বদলায়ও না।",
     "pendingHelp": "{seconds} সেকেন্ডের মধ্যে রাখুন চাপুন, নইলে firewall আগের অবস্থায় ফিরবে। এই page সাড়া না দিলে বুঝবেন বদলটা আপনাকে আটকে দিয়েছে; সেটা নিজেই ফিরে যাবে।",
-    "keep": "এই বদল রাখুন"
+    "keep": "এই বদল রাখুন",
+    "wafBans": "WAF যাদের ban করেছে",
+    "wafBansEmpty": "এখন কোনো address ban করা নেই।",
+    "wafBansLoadFailed": "WAF ban-এর তালিকা আনা গেল না।",
+    "wafAddress": "Address",
+    "wafUntil": "Ban শেষ হবে",
+    "wafStrikes": "কতবার ban",
+    "wafLift": "Ban তুলুন",
+    "wafLiftConfirm": "{ip}-এর ban তুলবেন? আগের ban-গুলোর হিসাবও মুছে যাবে।",
+    "wafLiftFailed": "Ban তোলা গেল না।",
+    "wafBansHelp": "WAF কোনো address-কে 10 মিনিটে 10 বার আটকালে সেটা 1 ঘণ্টার জন্য ban হয়। 30 দিনের মধ্যে আবার ban হলে 1 দিন, তারপর 1 সপ্তাহ। সময় শেষে ban নিজে থেকেই ওঠে।"
 }

@@ -29,5 +29,15 @@
     "empty": "No rules added from dPanel yet.",
     "onlyOurs": "Only rules in the shapes dPanel writes are listed. Rules written by hand on the server are left alone.",
     "pendingHelp": "Click Keep within {seconds} seconds, or the firewall goes back to how it was. If this page stops answering, the change locked you out and will be undone.",
-    "keep": "Keep this change"
+    "keep": "Keep this change",
+    "wafBans": "Banned by the WAF",
+    "wafBansEmpty": "No address is banned right now.",
+    "wafBansLoadFailed": "Unable to load the WAF bans.",
+    "wafAddress": "Address",
+    "wafUntil": "Banned until",
+    "wafStrikes": "Times banned",
+    "wafLift": "Lift ban",
+    "wafLiftConfirm": "Lift the ban on {ip}? Its earlier bans are forgotten too.",
+    "wafLiftFailed": "The ban could not be lifted.",
+    "wafBansHelp": "An address the WAF blocks 10 times in 10 minutes is banned for an hour. Banned again within 30 days, it gets a day, then a week. Bans end on their own."
 }

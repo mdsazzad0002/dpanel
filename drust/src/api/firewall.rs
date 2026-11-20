@@ -1,5 +1,7 @@
 //! `GET`, `POST /firewall/rules`, `DELETE /firewall/rules/{id}` and
 //! `POST /firewall/confirm`: spec section 8, over `platform::firewall`.
+//! `GET /firewall/waf-bans` and `DELETE /firewall/waf-bans/{ip}`: the WAF's
+//! automatic bans (`edge_gateway::waf_autoban`), listed and lifted early.
 //!
 //! Lock-out protection (spec 6.9): every add or remove answers with a
 //! `confirm_token`. Unless `POST /firewall/confirm` names it within
@@ -29,6 +31,8 @@ pub fn routes() -> Router<Arc<ApiState>> {
         .route("/firewall/rules", get(list).post(add))
         .route("/firewall/rules/{id}", delete(remove))
         .route("/firewall/confirm", post(confirm))
+        .route("/firewall/waf-bans", get(waf_bans))
+        .route("/firewall/waf-bans/{ip}", delete(lift_waf_ban))
 }
 
 pub const CONFIRM_WINDOW: Duration = Duration::from_secs(60);
@@ -209,6 +213,31 @@ async fn remove(State(state): State<Arc<ApiState>>, headers: HeaderMap, Path(id)
     }
 }
 
+async fn waf_bans(State(state): State<Arc<ApiState>>, headers: HeaderMap) -> Response {
+    if let Err(error) = check_token(&state, &headers) {
+        return error.into_response();
+    }
+    let bans = tokio::task::spawn_blocking(crate::edge_gateway::waf_autoban::list).await.unwrap_or_default();
+    Json(serde_json::json!({ "success": true, "bans": bans })).into_response()
+}
+
+async fn lift_waf_ban(State(state): State<Arc<ApiState>>, headers: HeaderMap, Path(ip): Path<String>) -> Response {
+    if let Err(error) = check_token(&state, &headers) {
+        return error.into_response();
+    }
+    let Ok(ip) = ip.parse::<std::net::IpAddr>() else {
+        return ApiResponse::error("Invalid IP address.").into_response();
+    };
+    match tokio::task::spawn_blocking(move || crate::edge_gateway::waf_autoban::lift(ip)).await {
+        Ok(Ok(true)) => ApiResponse::ok("Ban lifted.").into_response(),
+        Ok(Ok(false)) => {
+            (axum::http::StatusCode::NOT_FOUND, ApiResponse::error("This address is not banned.")).into_response()
+        }
+        Ok(Err(error)) => ApiResponse::error(&format!("Cannot lift the ban: {error}")).into_response(),
+        Err(error) => ApiResponse::error(&format!("Lifting the ban stopped: {error}")).into_response(),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -239,6 +268,17 @@ mod tests {
     async fn refuses_a_rule_id_that_is_not_one() {
         let (_, body) = send("DELETE", "/firewall/rules/abc;rm", "", "secret").await;
         assert_eq!(body["message"], "Invalid rule id.");
+    }
+
+    #[tokio::test]
+    async fn waf_bans_need_the_token_and_a_real_address() {
+        let (status, _) = send("GET", "/firewall/waf-bans", "", "wrong").await;
+        assert_eq!(status, axum::http::StatusCode::BAD_REQUEST);
+        let (_, body) = send("DELETE", "/firewall/waf-bans/1.2.3.4;rm", "", "secret").await;
+        assert_eq!(body["message"], "Invalid IP address.");
+        // TEST-NET-1: never banned, so there is nothing to lift.
+        let (status, _) = send("DELETE", "/firewall/waf-bans/192.0.2.55", "", "secret").await;
+        assert_eq!(status, axum::http::StatusCode::NOT_FOUND);
     }
 
     #[tokio::test]

@@ -63,6 +63,7 @@ use App\Http\Controllers\RoleManagementController;
 use App\Http\Controllers\SecurityCenterController;
 use App\Http\Controllers\SecurityController;
 use App\Http\Controllers\Security\FirewallRuleController;
+use App\Http\Controllers\Security\WafBanController;
 use App\Http\Controllers\Security\LoginUserController;
 use App\Http\Controllers\Fail2banController;
 use App\Http\Controllers\Security\LoginAuditController;
@@ -1214,6 +1215,14 @@ Route::prefix('dpt{token}')
             Route::post('/security/firewall/confirm', [FirewallRuleController::class, 'confirm'])
                 ->middleware('role:admin')
                 ->name('security.firewall.confirm');
+            // Automatic WAF bans: listed, and lifted early by an admin.
+            Route::get('/security/firewall/waf-bans', [WafBanController::class, 'index'])
+                ->middleware('role:admin')
+                ->name('security.firewall.waf-bans');
+            Route::delete('/security/firewall/waf-bans/{ip}', [WafBanController::class, 'destroy'])
+                ->middleware('role:admin')
+                ->where('ip', '[0-9a-fA-F:.]+')
+                ->name('security.firewall.waf-bans.destroy');
 
             // Linux accounts that can log in to the server — root-level changes, admins only.
             Route::get('/security/login-users', [LoginUserController::class, 'index'])

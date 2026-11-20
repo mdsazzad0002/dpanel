@@ -49,6 +49,31 @@ class FirewallClient
     }
 
     /**
+     * The WAF's automatic bans in force: address, end (seconds since 1970) and
+     * how many times the address has been banned lately.
+     *
+     * @return list<array{ip: string, until: int, strikes: int}>
+     */
+    public function wafBans(): array
+    {
+        $json = $this->check($this->request()->get($this->url('/firewall/waf-bans')));
+
+        return array_values(array_map(fn ($ban) => [
+            'ip' => (string) ($ban['ip'] ?? ''),
+            'until' => (int) ($ban['until'] ?? 0),
+            'strikes' => (int) ($ban['strikes'] ?? 1),
+        ], (array) ($json['bans'] ?? [])));
+    }
+
+    /** Lifts a WAF ban early; drust also forgets the address's earlier bans. */
+    public function liftWafBan(string $ip): string
+    {
+        $json = $this->check($this->request()->delete($this->url('/firewall/waf-bans/'.rawurlencode($ip))));
+
+        return (string) ($json['message'] ?? 'Ban lifted.');
+    }
+
+    /**
      * @param  array<string, mixed>  $json
      * @return array{id: string, confirm_token: ?string, confirm_within_seconds: ?int, message: string}
      */

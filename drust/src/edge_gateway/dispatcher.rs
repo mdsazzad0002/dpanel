@@ -1181,8 +1181,6 @@ mod tests {
         assert_eq!(strip_uri_prefix(&uri, "/app/").unwrap(), "/");
         assert!(strip_uri_prefix(&uri, "/").is_none());
     }
-    use std::sync::Arc;
-    use std::time::Duration;
 
     #[test]
     fn build_simple_response() {

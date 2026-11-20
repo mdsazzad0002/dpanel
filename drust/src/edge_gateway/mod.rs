@@ -24,7 +24,7 @@ mod remote_share;
 mod server;
 mod site_guards;
 mod waf;
-mod waf_autoban;
+pub(crate) mod waf_autoban;
 pub use waf::{WafMode, run_worker as run_waf_worker};
 pub mod site_logs;
 mod source;

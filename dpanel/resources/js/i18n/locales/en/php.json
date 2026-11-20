@@ -82,7 +82,7 @@
         "custom": "custom",
         "auto": "auto",
         "autoRaised": "auto-raised",
-        "autoRaisedHint": "Raised automatically after the site ran out of workers while the server had room",
+        "autoRaisedHint": "Raised automatically after the site ran out of workers while the server had room. Steps back down after a week without running out, or sooner when memory runs short",
         "reset": "Reset to auto",
         "extra": "Up to {size} more memory when every worker is busy",
         "mixed": "PHP versions have different limits; saving sets them all."

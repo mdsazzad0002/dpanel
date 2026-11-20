@@ -6,6 +6,7 @@ import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
 import FirewallRuleForm from './components/FirewallRuleForm.vue';
 import FirewallRuleTable from './components/FirewallRuleTable.vue';
 import PendingChangeBanner from './components/PendingChangeBanner.vue';
+import WafBansCard from './components/WafBansCard.vue';
 
 const { t } = useI18n();
 const page = usePage();
@@ -130,6 +131,7 @@ onMounted(load);
 
             <FirewallRuleForm :busy="busy || !!pending" @submit="addRule" />
             <FirewallRuleTable :rules="rules" :loading="loading" :busy="busy || !!pending" @refresh="load" @remove="removeRule" />
+            <WafBansCard />
         </div>
     </AuthenticatedLayout>
 </template>

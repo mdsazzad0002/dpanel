@@ -8,6 +8,11 @@
 //! further step needs a new limit hit after the previous one, so a pool grows
 //! only as long as it keeps running out.
 //!
+//! It steps back down the same way: a raised pool that has not run out for
+//! [`QUIET_DAYS`] loses [`STEP`] workers per check until it is back at the
+//! automatic limit. When RAM runs short, the raised pool that ran out
+//! longest ago (and not within the last hour) is stepped down at once.
+//!
 //! The raised limit lives in `<state_dir>/php-pool-autoscale.json`, so a pool
 //! written again later keeps it. An admin pinning or resetting the limit on
 //! the PHP Workers page clears it. Linux only: elsewhere there is no
@@ -23,7 +28,7 @@ use std::{
 use chrono::{Local, NaiveDateTime};
 use serde::{Deserialize, Serialize};
 
-use super::php::provision_lock;
+use super::php::{provision_lock, site_pool_max_children};
 use super::php_workers::{self, MAX_WORKERS};
 use crate::platform;
 
@@ -37,12 +42,16 @@ const RECENT_MINUTES: i64 = 10;
 const MIN_FREE_PERCENT: u64 = 25;
 /// The 5-minute load average must stay below this share of the CPU cores.
 const MAX_LOAD_PER_CORE: f64 = 0.8;
+/// Days without a limit hit before a raised pool steps back down.
+const QUIET_DAYS: i64 = 7;
+/// Under memory pressure, a pool that ran out this recently is left alone.
+const BUSY_MINUTES: i64 = 60;
 const TIME_FORMAT: &str = "%Y-%m-%d %H:%M:%S";
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 struct Raised {
     limit: u16,
-    /// Local time of the step, as PHP-FPM's log times are local.
+    /// Local time of the last step up or down, as PHP-FPM's log times are local.
     raised_at: String,
 }
 
@@ -97,7 +106,7 @@ fn enabled() -> bool {
 
 /// Checks the pools every few minutes on the current Tokio runtime.
 pub fn spawn() {
-    if !cfg!(target_os = "linux") || !enabled() {
+    if platform::current().os() != platform::Os::Linux || !enabled() {
         return;
     }
     tokio::spawn(async {
@@ -132,7 +141,7 @@ struct Health {
 fn read_health() -> Option<Health> {
     let memory_total_kb = php_workers::meminfo_kb("MemTotal:");
     let memory_available_kb = php_workers::meminfo_kb("MemAvailable:");
-    let load = fs::read_to_string("/proc/loadavg").ok().as_deref().and_then(platform::metrics::parse_loadavg)?;
+    let load = platform::procfs::loadavg()?;
     (memory_total_kb > 0).then_some(Health {
         memory_total_kb,
         memory_available_kb,
@@ -157,6 +166,31 @@ fn next_limit(current: u16) -> Option<u16> {
 /// Whether a hit at `last_hit` calls for a step: recent, and after the last step.
 fn hit_counts(last_hit: NaiveDateTime, now: NaiveDateTime, raised_at: Option<NaiveDateTime>) -> bool {
     last_hit >= now - chrono::Duration::minutes(RECENT_MINUTES) && raised_at.is_none_or(|raised| last_hit > raised)
+}
+
+/// The limit one step down from `current`, never below `base`.
+fn lower_limit(current: u16, base: u16) -> u16 {
+    current.saturating_sub(STEP).max(base)
+}
+
+/// Whether a raised pool has been quiet long enough to step down: no hit,
+/// and no step, within [`QUIET_DAYS`].
+fn quiet_long_enough(last_hit: Option<NaiveDateTime>, now: NaiveDateTime, changed_at: Option<NaiveDateTime>) -> bool {
+    let cutoff = now - chrono::Duration::days(QUIET_DAYS);
+    last_hit.is_none_or(|hit| hit < cutoff) && changed_at.is_none_or(|changed| changed < cutoff)
+}
+
+/// Under memory pressure: the raised pool to step down first, the one whose
+/// last hit is oldest, skipping pools that ran out within [`BUSY_MINUTES`].
+fn pressure_pick<'a>(
+    raised: impl Iterator<Item = (&'a String, Option<NaiveDateTime>)>,
+    now: NaiveDateTime,
+) -> Option<&'a String> {
+    let busy_since = now - chrono::Duration::minutes(BUSY_MINUTES);
+    raised
+        .filter(|(_, last_hit)| last_hit.is_none_or(|hit| hit < busy_since))
+        .min_by_key(|(_, last_hit)| *last_hit)
+        .map(|(owner, _)| owner)
 }
 
 fn estimated_worker_kb() -> u64 {
@@ -209,7 +243,8 @@ fn check_once() -> Vec<php_workers::Reload> {
     let mut store = read_store();
     let mut changed = false;
     let mut reloads = BTreeSet::new();
-    for (owner, (last_hit, current)) in owners {
+    let mut stepped_up = BTreeSet::new();
+    for (owner, (last_hit, current)) in owners.clone() {
         let Some(last_hit) = last_hit else { continue };
         let raised_at = store
             .get(&owner)
@@ -228,7 +263,8 @@ fn check_once() -> Vec<php_workers::Reload> {
             Ok((written, _)) => {
                 tracing::info!(owner, from = current, to = next, "PHP worker limit stepped up after the pool ran out");
                 reloads.extend(written);
-                store.insert(owner, Raised { limit: next, raised_at: now.format(TIME_FORMAT).to_string() });
+                store.insert(owner.clone(), Raised { limit: next, raised_at: now.format(TIME_FORMAT).to_string() });
+                stepped_up.insert(owner);
                 changed = true;
                 // The next pool must fit beside this one's new workers.
                 health.memory_available_kb = health.memory_available_kb.saturating_sub(extra_kb);
@@ -236,9 +272,47 @@ fn check_once() -> Vec<php_workers::Reload> {
             Err(error) => tracing::warn!(owner, %error, "automatic PHP worker step-up failed"),
         }
     }
+    let pressure = !has_room(health, 0);
+    let base = site_pool_max_children();
+    let mut to_lower: BTreeSet<String> = store
+        .iter()
+        .filter(|(owner, raised)| {
+            let Some((last_hit, _)) = owners.get(*owner) else { return false };
+            let changed_at = NaiveDateTime::parse_from_str(&raised.raised_at, TIME_FORMAT).ok();
+            quiet_long_enough(*last_hit, now, changed_at)
+        })
+        .map(|(owner, _)| owner.clone())
+        .collect();
+    if pressure {
+        let candidates = store
+            .keys()
+            .filter(|owner| !stepped_up.contains(*owner))
+            .filter_map(|owner| owners.get(owner).map(|(last_hit, _)| (owner, *last_hit)));
+        if let Some(owner) = pressure_pick(candidates, now) {
+            to_lower.insert(owner.clone());
+        }
+    }
+    for owner in to_lower {
+        let Some(raised) = store.get(&owner) else { continue };
+        let next = lower_limit(raised.limit, base);
+        match php_workers::write_limit(&owner, next) {
+            Ok((written, _)) => {
+                tracing::info!(owner, from = raised.limit, to = next, pressure, "PHP worker limit stepped down");
+                reloads.extend(written);
+                if next <= base {
+                    store.remove(&owner);
+                } else {
+                    store.insert(owner, Raised { limit: next, raised_at: now.format(TIME_FORMAT).to_string() });
+                }
+                changed = true;
+            }
+            Err(error) => tracing::warn!(owner, %error, "automatic PHP worker step-down failed"),
+        }
+    }
+
     if changed {
         if let Err(error) = write_store(&store) {
-            tracing::warn!(%error, "cannot save automatic PHP worker step-ups");
+            tracing::warn!(%error, "cannot save automatic PHP worker limit changes");
         }
     }
     reloads.into_iter().collect()
@@ -285,5 +359,38 @@ mod tests {
         assert!(!hit_counts(time("2026-11-20 11:30:00"), now, None));
         assert!(!hit_counts(time("2026-11-20 11:55:00"), now, Some(time("2026-11-20 11:56:00"))));
         assert!(hit_counts(time("2026-11-20 11:58:00"), now, Some(time("2026-11-20 11:56:00"))));
+    }
+
+    #[test]
+    fn steps_down_by_five_to_the_automatic_limit() {
+        assert_eq!(lower_limit(20, 6), 15);
+        assert_eq!(lower_limit(9, 6), 6);
+        assert_eq!(lower_limit(6, 6), 6);
+    }
+
+    #[test]
+    fn steps_down_only_after_a_quiet_week() {
+        let now = time("2026-11-20 12:00:00");
+        let old = Some(time("2026-11-10 12:00:00"));
+        assert!(quiet_long_enough(None, now, old));
+        assert!(quiet_long_enough(old, now, old));
+        // Ran out three days ago.
+        assert!(!quiet_long_enough(Some(time("2026-11-17 12:00:00")), now, old));
+        // Changed three days ago.
+        assert!(!quiet_long_enough(None, now, Some(time("2026-11-17 12:00:00"))));
+    }
+
+    #[test]
+    fn memory_pressure_picks_the_longest_quiet_pool_but_not_a_busy_one() {
+        let now = time("2026-11-20 12:00:00");
+        let (a, b, c) = ("a".to_string(), "b".to_string(), "c".to_string());
+        let pools = vec![
+            (&a, Some(time("2026-11-20 08:00:00"))),
+            (&b, Some(time("2026-11-19 08:00:00"))),
+            (&c, Some(time("2026-11-20 11:50:00"))),
+        ];
+        assert_eq!(pressure_pick(pools.into_iter(), now), Some(&b));
+        assert_eq!(pressure_pick(vec![(&c, Some(time("2026-11-20 11:50:00")))].into_iter(), now), None);
+        assert_eq!(pressure_pick(vec![(&a, None)].into_iter(), now), Some(&a));
     }
 }

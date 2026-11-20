@@ -29,5 +29,15 @@
     "empty": "尚未从 dPanel 添加任何规则。",
     "onlyOurs": "只列出 dPanel 所写格式的规则。服务器上手动编写的规则不会被改动。",
     "pendingHelp": "请在 {seconds} 秒内点击“保留此更改”，否则防火墙将恢复原状。如果此页面停止响应，说明更改把您锁在了外面，它将被撤销。",
-    "keep": "保留此更改"
+    "keep": "保留此更改",
+    "wafBans": "被 WAF 封禁",
+    "wafBansEmpty": "当前没有被封禁的地址。",
+    "wafBansLoadFailed": "无法加载 WAF 封禁列表。",
+    "wafAddress": "地址",
+    "wafUntil": "封禁至",
+    "wafStrikes": "封禁次数",
+    "wafLift": "解除封禁",
+    "wafLiftConfirm": "解除 {ip} 的封禁？其以往的封禁记录也会被清除。",
+    "wafLiftFailed": "无法解除封禁。",
+    "wafBansHelp": "10 分钟内被 WAF 拦截 10 次的地址会被封禁 1 小时。30 天内再次被封禁则为 1 天，之后为 1 周。封禁到期自动解除。"
 }

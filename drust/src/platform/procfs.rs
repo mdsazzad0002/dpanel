@@ -32,3 +32,8 @@ pub fn read_bytes(pid: &str, name: &str) -> Option<Vec<u8>> {
 pub fn meminfo() -> Option<String> {
     fs::read_to_string("/proc/meminfo").ok()
 }
+
+/// The 1, 5 and 15 minute load averages from `/proc/loadavg`.
+pub fn loadavg() -> Option<[f64; 3]> {
+    fs::read_to_string("/proc/loadavg").ok().as_deref().and_then(super::metrics::parse_loadavg)
+}
