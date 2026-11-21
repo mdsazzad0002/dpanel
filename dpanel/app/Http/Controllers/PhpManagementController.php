@@ -24,7 +24,7 @@ class PhpManagementController extends Controller
     /**
      * @var array<int, string>
      */
-    private const CANDIDATE_VERSIONS = ['7.4', '8.0', '8.1', '8.2', '8.3', '8.4', '8.5'];
+    private const CANDIDATE_VERSIONS = ['7.4', '8.0', '8.1', '8.2', '8.3', '8.4', '8.5', '8.6'];
 
     /**
      * @var array<int, string>

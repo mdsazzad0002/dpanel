@@ -71,7 +71,7 @@ class WebsiteController extends Controller
     /**
      * @var array<int, string>
      */
-    private const FALLBACK_PHP_VERSIONS = ['7.4', '8.0', '8.1', '8.2', '8.3', '8.4', '8.5'];
+    private const FALLBACK_PHP_VERSIONS = ['7.4', '8.0', '8.1', '8.2', '8.3', '8.4', '8.5', '8.6'];
 
     public function __call(string $method, array $parameters): mixed
     {

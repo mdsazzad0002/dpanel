@@ -130,6 +130,14 @@ php_enable_and_verify_imap() {
     *) panel_die "Unsupported distro for PHP IMAP verification." ;;
   esac
 
+  # imap left core in PHP 8.4 and ships as a PECL build, which can lag a new
+  # PHP release (php8.6-imap did not exist at 8.6.0). Skip instead of failing.
+  if [[ "$(pkg_distro_family)" == "debian" ]] && ! pkg_package_available "php${php_version}-imap"; then
+    panel_warn_log "php${php_version}-imap is not available yet; PHP ${php_version} installed without IMAP."
+    php_reload_service
+    return 0
+  fi
+
   if [[ "$(pkg_distro_family)" == "debian" ]] && command -v phpenmod >/dev/null 2>&1; then
     phpenmod -v "$php_version" imap
   fi

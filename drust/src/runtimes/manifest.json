@@ -70,10 +70,10 @@
         {
             "name": "php",
             "version": "8.2",
-            "release": "8.2.35-1",
+            "release": "8.2.36",
             "os": "windows",
             "arch": "x86_64",
-            "sha256": "ebe75134c03869826cb1714d31fd5eb96afefa6d9fd35d786971c03020e7bce2",
+            "sha256": "0b541b7e9db3c55b9324f3f1f30f084a340657d1b57ca4f7a3acaca6b2e8a799",
             "root": "",
             "check": [
                 "php.exe",
@@ -85,17 +85,17 @@
                 "-v"
             ],
             "urls": [
-                "https://downloads.php.net/~windows/releases/php-8.2.35-1-nts-Win32-vs16-x64.zip",
-                "https://downloads.php.net/~windows/releases/archives/php-8.2.35-1-nts-Win32-vs16-x64.zip"
+                "https://downloads.php.net/~windows/releases/php-8.2.36-nts-Win32-vs16-x64.zip",
+                "https://downloads.php.net/~windows/releases/archives/php-8.2.36-nts-Win32-vs16-x64.zip"
             ]
         },
         {
             "name": "php",
             "version": "8.3",
-            "release": "8.3.36-1",
+            "release": "8.3.37",
             "os": "windows",
             "arch": "x86_64",
-            "sha256": "1a097d52b7a68622cdc723073b61cc70caf79c941218ff65b2d8441dbc6b10d4",
+            "sha256": "38808a798485e1c0938dfcce7e942131415fc6c7834f83a5a85a4c4edb5539d6",
             "root": "",
             "check": [
                 "php.exe",
@@ -107,17 +107,17 @@
                 "-v"
             ],
             "urls": [
-                "https://downloads.php.net/~windows/releases/php-8.3.36-1-nts-Win32-vs16-x64.zip",
-                "https://downloads.php.net/~windows/releases/archives/php-8.3.36-1-nts-Win32-vs16-x64.zip"
+                "https://downloads.php.net/~windows/releases/php-8.3.37-nts-Win32-vs16-x64.zip",
+                "https://downloads.php.net/~windows/releases/archives/php-8.3.37-nts-Win32-vs16-x64.zip"
             ]
         },
         {
             "name": "php",
             "version": "8.4",
-            "release": "8.4.27-1",
+            "release": "8.4.28",
             "os": "windows",
             "arch": "x86_64",
-            "sha256": "dbae154a0a89791f36c3d48e68bae797878333e7d6cb5721e74617de59b63ab7",
+            "sha256": "c1f9280588b7b6ad7b518969022f0b0175f106fab9d0639ad0e4ce7cd47ac1ed",
             "root": "",
             "check": [
                 "php.exe",
@@ -129,17 +129,17 @@
                 "-v"
             ],
             "urls": [
-                "https://downloads.php.net/~windows/releases/php-8.4.27-1-nts-Win32-vs17-x64.zip",
-                "https://downloads.php.net/~windows/releases/archives/php-8.4.27-1-nts-Win32-vs17-x64.zip"
+                "https://downloads.php.net/~windows/releases/php-8.4.28-nts-Win32-vs17-x64.zip",
+                "https://downloads.php.net/~windows/releases/archives/php-8.4.28-nts-Win32-vs17-x64.zip"
             ]
         },
         {
             "name": "php",
             "version": "8.5",
-            "release": "8.5.12-1",
+            "release": "8.5.13",
             "os": "windows",
             "arch": "x86_64",
-            "sha256": "2a36a2edcb7a5b9252f638fd5e4cf84d7f6e066092654220dc0b63e5cf4e9723",
+            "sha256": "4ae6c72bc0ca4f6b8f3e9b107874bae0135699f3aabe6c26a1f6103d040eea97",
             "root": "",
             "check": [
                 "php.exe",
@@ -151,8 +151,30 @@
                 "-v"
             ],
             "urls": [
-                "https://downloads.php.net/~windows/releases/php-8.5.12-1-nts-Win32-vs17-x64.zip",
-                "https://downloads.php.net/~windows/releases/archives/php-8.5.12-1-nts-Win32-vs17-x64.zip"
+                "https://downloads.php.net/~windows/releases/php-8.5.13-nts-Win32-vs17-x64.zip",
+                "https://downloads.php.net/~windows/releases/archives/php-8.5.13-nts-Win32-vs17-x64.zip"
+            ]
+        },
+        {
+            "name": "php",
+            "version": "8.6",
+            "release": "8.6.0",
+            "os": "windows",
+            "arch": "x86_64",
+            "sha256": "d4783fffe1f4ab072600daff1622a7a2df936957a787a338c59e3dbd4d846d98",
+            "root": "",
+            "check": [
+                "php.exe",
+                "php-cgi.exe"
+            ],
+            "probe": [
+                "php.exe",
+                "-n",
+                "-v"
+            ],
+            "urls": [
+                "https://downloads.php.net/~windows/releases/php-8.6.0-nts-Win32-vs18-x64.zip",
+                "https://downloads.php.net/~windows/releases/archives/php-8.6.0-nts-Win32-vs18-x64.zip"
             ]
         },
         {

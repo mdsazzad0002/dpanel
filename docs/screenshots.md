@@ -154,7 +154,7 @@ recent activity, and a delete zone.
     </td>
     <td width="50%" valign="top">
       <h4>🐘 PHP Manager</h4>
-      Every installed PHP version (5.6 to 8.5), as reported by the Rust API. Edit each version's <code>php.ini</code> and extensions separately.
+      Every installed PHP version (5.6 to 8.6), as reported by the Rust API. Edit each version's <code>php.ini</code> and extensions separately.
       <br><br>
       <img src="images/phpmanagement.png" alt="PHP Manager">
     </td>

@@ -982,7 +982,7 @@ PY
     return 0
   fi
 
-  printf '%s\n' 7.4 8.0 8.1 8.2 8.3 8.4 8.5
+  printf '%s\n' 7.4 8.0 8.1 8.2 8.3 8.4 8.5 8.6
 }
 
 panel_php_version_supported() {

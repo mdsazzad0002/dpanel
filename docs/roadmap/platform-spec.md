@@ -557,7 +557,7 @@ public function routeSource(string $destination): string;           // Linux-এ
 যে OS-এ ভরসা করার মতো package manager নেই (এখন Windows), সেখানে drust নিজে PHP ও MariaDB বসায়: `drust/src/runtimes/`।
 
 - Manifest: `drust/src/runtimes/manifest.json`, binary-তে embedded; `DRUST_RUNTIME_MANIFEST` অন্য file দিলে সেটা। প্রতি package-এ `name` (`php`, `mariadb`), `version` (`8.3`, folder-এর নাম), `release`, `os`, `arch` (`std::env::consts`), `sha256`, `root` (archive-এর ভেতরের folder, খালি হলে উপরেই), `check` (থাকতেই হবে এমন file), `probe` (install-এর পরে একবার চালানো program ও argument), `urls` (mirror, শুধু `https`)। অজানা key, ভুল hash format, `..` বা absolute path থাকলে পুরো manifest বাতিল।
-- PHP: windows.php.net-এর NTS x64 zip (7.4-8.5), releases ও archives দুই mirror। MariaDB: mariadb.org-এর `winx64.zip` (11.4, 11.8 LTS), archive.mariadb.org আগে।
+- PHP: windows.php.net-এর NTS x64 zip (7.4-8.6), releases ও archives দুই mirror। MariaDB: mariadb.org-এর `winx64.zip` (11.4, 11.8 LTS), archive.mariadb.org আগে।
 - Install: download stream করার সময়েই SHA-256; মিললে তবেই unpack। **না মিললে থামে**: অন্য mirror চেষ্টা করে না, কিছু unpack হয় না, download file মোছে, আগের install থাকে। Mirror উত্তর না দিলে (network, 4xx/5xx) পরেরটায় যায়। সর্বোচ্চ 1 GiB।
 - Unpack `runtime_dir\<name>\.staging-<v>`-এ, `archive::extract_all` দিয়ে (link, absolute, `..` refuse); তারপর `check`, তারপর `probe` (30 সেকেন্ড; DLL না পেলে, `0xC0000135`, বার্তায় Visual C++ Redistributable বলে), তারপর `.dpanel-runtime.json` (`release`, `sha256`)। আগের folder `.old-<v>`-এ সরে, নতুনটা জায়গায় যায়, তারপর পুরোনোটা মোছে; নতুনটা না গেলে পুরোনোটা ফেরে। একই hash আগেই থাকলে কিছু download করে না।
 - CLI: `drust runtime list`, `drust runtime install <name> <version>` (installer-এর জন্য)।

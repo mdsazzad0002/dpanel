@@ -97,6 +97,7 @@ return [
         '8.3',
         '8.4',
         '8.5',
+        '8.6',
     ],
     'website_php_defaults' => [
         'starter' => env('dPanel_WEBSITE_PHP_DEFAULT_STARTER', '8.3'),
