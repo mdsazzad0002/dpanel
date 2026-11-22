@@ -88,6 +88,9 @@ const ui = computed(() => (props.isDark
         card: 'border-slate-200 bg-slate-50',
     }));
 
+// The logo opens the inbox, using the server's own folder name when it is listed.
+const inboxFolder = computed(() => props.folders.find((folder) => String(folder.name).toLowerCase() === 'inbox') || { name: 'INBOX' });
+
 // The mobile drawer always shows the full sidebar.
 const compact = computed(() => props.collapsed && !props.mobileOpen);
 
@@ -114,13 +117,21 @@ const barColor = computed(() => {
     >
         <!-- Brand -->
         <div :class="[ui.divider, 'flex h-14 shrink-0 items-center border-b', compact ? 'justify-center px-2' : 'justify-between px-4']">
-            <div v-if="!compact" class="flex min-w-0 items-center gap-2.5">
+            <button
+                v-if="!compact"
+                type="button"
+                class="flex min-w-0 items-center gap-2.5 rounded-md text-left focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+                :title="folderLabel(inboxFolder.name)"
+                :aria-label="folderLabel(inboxFolder.name)"
+                :disabled="loading"
+                @click="emit('open-folder', inboxFolder)"
+            >
                 <img src="/sm_logo.png" alt="" class="h-7 w-7 shrink-0 object-contain" />
                 <div class="min-w-0 leading-tight">
                     <p :class="[ui.strong, 'text-sm font-semibold']">dPanel Mail</p>
                     <p :class="[ui.muted, 'truncate text-[11px]']">{{ mailbox.domain || t('email.mailbox.sidebar.webmail') }}</p>
                 </div>
-            </div>
+            </button>
 
             <button
                 type="button"
