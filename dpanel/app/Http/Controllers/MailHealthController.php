@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Models\Mailbox;
 use App\Services\Mail\MailDeliveryDiagnosticsService;
 use App\Services\Mail\MailOutboundGate;
+use App\Services\Mail\MailServerRecordGuide;
 use App\Support\MailSettings;
 use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
@@ -15,10 +16,15 @@ use Inertia\Response;
 
 class MailHealthController extends Controller
 {
-    public function index(MailDeliveryDiagnosticsService $diagnostics, MailOutboundGate $gate, MailSettings $settings): Response
-    {
+    public function index(
+        MailDeliveryDiagnosticsService $diagnostics,
+        MailOutboundGate $gate,
+        MailSettings $settings,
+        MailServerRecordGuide $recordGuide,
+    ): Response {
         return Inertia::render('Email/Health/Index', [
             'mailHealth' => $diagnostics->snapshot(),
+            'recordGuide' => $recordGuide->table(),
             'outboundGate' => $gate->status(),
             'outboundGateEnabled' => $settings->read()['outbound_gate'],
             'mailboxProblems' => Mailbox::query()

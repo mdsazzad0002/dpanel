@@ -40,7 +40,16 @@ abstract class TestCase extends BaseTestCase
 
         // The suite describes a Linux server, as CI runs it, whatever OS runs
         // the tests; a test about another host binds its own LocalCommand.
-        $app->instance(LocalCommand::class, new LocalCommand('Linux'));
+        // Its own addresses are never read from the machine running the tests:
+        // a test about a server IP sets dPanel_MAIL_SERVER_IP(V6) instead, so
+        // the suite behaves the same on a host with IPv6 and one without.
+        $app->instance(LocalCommand::class, new class('Linux') extends LocalCommand
+        {
+            public function routeSource(string $destination): string
+            {
+                return '';
+            }
+        });
 
         // A machine with Postfix must behave like one without it.
         $app->instance(PostfixHostname::class, new class extends PostfixHostname

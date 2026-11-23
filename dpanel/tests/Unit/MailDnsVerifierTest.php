@@ -63,6 +63,70 @@ class MailDnsVerifierTest extends TestCase
         $this->assertStringContainsString('did not answer', $checks['MX']['hint']);
     }
 
+    public function test_a_server_without_ipv6_is_not_asked_for_ipv6_records(): void
+    {
+        $keys = array_column($this->verify(['A mail.example.net' => ['203.0.113.5']], 'ABC'), 'key');
+
+        $this->assertNotContains('host6', $keys);
+        $this->assertNotContains('ptr6', $keys);
+    }
+
+    public function test_a_dual_stack_server_with_both_ptrs_passes(): void
+    {
+        config(['dpanel.mail.server_ipv6' => '2001:db8::5']);
+        $checks = collect($this->verify([
+            'MX shop.test' => ['mail.example.net'],
+            'TXT shop.test' => ['v=spf1 ip4:203.0.113.5 ip6:2001:db8::5 ~all'],
+            'TXT default._domainkey.shop.test' => ['v=DKIM1; k=rsa; p=ABCDEF'],
+            'TXT _dmarc.shop.test' => ['v=DMARC1; p=none'],
+            'A mail.example.net' => ['203.0.113.5'],
+            'AAAA mail.example.net' => ['2001:db8::5'],
+            'PTR 203.0.113.5' => ['mail.example.net'],
+            'PTR 2001:db8::5' => ['mail.example.net'],
+        ], 'ABCDEF'))->keyBy('key');
+
+        $this->assertSame('pass', $checks['host6']['status']);
+        $this->assertSame('pass', $checks['ptr6']['status']);
+        $this->assertSame('pass', $checks['TXT @']['status']);
+    }
+
+    public function test_a_missing_ipv6_ptr_warns_instead_of_failing(): void
+    {
+        config(['dpanel.mail.server_ipv6' => '2001:db8::5']);
+        $checks = collect($this->verify([
+            'A mail.example.net' => ['203.0.113.5'],
+            'PTR 203.0.113.5' => ['mail.example.net'],
+        ], 'ABC'))->keyBy('key');
+
+        // Nothing bounces: the gate keeps outbound mail on IPv4 meanwhile.
+        $this->assertSame('warn', $checks['ptr6']['status']);
+        $this->assertStringContainsString('IPv4 only', $checks['ptr6']['hint']);
+        $this->assertSame('warn', $checks['host6']['status']);
+    }
+
+    public function test_an_aaaa_record_pointing_at_another_server_fails(): void
+    {
+        config(['dpanel.mail.server_ipv6' => '2001:db8::5']);
+        $checks = collect($this->verify([
+            'A mail.example.net' => ['203.0.113.5'],
+            'AAAA mail.example.net' => ['2001:db8:dead::9'],
+        ], 'ABC'))->keyBy('key');
+
+        $this->assertSame('fail', $checks['host6']['status']);
+    }
+
+    public function test_spf_without_the_ipv6_address_warns(): void
+    {
+        config(['dpanel.mail.server_ipv6' => '2001:db8::5']);
+        $checks = collect($this->verify([
+            'TXT shop.test' => ['v=spf1 ip4:203.0.113.5 ~all'],
+            'A mail.example.net' => ['203.0.113.5'],
+        ], 'ABC'))->keyBy('key');
+
+        $this->assertSame('warn', $checks['TXT @']['status']);
+        $this->assertStringContainsString('ip6:2001:db8::5', $checks['TXT @']['hint']);
+    }
+
     /** @param  array<string, array<int, string>>  $dns */
     private function verify(array $dns, string $dkimKey): array
     {

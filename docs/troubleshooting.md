@@ -350,7 +350,7 @@ it shows at the domain's DNS provider:
 | Record | Name | Value |
 | --- | --- | --- |
 | MX | `@` | the server's mail host, priority 10 |
-| TXT (SPF) | `@` | `v=spf1 ip4:<server IP> mx ~all` |
+| TXT (SPF) | `@` | `v=spf1 ip4:<server IP>` + `ip6:<server IPv6>` when the server has one, then ` mx ~all` |
 | TXT (DKIM) | `default._domainkey` | `v=DKIM1; k=rsa; p=...` (click **Generate DKIM** first) |
 | TXT (DMARC) | `_dmarc` | `v=DMARC1; p=none; ...` |
 
@@ -358,7 +358,8 @@ All domains share one mail host, so no per-domain `mail.` A record is needed.
 The host is `dPanel_MAIL_HOSTNAME` in `/var/www/dpanel/.env` when set
 (for example the panel domain), otherwise Postfix's current hostname. Setting
 it also makes Postfix announce that name. The server IP comes from
-`dPanel_MAIL_SERVER_IP`, or is detected when that is empty.
+`dPanel_MAIL_SERVER_IP`, or is detected when that is empty; the IPv6 address
+comes from `dPanel_MAIL_SERVER_IPV6` or `ip -6 route get`.
 
 Check the records after they propagate:
 
@@ -371,6 +372,15 @@ dig +short TXT _dmarc.example.com
 
 Also ask your hosting provider to set the server IP's reverse DNS (PTR) to the
 mail host (`postconf -h myhostname`).
+
+On a server with IPv6 the same records are needed for the IPv6 address, and
+forgetting them is the usual cause of "some mail reaches Gmail, some does not":
+Postfix prefers IPv6 whenever the receiver has an AAAA record, and Gmail
+(550-5.7.25) rejects mail from an address without forward-confirmed reverse
+DNS. **Email → Mail Health → DNS records** lists every record with the value to
+set, where it is set, and what public DNS answers right now; **Verify DNS** in
+the Mail DNS Guide checks the same records for one domain. Until the IPv6 PTR
+resolves back, the panel keeps outbound mail on IPv4, so nothing bounces.
 
 ## General checks
 

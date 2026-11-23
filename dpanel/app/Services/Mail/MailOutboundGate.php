@@ -44,7 +44,7 @@ class MailOutboundGate
     public function evaluate(): array
     {
         $ipv4 = $this->records->serverIp();
-        $ipv6 = $this->publicIpv6();
+        $ipv6 = $this->records->serverIpv6();
 
         return [
             'relayhost' => $this->postconf('relayhost'),
@@ -231,13 +231,5 @@ class MailOutboundGate
         $local = app(LocalCommand::class);
 
         return $local->supports(LocalCommand::POSTFIX) ? trim((string) $local->output(['postconf', '-h', $key])) : '';
-    }
-
-    /** The global IPv6 address outbound connections leave from, or ''. */
-    private function publicIpv6(): string
-    {
-        $src = app(LocalCommand::class)->routeSource('2001:4860:4860::8888');
-
-        return filter_var($src, FILTER_VALIDATE_IP, FILTER_FLAG_IPV6 | FILTER_FLAG_NO_PRIV_RANGE | FILTER_FLAG_NO_RES_RANGE) ? $src : '';
     }
 }

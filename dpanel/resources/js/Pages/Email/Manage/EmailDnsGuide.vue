@@ -4,6 +4,7 @@ import { Head, Link, router, useForm, usePage } from '@inertiajs/vue3';
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
 import axios from 'axios';
 import DnsCheckCell from './components/DnsCheckCell.vue';
+import SearchableSelect from '@/Components/SearchableSelect.vue';
 import MailHostnameCard from './components/MailHostnameCard.vue';
 import { useI18n } from 'vue-i18n';
 
@@ -21,7 +22,11 @@ const panelToken = page.props.panel?.token;
 const copied = ref('');
 const dkimForm = useForm({ domain: '' });
 const panelRoute = (name, params = {}) => panelToken ? route(name, { token: panelToken, ...params }) : route(name, params);
-const selectDomain = (event) => router.get(panelRoute('emails.guide'), { domain: event.target.value }, { preserveState: false, replace: true });
+const domainOptions = computed(() => props.domains.map((domain) => ({ value: domain, label: domain })));
+const selectDomain = (domain) => {
+    if (!domain || domain === props.selectedDomain) return;
+    router.get(panelRoute('emails.guide'), { domain }, { preserveState: false, replace: true });
+};
 const copyValue = async (value, key) => {
     if (!value) return;
     await navigator.clipboard.writeText(value);
@@ -34,10 +39,20 @@ const reloadGuide = () => router.reload({ only: ['records', 'mailHost', 'mailHos
 const verifying = ref(false);
 const verification = ref(null);
 const checksByKey = computed(() => Object.fromEntries((verification.value?.checks || []).map((check) => [check.key, check])));
-// The A row for a mail host inside this domain is checked as 'host'.
-const checkFor = (record) => checksByKey.value[record.type === 'A' ? 'host' : `${record.type} ${record.name}`] || null;
-// Server-level checks without a record row of their own (PTR, a mail host in another zone).
-const extraChecks = computed(() => (verification.value?.checks || []).filter((check) => check.key === 'ptr' || (check.key === 'host' && !props.records.some((r) => r.type === 'A'))));
+// The A/AAAA rows for a mail host inside this domain are checked as 'host'/'host6'.
+const recordCheckKey = (record) => ({ A: 'host', AAAA: 'host6' }[record.type] || `${record.type} ${record.name}`);
+const checkFor = (record) => checksByKey.value[recordCheckKey(record)] || null;
+// Server-level checks without a record row of their own: reverse DNS for both
+// address families, and a mail host that lives in another zone.
+const extraMeta = {
+    ptr: { type: 'PTR', where: 'ptrWhere', purpose: 'ptrPurpose' },
+    ptr6: { type: 'PTR', where: 'ptrWhere', purpose: 'ptr6Purpose' },
+    host: { type: 'A', where: 'hostWhere', purpose: 'hostPurpose' },
+    host6: { type: 'AAAA', where: 'hostWhere', purpose: 'host6Purpose' },
+};
+const extraChecks = computed(() => (verification.value?.checks || []).filter((check) => ['ptr', 'ptr6'].includes(check.key)
+    || (check.key === 'host' && !props.records.some((r) => r.type === 'A'))
+    || (check.key === 'host6' && !props.records.some((r) => r.type === 'AAAA'))));
 const rowClass = (check) => (check?.status === 'fail' ? 'bg-red-50/60 dark:bg-red-950/20' : check?.status === 'warn' ? 'bg-amber-50/60 dark:bg-amber-950/20' : '');
 const verifyDns = async () => {
     if (!props.selectedDomain || verifying.value) return;
@@ -94,7 +109,15 @@ const generateDkim = (domain) => {
             <div v-if="page.props.flash?.error" class="rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{{ page.props.flash.error }}</div>
             <section class="rounded-xl border border-slate-200 bg-white p-5 dark:border-slate-800 dark:bg-slate-900">
                 <label class="mb-2 block text-sm font-medium">{{ t('email.dnsGuide.mailDomain') }}</label>
-                <select v-if="domains.length" :value="selectedDomain" class="w-full max-w-lg rounded-md border-slate-300 dark:border-slate-700 dark:bg-slate-950" @change="selectDomain"><option v-for="domain in domains" :key="domain" :value="domain">{{ domain }}</option></select>
+                <SearchableSelect
+                    v-if="domains.length"
+                    :model-value="selectedDomain"
+                    :options="domainOptions"
+                    :placeholder="t('email.dnsGuide.pickDomain')"
+                    :search-placeholder="t('email.dnsGuide.searchDomains')"
+                    class="max-w-lg"
+                    @update:model-value="selectDomain"
+                />
                 <p v-else class="text-sm text-amber-700 dark:text-amber-300">{{ t('email.dnsGuide.noDomains') }}</p>
             </section>
 
@@ -114,9 +137,9 @@ const generateDkim = (domain) => {
                         <td class="px-4 py-3"><DnsCheckCell :check="checkFor(record)" :checking="verifying" /></td>
                     </tr>
                     <tr v-for="check in extraChecks" :key="check.key" :class="rowClass(check)" class="border-t border-slate-200 align-top dark:border-slate-800">
-                        <td class="px-4 py-3 font-semibold">{{ check.key === 'ptr' ? 'PTR' : 'A' }}</td>
-                        <td colspan="3" class="px-4 py-3 text-sm">{{ check.label }}<div class="mt-1 text-xs text-slate-500">{{ check.key === 'ptr' ? t('email.dnsGuide.ptrWhere') : t('email.dnsGuide.hostWhere') }}</div></td>
-                        <td class="px-4 py-3 text-slate-500">{{ check.key === 'ptr' ? t('email.dnsGuide.ptrPurpose') : t('email.dnsGuide.hostPurpose') }}</td>
+                        <td class="px-4 py-3 font-semibold">{{ extraMeta[check.key]?.type }}</td>
+                        <td colspan="3" class="px-4 py-3 text-sm">{{ check.label }}<div class="mt-1 text-xs text-slate-500">{{ t(`email.dnsGuide.${extraMeta[check.key]?.where}`) }}</div></td>
+                        <td class="px-4 py-3 text-slate-500">{{ t(`email.dnsGuide.${extraMeta[check.key]?.purpose}`) }}</td>
                         <td class="px-4 py-3"><DnsCheckCell :check="check" :checking="verifying" /></td>
                     </tr></tbody>
                 </table></div>
@@ -136,13 +159,14 @@ const generateDkim = (domain) => {
                         <ul class="mt-2 list-disc space-y-1 pl-5 text-xs text-slate-500 dark:text-slate-400">
                             <li><i18n-t keypath="email.dnsGuide.bimiDmarc" scope="global"><template #policy><code>p=quarantine</code></template></i18n-t></li>
                             <li><i18n-t keypath="email.dnsGuide.bimiVmc" scope="global"><template #tag><code>a=</code></template></i18n-t></li>
+                            <li>{{ t('email.dnsGuide.bimiConvert') }}</li>
                         </ul>
                         <p v-if="!bimi.https" class="mt-2 text-xs text-amber-700 dark:text-amber-300">{{ t('email.dnsGuide.bimiNoHttps') }}</p>
                         <p v-if="bimiForm.errors.logo" class="mt-2 text-xs text-red-600">{{ bimiForm.errors.logo }}</p>
                         <div class="mt-3 flex flex-wrap gap-2">
                             <label class="inline-flex cursor-pointer items-center gap-1.5 rounded-md bg-blue-600 px-3 py-2 text-white hover:bg-blue-700" :class="bimiForm.processing ? 'pointer-events-none opacity-60' : ''">
                                 <i class="bi bi-upload"></i> {{ bimi.hasLogo ? t('email.dnsGuide.replaceLogo') : t('email.dnsGuide.uploadLogo') }}
-                                <input type="file" accept=".svg,image/svg+xml" class="sr-only" @change="uploadBimi" />
+                                <input type="file" accept="image/*,.svg,.png,.jpg,.jpeg,.webp,.gif,.bmp" class="sr-only" @change="uploadBimi" />
                             </label>
                             <button v-if="bimi.hasLogo" type="button" class="rounded-md border border-red-300 px-3 py-2 text-red-700 hover:bg-red-50 dark:border-red-700 dark:text-red-400" @click="removeBimi">{{ t('email.dnsGuide.remove') }}</button>
                         </div>

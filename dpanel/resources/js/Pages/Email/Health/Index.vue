@@ -5,12 +5,14 @@ import { computed, ref, watch } from 'vue';
 import Modal from '@/Components/Modal.vue';
 import MailQueueTab from './components/MailQueueTab.vue';
 import SendLimitsPanel from './components/SendLimitsPanel.vue';
+import DnsRecordsTab from './components/DnsRecordsTab.vue';
 import { useI18n } from 'vue-i18n';
 
 const { t } = useI18n();
 
 const props = defineProps({
     mailHealth: { type: Object, required: true },
+    recordGuide: { type: Object, default: () => ({ host: '', ipv4: '', ipv6: '', rows: [] }) },
     outboundGate: { type: Object, default: () => ({}) },
     outboundGateEnabled: { type: Boolean, default: false },
     mailboxProblems: { type: Array, default: () => [] },
@@ -144,7 +146,7 @@ const toneTextClass = {
 const refresh = () => {
     refreshing.value = true;
     router.reload({
-        only: ['mailHealth', 'outboundGate', 'outboundGateEnabled', 'mailboxProblems'],
+        only: ['mailHealth', 'recordGuide', 'outboundGate', 'outboundGateEnabled', 'mailboxProblems'],
         preserveScroll: true,
         onFinish: () => { refreshing.value = false; },
     });
@@ -307,6 +309,7 @@ const statusClass = (status) => ({
                     { id: 'failures', label: t('email.health.tab.failures'), count: mailHealth.failures?.length ?? 0 },
                     { id: 'queue', label: t('email.health.tab.queue'), count: queue.count ?? 0 },
                     { id: 'spam', label: t('email.health.tab.spam'), count: spamEvents.length },
+                    { id: 'records', label: t('email.health.tab.records'), count: recordGuide.rows?.length ?? 0 },
                     ...(canClearLog ? [{ id: 'limits', label: t('email.health.tab.limits') }] : []),
                 ]" :key="tab.id" type="button" class="whitespace-nowrap rounded-md px-4 py-2 text-sm font-medium" :class="activeTab === tab.id ? 'bg-white text-slate-900 shadow-sm dark:bg-slate-900 dark:text-white' : 'text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'" @click="activeTab = tab.id">
                     {{ tab.label }} <span v-if="tab.count !== undefined" class="ml-1 rounded-full bg-slate-200 px-1.5 py-0.5 text-xs dark:bg-slate-700">{{ tab.count }}</span>
@@ -333,6 +336,8 @@ const statusClass = (status) => ({
             </section>
 
             <MailQueueTab v-else-if="activeTab === 'queue'" :queue="queue" :can-manage="canClearLog" @changed="refresh" @result="showResult" />
+
+            <DnsRecordsTab v-else-if="activeTab === 'records'" :guide="recordGuide" />
 
             <SendLimitsPanel v-else-if="activeTab === 'limits'" @result="showResult" />
 

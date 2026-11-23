@@ -25,6 +25,8 @@ class MailOutboundGateTest extends TestCase
 
     private bool $applySucceeds = true;
 
+    private string $ipv6 = '';
+
     protected function setUp(): void
     {
         parent::setUp();
@@ -34,6 +36,8 @@ class MailOutboundGateTest extends TestCase
 
         $records = Mockery::mock(MailDnsRecords::class);
         $records->shouldReceive('serverIp')->andReturn(self::IP);
+        // IPv4-only by default; the IPv6 cases set their own address.
+        $records->shouldReceive('serverIpv6')->andReturnUsing(fn () => $this->ipv6);
         $this->app->instance(MailDnsRecords::class, $records);
 
         $gateway = Mockery::mock(ScriptExecutionGateway::class);

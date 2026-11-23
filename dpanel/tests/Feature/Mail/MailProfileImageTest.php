@@ -172,9 +172,46 @@ class MailProfileImageTest extends TestCase
         $this->get('/bimi/plain.test.svg')->assertNotFound();
     }
 
+    public function test_a_png_logo_is_converted_to_svg_and_served(): void
+    {
+        config(['app.url' => 'https://panel.example.test']);
+        $this->mailbox('a@example.test');
+        $logo = imagecreatetruecolor(200, 200);
+        imagefilledrectangle($logo, 0, 0, 200, 200, (int) imagecolorallocate($logo, 20, 60, 180));
+        imagefilledellipse($logo, 100, 100, 140, 140, (int) imagecolorallocate($logo, 255, 255, 255));
+        ob_start();
+        imagepng($logo);
+        $png = (string) ob_get_clean();
+        imagedestroy($logo);
+
+        $request = Request::create('/', 'POST', ['domain' => 'example.test']);
+        $request->files->set('logo', UploadedFile::fake()->createWithContent('logo.png', $png));
+        app(MailBimiController::class)->store($request);
+
+        // What is hosted is always an SVG, whatever was uploaded.
+        $this->assertSame('bimi/example.test.svg', MailDomain::query()->where('domain', 'example.test')->value('bimi_logo_path'));
+        $response = $this->get('/bimi/example.test.svg');
+        $response->assertOk()->assertHeader('Content-Type', 'image/svg+xml');
+        $this->assertStringContainsString('baseProfile="tiny-ps"', (string) $response->getContent());
+        $this->assertStringContainsString('<path', (string) $response->getContent());
+        $this->assertStringNotContainsString('<image', (string) $response->getContent());
+    }
+
+    public function test_a_file_that_is_no_logo_at_all_is_refused(): void
+    {
+        $this->mailbox('a@example.test');
+        $request = Request::create('/', 'POST', ['domain' => 'example.test']);
+        $request->files->set('logo', UploadedFile::fake()->createWithContent('notes.txt', 'hello'));
+
+        $response = app(MailBimiController::class)->store($request);
+
+        $this->assertStringContainsString('not an image', (string) $response->getSession()->get('error'));
+        $this->assertNull(MailDomain::query()->where('domain', 'example.test')->value('bimi_logo_path'));
+    }
+
     public function test_unsafe_svg_is_rejected(): void
     {
-        $controller = new MailBimiController;
+        $controller = app(MailBimiController::class);
 
         $this->assertNull($controller->svgProblem(self::SVG));
         $this->assertNotNull($controller->svgProblem('<svg><script>alert(1)</script></svg>'));

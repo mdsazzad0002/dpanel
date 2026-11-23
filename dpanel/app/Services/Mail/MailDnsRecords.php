@@ -94,6 +94,27 @@ class MailDnsRecords
         return filter_var($local, FILTER_VALIDATE_IP, FILTER_FLAG_NO_PRIV_RANGE | FILTER_FLAG_NO_RES_RANGE) ? $local : '';
     }
 
+    /**
+     * The public IPv6 address mail leaves from, or '' when the server has
+     * none. Postfix prefers IPv6 whenever the destination has an AAAA record,
+     * so this address needs its own PTR and its own SPF/AAAA records.
+     */
+    public function serverIpv6(): string
+    {
+        if ($this->assignedIp !== null) {
+            // A domain pinned to one mail IP sends only from that address.
+            return filter_var($this->assignedIp, FILTER_VALIDATE_IP, FILTER_FLAG_IPV6) ? $this->assignedIp : '';
+        }
+        $configured = trim((string) config('dpanel.mail.server_ipv6', ''));
+        if (filter_var($configured, FILTER_VALIDATE_IP, FILTER_FLAG_IPV6)) {
+            return $configured;
+        }
+
+        $local = app(LocalCommand::class)->routeSource('2001:4860:4860::8888');
+
+        return filter_var($local, FILTER_VALIDATE_IP, FILTER_FLAG_IPV6 | FILTER_FLAG_NO_PRIV_RANGE | FILTER_FLAG_NO_RES_RANGE) ? $local : '';
+    }
+
     public function mailHostMismatch(): string
     {
         $host = $this->mailHost();
@@ -106,11 +127,22 @@ class MailDnsRecords
         return $resolved === [] || in_array($ip, $resolved, true) ? '' : implode(', ', $resolved);
     }
 
+    /**
+     * Every address the server sends from, so mail passes SPF whichever one
+     * Postfix picks. Leaving the IPv6 address out made mail sent over IPv6
+     * fail SPF at Gmail while the same mail over IPv4 passed.
+     */
     public function spf(): string
     {
-        $ip = $this->serverIp();
-        if ($ip !== '') {
-            return 'v=spf1 '.(str_contains($ip, ':') ? 'ip6:' : 'ip4:').$ip.' mx ~all';
+        $mechanisms = [];
+        foreach ([$this->serverIp(), $this->serverIpv6()] as $ip) {
+            $mechanism = $ip === '' ? '' : (str_contains($ip, ':') ? 'ip6:' : 'ip4:').$ip;
+            if ($mechanism !== '' && ! in_array($mechanism, $mechanisms, true)) {
+                $mechanisms[] = $mechanism;
+            }
+        }
+        if ($mechanisms !== []) {
+            return 'v=spf1 '.implode(' ', $mechanisms).' mx ~all';
         }
         $host = $this->mailHost();
 
@@ -136,6 +168,11 @@ class MailDnsRecords
         if ($host === $domain || str_ends_with($host, '.'.$domain)) {
             $name = $host === $domain ? '@' : substr($host, 0, -strlen('.'.$domain));
             $records[] = ['type' => 'A', 'name' => $name, 'value' => $this->serverIp(), 'priority' => null, 'purpose' => 'Mail server hostname'];
+            // Only when the server really has IPv6: an AAAA pointing nowhere
+            // makes other servers try IPv6 first and time out.
+            if (($ipv6 = $this->serverIpv6()) !== '') {
+                $records[] = ['type' => 'AAAA', 'name' => $name, 'value' => $ipv6, 'priority' => null, 'purpose' => 'Mail server hostname over IPv6'];
+            }
         }
         if ($host !== $domain && $this->resolvesOnlyByWildcard($domain)) {
             $records[] = ['type' => 'A', 'name' => '@', 'value' => $this->serverIp(), 'priority' => null, 'purpose' => 'Website address: the MX and SPF records below stop the *.'.substr($domain, strpos($domain, '.') + 1).' wildcard from answering for '.$domain];

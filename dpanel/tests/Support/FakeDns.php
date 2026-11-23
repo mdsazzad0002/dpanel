@@ -17,6 +17,17 @@ class FakeDns extends PublicDnsLookup
         return $this->records['A '.$name] ?? [];
     }
 
+    public function aaaa(string $name): array
+    {
+        return $this->records['AAAA '.$name] ?? [];
+    }
+
+    /** Any type, keyed the same way: "TYPE name". */
+    public function records(string $name, string $type): array
+    {
+        return $this->records[strtoupper($type).' '.$name] ?? [];
+    }
+
     public function mx(string $name): array
     {
         return $this->records['MX '.$name] ?? [];

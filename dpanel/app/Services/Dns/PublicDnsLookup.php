@@ -30,6 +30,12 @@ class PublicDnsLookup
         return $this->one($name, 'A');
     }
 
+    /** @return array<int, string> */
+    public function aaaa(string $name): array
+    {
+        return $this->one($name, 'AAAA');
+    }
+
     /** @return array<int, string> MX targets, lowercase, without the trailing dot */
     public function mx(string $name): array
     {

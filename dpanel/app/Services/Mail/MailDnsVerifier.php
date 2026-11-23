@@ -25,18 +25,49 @@ class MailDnsVerifier
         $records = $this->records->forDomain($domain);
         $host = $records->mailHost() ?: 'mail.'.$domain;
         $ip = $records->serverIp();
+        $ipv6 = $records->serverIpv6();
         $this->dns->prefetch([
             [$domain, 'MX'], [$domain, 'TXT'], ["{$selector}._domainkey.{$domain}", 'TXT'],
             ["_dmarc.{$domain}", 'TXT'], [$host, 'A'], [$ip, 'PTR'],
+            ...($ipv6 !== '' ? [[$host, 'AAAA'], [$ipv6, 'PTR']] : []),
         ]);
 
         return [
             $this->unanswered('MX @', 'MX', $domain, 'MX') ?? $this->checkMx($domain, $host),
-            $this->unanswered('TXT @', 'SPF', $domain, 'TXT') ?? $this->checkSpf($domain, $ip),
+            $this->unanswered('TXT @', 'SPF', $domain, 'TXT') ?? $this->checkSpf($domain, $ip, $ipv6),
             $this->unanswered("TXT {$selector}._domainkey", 'DKIM', "{$selector}._domainkey.{$domain}", 'TXT') ?? $this->checkDkim($domain, $selector, $dkimPublicKey),
             $this->unanswered('TXT _dmarc', 'DMARC', "_dmarc.{$domain}", 'TXT') ?? $this->checkDmarc($domain),
-            $this->unanswered('host', "Mail host {$host}", $host, 'A') ?? $this->checkMailHost($host, $ip),
-            $this->unanswered('ptr', 'Reverse DNS (PTR)', $ip, 'PTR') ?? $this->checkPtr($host, $ip),
+            ...array_values($this->serverChecks($domain)),
+        ];
+    }
+
+    /**
+     * The checks that are about the server itself, not one domain's zone: the
+     * mail host's addresses and the reverse DNS of every address mail leaves
+     * from. Mail Health shows these for the server as a whole.
+     *
+     * @return array<string, array{key: string, label: string, status: 'pass'|'warn'|'fail', found: string, hint: string}> keyed by check key
+     */
+    public function serverChecks(string $domain = ''): array
+    {
+        $records = $domain === '' ? $this->records : $this->records->forDomain($domain);
+        $host = $records->mailHost() ?: ($domain !== '' ? 'mail.'.$domain : '');
+        $ip = $records->serverIp();
+        $ipv6 = $records->serverIpv6();
+        $this->dns->prefetch([
+            [$host, 'A'], [$ip, 'PTR'],
+            ...($ipv6 !== '' ? [[$host, 'AAAA'], [$ipv6, 'PTR']] : []),
+        ]);
+
+        return [
+            'host' => $this->unanswered('host', "Mail host {$host}", $host, 'A') ?? $this->checkMailHost($host, $ip),
+            'ptr' => $this->unanswered('ptr', 'Reverse DNS (PTR)', $ip, 'PTR') ?? $this->checkPtr($host, $ip),
+            // Only meaningful on a server that has IPv6; without it there is
+            // nothing to publish and nothing Gmail can reject.
+            ...($ipv6 === '' ? [] : [
+                'host6' => $this->unanswered('host6', "Mail host {$host} (IPv6)", $host, 'AAAA') ?? $this->checkMailHostIpv6($host, $ipv6),
+                'ptr6' => $this->unanswered('ptr6', 'Reverse DNS (PTR) for IPv6', $ipv6, 'PTR') ?? $this->checkPtrIpv6($host, $ipv6),
+            ]),
         ];
     }
 
@@ -60,7 +91,7 @@ class MailDnsVerifier
         };
     }
 
-    private function checkSpf(string $domain, string $ip): array
+    private function checkSpf(string $domain, string $ip, string $ipv6 = ''): array
     {
         $spf = array_values(array_filter($this->txt($domain), fn ($v) => str_starts_with(strtolower($v), 'v=spf1')));
 
@@ -74,9 +105,16 @@ class MailDnsVerifier
             return $this->result('TXT @', 'SPF', 'fail', $spf[0], "SPF does not allow this server ({$ip}); use the value shown above.");
         }
 
-        return $ip !== '' && str_contains($spf[0], $ip)
-            ? $this->result('TXT @', 'SPF', 'pass', $spf[0], '')
-            : $this->result('TXT @', 'SPF', 'warn', $spf[0], "SPF relies on mx/a; adding ip4:{$ip} is more reliable.");
+        if ($ip === '' || ! str_contains($spf[0], $ip)) {
+            return $this->result('TXT @', 'SPF', 'warn', $spf[0], "SPF relies on mx/a; adding ip4:{$ip} is more reliable.");
+        }
+        // Postfix prefers IPv6 when the receiver has an AAAA record, so an
+        // SPF that lists only the IPv4 address fails on those messages.
+        if ($ipv6 !== '' && ! str_contains(strtolower($spf[0]), strtolower($ipv6)) && ! preg_match('/\s(mx|a)(\s|$)/', $spf[0])) {
+            return $this->result('TXT @', 'SPF', 'warn', $spf[0], "SPF does not list this server's IPv6 address; add ip6:{$ipv6} so mail sent over IPv6 also passes.");
+        }
+
+        return $this->result('TXT @', 'SPF', 'pass', $spf[0], '');
     }
 
     private function checkDkim(string $domain, string $selector, string $publicKey): array
@@ -119,6 +157,55 @@ class MailDnsVerifier
             $ip === '' || in_array($ip, $addresses, true) => $this->result('host', "Mail host {$host}", 'pass', $found, ''),
             default => $this->result('host', "Mail host {$host}", 'fail', $found, "It points to another server; set its A record to {$ip} and turn the Cloudflare proxy off."),
         };
+    }
+
+    /**
+     * The AAAA record is optional, but a wrong one is worse than none: other
+     * servers try IPv6 first and the mail sits in their queue.
+     */
+    private function checkMailHostIpv6(string $host, string $ipv6): array
+    {
+        $key = 'host6';
+        $label = "Mail host {$host} (IPv6)";
+        $addresses = $this->dns->aaaa($host);
+        $found = implode(', ', $addresses);
+        $packed = inet_pton($ipv6);
+
+        if ($addresses === []) {
+            return $this->result($key, $label, 'warn', '', "Optional: add an AAAA record for {$host} pointing to {$ipv6} (DNS only, not proxied) so other servers can reach it over IPv6.");
+        }
+        foreach ($addresses as $address) {
+            if (@inet_pton(trim($address)) === $packed) {
+                return $this->result($key, $label, 'pass', $found, '');
+            }
+        }
+
+        return $this->result($key, $label, 'fail', $found, "The AAAA record points to another server; set it to {$ipv6} or remove it, otherwise mail sent over IPv6 never arrives.");
+    }
+
+    /**
+     * Postfix sends over IPv6 whenever the receiver has an AAAA record, and
+     * Gmail (550-5.7.25) rejects that mail unless the IPv6 address has a
+     * forward-confirmed PTR. Until it does, the panel keeps sending on IPv4.
+     */
+    private function checkPtrIpv6(string $host, string $ipv6): array
+    {
+        $key = 'ptr6';
+        $label = 'Reverse DNS (PTR) for IPv6';
+        $name = strtolower(rtrim((string) ($this->dns->ptr($ipv6)[0] ?? ''), '.'));
+        if ($name === '') {
+            return $this->result($key, $label, 'warn', '', "No PTR for {$ipv6}. Mail goes out over IPv4 only until your server provider sets it to {$host}.");
+        }
+        $packed = inet_pton($ipv6);
+        foreach ($this->dns->aaaa($name) as $address) {
+            if (@inet_pton(trim($address)) === $packed) {
+                return $name === $host
+                    ? $this->result($key, $label, 'pass', $name, '')
+                    : $this->result($key, $label, 'warn', $name, "Works, but matching the mail host ({$host}) is better; ask your provider to change it.");
+            }
+        }
+
+        return $this->result($key, $label, 'warn', $name, "{$name} has no AAAA record pointing back to {$ipv6}, so IPv6 sending stays off. Ask your provider to set the PTR to {$host} and publish its AAAA record.");
     }
 
     /** Gmail rejects mail from an IP whose PTR name does not resolve back to it. */

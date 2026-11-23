@@ -20,6 +20,9 @@ return [
     'panel_port' => (int) env('PANEL_PORT'),
     'mail' => [
         'server_ip' => env('dPanel_MAIL_SERVER_IP', ''),
+        // Empty = read from `ip -6 route get`. Set it when the server sends
+        // from an IPv6 address other than the one its default route picks.
+        'server_ipv6' => env('dPanel_MAIL_SERVER_IPV6', ''),
         // Postfix HELO name. Empty = mail.<domain> of the first mailbox created.
         'hostname' => env('dPanel_MAIL_HOSTNAME', ''),
         'dkim_selector' => env('dPanel_DKIM_SELECTOR', 'default'),

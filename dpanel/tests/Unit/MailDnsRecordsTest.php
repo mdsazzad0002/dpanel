@@ -103,4 +103,47 @@ class MailDnsRecordsTest extends TestCase
 
         $this->assertSame('v=spf1 ip6:2001:db8::5 mx ~all', (new MailDnsRecords)->spf());
     }
+
+    public function test_spf_names_both_addresses_of_a_dual_stack_server(): void
+    {
+        config([
+            'dpanel.mail.hostname' => 'panel.example.com',
+            'dpanel.mail.server_ip' => '203.0.113.5',
+            'dpanel.mail.server_ipv6' => '2001:db8::5',
+        ]);
+
+        $this->assertSame('v=spf1 ip4:203.0.113.5 ip6:2001:db8::5 mx ~all', (new MailDnsRecords)->spf());
+    }
+
+    public function test_a_mail_host_inside_the_domain_also_gets_an_aaaa_record(): void
+    {
+        config([
+            'dpanel.mail.hostname' => 'mail.shop.test',
+            'dpanel.mail.server_ip' => '203.0.113.5',
+            'dpanel.mail.server_ipv6' => '2001:db8::5',
+        ]);
+        $records = collect((new MailDnsRecords)->records('shop.test', 'default', ''))->keyBy(fn ($r) => $r['type'].' '.$r['name']);
+
+        $this->assertSame('2001:db8::5', $records['AAAA mail']['value']);
+    }
+
+    public function test_a_server_without_ipv6_gets_no_aaaa_record(): void
+    {
+        config(['dpanel.mail.hostname' => 'mail.shop.test', 'dpanel.mail.server_ip' => '203.0.113.5']);
+        $records = collect((new MailDnsRecords)->records('shop.test', 'default', ''))->keyBy(fn ($r) => $r['type'].' '.$r['name']);
+
+        $this->assertFalse($records->has('AAAA mail'));
+        $this->assertSame('', (new MailDnsRecords)->serverIpv6());
+    }
+
+    public function test_a_domain_pinned_to_an_ipv4_mail_ip_does_not_claim_the_server_ipv6(): void
+    {
+        config(['dpanel.mail.server_ip' => '203.0.113.5', 'dpanel.mail.server_ipv6' => '2001:db8::5']);
+        $other = MailIp::query()->create(['ip' => '198.51.100.7', 'hostname' => 'mail2.example.com', 'is_default' => false]);
+        MailDomain::query()->create(['domain' => 'shop.test', 'mail_ip_id' => $other->id]);
+
+        $scoped = (new MailDnsRecords)->forDomain('shop.test');
+        $this->assertSame('', $scoped->serverIpv6());
+        $this->assertSame('v=spf1 ip4:198.51.100.7 mx ~all', $scoped->spf());
+    }
 }

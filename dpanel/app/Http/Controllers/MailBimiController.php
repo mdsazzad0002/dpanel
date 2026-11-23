@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Models\Mailbox;
 use App\Models\MailDomain;
+use App\Services\Mail\BimiLogoConverter;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
@@ -16,8 +17,15 @@ use Symfony\Component\HttpFoundation\Response;
  */
 class MailBimiController extends Controller
 {
-    /** BIMI's recommended maximum logo size. */
-    private const MAX_KB = 32;
+    /**
+     * Room for an ordinary logo export. What is stored is always the
+     * converted SVG, which BimiLogoConverter keeps under BIMI's 32 KB.
+     */
+    private const MAX_KB = 4096;
+
+    public function __construct(private readonly BimiLogoConverter $converter)
+    {
+    }
 
     public function store(Request $request): RedirectResponse
     {
@@ -28,16 +36,26 @@ class MailBimiController extends Controller
         $domain = strtolower(trim((string) $validated['domain']));
         abort_unless(Mailbox::query()->where('domain', $domain)->exists() || MailDomain::query()->where('domain', $domain)->exists(), 404);
 
-        $svg = (string) file_get_contents($validated['logo']->getRealPath());
-        if ($error = $this->svgProblem($svg)) {
+        // Any image is accepted and traced into SVG Tiny PS here, so nobody
+        // has to produce that format by hand.
+        try {
+            $logo = $this->converter->convert((string) file_get_contents($validated['logo']->getRealPath()), $domain);
+        } catch (\RuntimeException $exception) {
+            return back()->with('error', $exception->getMessage());
+        }
+        if ($error = $this->svgProblem($logo['svg'])) {
             return back()->with('error', $error);
         }
 
         $path = 'bimi/'.$domain.'.svg';
-        Storage::disk('local')->put($path, $svg);
+        Storage::disk('local')->put($path, $logo['svg']);
         MailDomain::query()->updateOrCreate(['domain' => $domain], ['bimi_logo_path' => $path]);
 
-        return back()->with('success', "BIMI logo saved for {$domain}. Add the BIMI record below, and set DMARC to quarantine or reject.");
+        $message = $logo['converted']
+            ? "Logo converted to SVG and saved for {$domain} (".ceil(strlen($logo['svg']) / 1024)." KB)."
+            : "BIMI logo saved for {$domain}.";
+
+        return back()->with('success', trim($message.' Add the BIMI record below, and set DMARC to quarantine or reject. '.implode(' ', $logo['notes'])));
     }
 
     public function destroy(Request $request): RedirectResponse
@@ -74,13 +92,6 @@ class MailBimiController extends Controller
      */
     public function svgProblem(string $svg): ?string
     {
-        if (! preg_match('/<svg\b/i', $svg)) {
-            return 'The logo must be an SVG file.';
-        }
-        if (preg_match('/<script\b|<foreignObject\b|\son\w+\s*=|javascript:|<image\b|xlink:href\s*=\s*["\']https?:|<!ENTITY/i', $svg)) {
-            return 'The SVG contains scripts, embedded images or external links, which BIMI does not allow. Export it as SVG Tiny PS.';
-        }
-
-        return null;
+        return $this->converter->problem($svg);
     }
 }
