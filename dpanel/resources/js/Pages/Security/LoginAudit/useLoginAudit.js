@@ -1,4 +1,4 @@
-import { computed, reactive, ref } from 'vue';
+import { computed, onBeforeUnmount, reactive, ref } from 'vue';
 import { usePage } from '@inertiajs/vue3';
 import axios from 'axios';
 import { i18n } from '@/i18n';
@@ -6,7 +6,7 @@ import { i18n } from '@/i18n';
 const t = (...args) => i18n.global.t(...args);
 
 /** Filters, events, map points and actions for the Login Audit page. */
-export function useLoginAudit() {
+export function useLoginAudit(initial = {}) {
     const page = usePage();
     const panelToken = computed(() => String(page.props.panel?.token || ''));
     const panelRoute = (name, params = {}) => (
@@ -75,7 +75,49 @@ export function useLoginAudit() {
         if (await post('security.login-audit.sync', 'sync')) load();
     };
 
-    const downloadGeoip = () => post('security.login-audit.geoip', 'geoip');
+    // DB-IP download: progress is polled while a download runs.
+    const ACTIVE = ['queued', 'downloading', 'unpacking', 'locating'];
+    const geoip = ref({ ...(initial.geoip || {}) });
+    const geoipProgress = ref(initial.geoipProgress || null);
+    const geoipRunning = computed(() => ACTIVE.includes(geoipProgress.value?.stage));
+    let pollTimer = null;
+
+    const pollGeoip = async () => {
+        clearTimeout(pollTimer);
+        try {
+            const { data } = await axios.get(panelRoute('security.login-audit.geoip.status'));
+            const wasRunning = geoipRunning.value;
+            geoipProgress.value = data.progress;
+            geoip.value = data.geoip;
+            if (geoipRunning.value) {
+                pollTimer = setTimeout(pollGeoip, 1000);
+            } else if (wasRunning && data.progress?.stage === 'done') {
+                message.value = { type: 'success', text: data.progress.message };
+                load();
+            } else if (wasRunning && data.progress?.stage === 'failed') {
+                message.value = { type: 'error', text: data.progress.message };
+            }
+        } catch {
+            pollTimer = setTimeout(pollGeoip, 3000);
+        }
+    };
+
+    const downloadGeoip = async () => {
+        busy.value = 'geoip';
+        message.value = null;
+        try {
+            const { data } = await axios.post(panelRoute('security.login-audit.geoip'));
+            geoipProgress.value = data.progress;
+            pollGeoip();
+        } catch (e) {
+            message.value = { type: 'error', text: e.response?.data?.message || t('security.loginAudit.actions.requestFailed') };
+        } finally {
+            busy.value = '';
+        }
+    };
+
+    if (geoipRunning.value) pollGeoip();
+    onBeforeUnmount(() => clearTimeout(pollTimer));
 
     const saveLocationMode = async (payload) => {
         busy.value = 'location';
@@ -95,5 +137,6 @@ export function useLoginAudit() {
     return {
         filters, events, meta, stats, points, loading, error, busy, message,
         load, applyFilters, goTo, syncNow, downloadGeoip, saveLocationMode,
+        geoip, geoipProgress, geoipRunning,
     };
 }

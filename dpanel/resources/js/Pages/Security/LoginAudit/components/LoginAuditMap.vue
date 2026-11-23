@@ -1,5 +1,5 @@
 <script setup>
-import { onBeforeUnmount, onMounted, ref, watch } from 'vue';
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import { flag, formatTime } from '../loginEventFormat';
@@ -11,6 +11,28 @@ const props = defineProps({
     points: { type: Array, default: () => [] },
     geoip: { type: Object, required: true },
     busy: { type: String, default: '' },
+    progress: { type: Object, default: null },
+    running: { type: Boolean, default: false },
+});
+
+const mb = (bytes) => (Number(bytes || 0) / 1048576).toFixed(1);
+// null = size not known yet, so the bar animates instead of filling.
+const percent = computed(() => {
+    const p = props.progress;
+    if (!p) return null;
+    if (p.stage === 'downloading' && p.total > 0) return Math.min(100, Math.round((p.downloaded / p.total) * 100));
+    if (p.stage === 'unpacking' || p.stage === 'locating') return 100;
+    return null;
+});
+const stageText = computed(() => {
+    const p = props.progress;
+    if (!p) return '';
+    if (p.stage === 'downloading') {
+        return p.total > 0
+            ? t('security.loginAudit.map.progress.downloading', { done: mb(p.downloaded), total: mb(p.total), percent: percent.value })
+            : t('security.loginAudit.map.progress.downloadingUnknown', { done: mb(p.downloaded) });
+    }
+    return t(`security.loginAudit.map.progress.${p.stage}`);
 });
 
 const emit = defineEmits(['download-geoip']);
@@ -140,17 +162,40 @@ watch(() => props.points, draw);
                 <span v-if="geoip.installed">{{ t('security.loginAudit.map.dbFrom', { date: new Date(geoip.updated_at).toLocaleDateString() }) }}</span>
                 <button
                     type="button"
-                    :disabled="busy === 'geoip'"
+                    :disabled="busy === 'geoip' || running"
                     class="rounded-md border border-slate-300 px-3 py-1.5 hover:bg-slate-100 disabled:opacity-60 dark:border-slate-700 dark:hover:bg-slate-800"
                     @click="emit('download-geoip')"
                 >
-                    {{ busy === 'geoip' ? t('security.loginAudit.map.starting') : (geoip.installed ? t('security.loginAudit.map.updateNow') : t('security.loginAudit.map.download')) }}
+                    {{ busy === 'geoip' ? t('security.loginAudit.map.starting') : running ? t('security.loginAudit.map.progress.busy') : (geoip.installed ? t('security.loginAudit.map.updateNow') : t('security.loginAudit.map.download')) }}
                 </button>
             </div>
         </div>
-        <div v-if="!geoip.installed" class="mb-3 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800 dark:border-amber-900 dark:bg-amber-950 dark:text-amber-200">
+        <div v-if="running" class="mb-3 rounded-md border border-blue-200 bg-blue-50 px-3 py-2 dark:border-blue-900 dark:bg-blue-950">
+            <div class="mb-1.5 flex items-center justify-between gap-2 text-xs text-blue-800 dark:text-blue-200">
+                <span>{{ stageText }}</span>
+                <span v-if="percent !== null" class="font-medium tabular-nums">{{ percent }}%</span>
+            </div>
+            <div class="h-2 w-full overflow-hidden rounded-full bg-blue-100 dark:bg-blue-900" role="progressbar" :aria-valuenow="percent ?? undefined" aria-valuemin="0" aria-valuemax="100">
+                <div v-if="percent !== null" class="h-full rounded-full bg-blue-600 transition-[width] duration-700 ease-out" :style="{ width: percent + '%' }" />
+                <div v-else class="geoip-indeterminate h-full w-1/3 rounded-full bg-blue-600" />
+            </div>
+        </div>
+        <div v-else-if="!geoip.installed" class="mb-3 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800 dark:border-amber-900 dark:bg-amber-950 dark:text-amber-200">
             {{ t('security.loginAudit.map.notDownloaded') }}
         </div>
         <div ref="container" class="relative z-0 h-[420px] w-full overflow-hidden rounded-lg" />
     </section>
 </template>
+
+<style scoped>
+.geoip-indeterminate {
+    animation: geoip-slide 1.2s ease-in-out infinite;
+}
+@keyframes geoip-slide {
+    from { transform: translateX(-100%); }
+    to { transform: translateX(300%); }
+}
+@media (prefers-reduced-motion: reduce) {
+    .geoip-indeterminate { animation: none; width: 100%; opacity: 0.5; }
+}
+</style>

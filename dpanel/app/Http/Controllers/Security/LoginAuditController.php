@@ -30,6 +30,7 @@ class LoginAuditController extends Controller
             'clientIp' => (string) $request->ip(),
             'sshSupported' => $this->ssh->supported(),
             'geoip' => $this->geoip->info(),
+            'geoipProgress' => $this->geoip->progress(),
             'retentionDays' => (int) config('dpanel.login_audit_retention_days', 365),
             'locationModes' => $this->location->all(),
             'scheme' => $request->secure() ? 'https' : 'http',
@@ -127,13 +128,35 @@ class LoginAuditController extends Controller
     /** Starts the DB-IP download after the response, since it takes a minute or two. */
     public function geoip(): JsonResponse
     {
+        if ($this->geoip->isRunning()) {
+            return response()->json([
+                'success' => true,
+                'message' => 'The DB-IP database is already downloading.',
+                'progress' => $this->geoip->progress(),
+            ]);
+        }
+
+        // Shown straight away, before the worker picks it up after the response.
+        $this->geoip->setProgress('queued');
+
         dispatch(function (): void {
             Artisan::call('login-audit:geoip-update', ['--force' => true]);
         })->afterResponse();
 
         return response()->json([
             'success' => true,
-            'message' => 'Downloading the DB-IP database (about 130 MB). Places fill in once it is done; reload in a few minutes.',
+            'message' => 'Downloading the DB-IP database (about 130 MB). Places fill in once it is done.',
+            'progress' => $this->geoip->progress(),
+        ]);
+    }
+
+    /** Polled by the map card's progress bar while the download runs. */
+    public function geoipStatus(): JsonResponse
+    {
+        return response()->json([
+            'success' => true,
+            'progress' => $this->geoip->progress(),
+            'geoip' => $this->geoip->info(),
         ]);
     }
 

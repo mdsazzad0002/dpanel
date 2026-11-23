@@ -19,6 +19,7 @@ const props = defineProps({
     clientIp: { type: String, default: '' },
     sshSupported: { type: Boolean, default: false },
     geoip: { type: Object, required: true },
+    geoipProgress: { type: Object, default: null },
     retentionDays: { type: Number, default: 365 },
     locationModes: { type: Object, default: () => ({ https: 'ask', http: 'ask' }) },
     scheme: { type: String, default: 'https' },
@@ -27,7 +28,8 @@ const props = defineProps({
 const {
     filters, events, meta, stats, points, loading, error, busy, message,
     load, applyFilters, goTo, syncNow, downloadGeoip, saveLocationMode,
-} = useLoginAudit();
+    geoip, geoipProgress, geoipRunning,
+} = useLoginAudit({ geoip: props.geoip, geoipProgress: props.geoipProgress });
 
 const locationModes = ref({ ...props.locationModes });
 const saveLocation = async (payload) => {
@@ -172,7 +174,7 @@ onMounted(load);
                     @locate="locate"
                     @page="goTo"
                 />
-                <LoginAuditMap v-show="tab === 'map'" ref="map" :points="points" :geoip="props.geoip" :busy="busy" @download-geoip="downloadGeoip" />
+                <LoginAuditMap v-show="tab === 'map'" ref="map" :points="points" :geoip="geoip" :progress="geoipProgress" :running="geoipRunning" :busy="busy" @download-geoip="downloadGeoip" />
             </div>
         </div>
 

@@ -1,5 +1,6 @@
 use std::{
     fs,
+    net::{IpAddr, SocketAddr},
     path::{Path, PathBuf},
     sync::{Mutex, OnceLock},
     thread,
@@ -8,6 +9,7 @@ use std::{
 
 use axum::{
     body::Body,
+    extract::ConnectInfo,
     http::{HeaderName, HeaderValue, Request, Response, StatusCode, header},
 };
 use bytes::Bytes;
@@ -89,6 +91,12 @@ pub async fn execute_php_front_controller(
             .map_err(|error| format!("PHP script lookup failed: {error}"))??
     };
     let is_https = forwarded_request_is_https(&parts.headers);
+    let peer = parts
+        .extensions
+        .get::<ConnectInfo<SocketAddr>>()
+        .map(|info| info.0)
+        .or_else(|| parts.extensions.get::<SocketAddr>().copied());
+    let remote_ip = php_remote_addr(peer.map(|addr| addr.ip()), &parts.headers);
 
     let mut params = vec![
         ("GATEWAY_INTERFACE".into(), "CGI/1.1".into()),
@@ -113,7 +121,11 @@ pub async fn execute_php_front_controller(
         ("SCRIPT_NAME".into(), script_name.clone()),
         ("PHP_SELF".into(), script_name),
         ("REDIRECT_STATUS".into(), "200".into()),
-        ("REMOTE_ADDR".into(), "127.0.0.1".into()),
+        ("REMOTE_ADDR".into(), remote_ip.to_string()),
+        (
+            "REMOTE_PORT".into(),
+            peer.map_or_else(|| "0".into(), |addr| addr.port().to_string()),
+        ),
         ("HTTP_HOST".into(), host.into()),
         ("CONTENT_LENGTH".into(), content_length.to_string()),
         ("PHP_VALUE".into(), "zlib.output_compression=0".into()),
@@ -180,6 +192,26 @@ pub async fn execute_php_front_controller(
     timeout_at(deadline, fastcgi_request(&endpoint, lease, &params, input, deadline))
         .await
         .map_err(|_| "PHP-FPM request timed out".to_string())?
+}
+
+/// The visitor's address for PHP's REMOTE_ADDR: the TCP peer, or the
+/// `CF-Connecting-IP` it names when that peer really is Cloudflare. Never a
+/// header from anyone else, which the client writes itself. Requests with no
+/// known peer (internal calls) stay 127.0.0.1, as before.
+fn php_remote_addr(peer: Option<IpAddr>, headers: &axum::http::HeaderMap) -> IpAddr {
+    let Some(peer) = peer.map(|ip| ip.to_canonical()) else {
+        return IpAddr::from([127, 0, 0, 1]);
+    };
+    if super::site_guards::from_cloudflare(peer) {
+        if let Some(ip) = headers
+            .get("cf-connecting-ip")
+            .and_then(|value| value.to_str().ok())
+            .and_then(|value| value.trim().parse::<IpAddr>().ok())
+        {
+            return ip.to_canonical();
+        }
+    }
+    peer
 }
 
 /// Where this site's PHP listens: a PHP-FPM socket, or a process of the
@@ -1063,6 +1095,39 @@ fn parse_cgi_head(header_block: &str) -> Result<Response<Body>, String> {
         response.headers_mut().append(name, value);
     }
     Ok(response)
+}
+
+#[cfg(test)]
+mod remote_addr_tests {
+    use super::php_remote_addr;
+    use axum::http::HeaderMap;
+    use std::net::IpAddr;
+
+    fn ip(value: &str) -> IpAddr {
+        value.parse().unwrap()
+    }
+
+    #[test]
+    fn remote_addr_is_the_peer_whatever_the_headers_claim() {
+        let mut headers = HeaderMap::new();
+        headers.insert("x-forwarded-for", "1.2.3.4".parse().unwrap());
+        headers.insert("cf-connecting-ip", "1.2.3.4".parse().unwrap());
+        assert_eq!(php_remote_addr(Some(ip("203.0.113.7")), &headers), ip("203.0.113.7"));
+        assert_eq!(php_remote_addr(Some(ip("::ffff:203.0.113.7")), &headers), ip("203.0.113.7"));
+    }
+
+    #[test]
+    fn cloudflare_peer_passes_on_the_visitor() {
+        let mut headers = HeaderMap::new();
+        headers.insert("cf-connecting-ip", "198.51.100.9".parse().unwrap());
+        assert_eq!(php_remote_addr(Some(ip("173.245.48.10")), &headers), ip("198.51.100.9"));
+        assert_eq!(php_remote_addr(Some(ip("173.245.48.10")), &HeaderMap::new()), ip("173.245.48.10"));
+    }
+
+    #[test]
+    fn no_peer_stays_loopback() {
+        assert_eq!(php_remote_addr(None, &HeaderMap::new()), ip("127.0.0.1"));
+    }
 }
 
 #[cfg(test)]

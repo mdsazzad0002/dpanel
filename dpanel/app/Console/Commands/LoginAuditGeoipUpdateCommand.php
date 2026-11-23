@@ -21,13 +21,17 @@ class LoginAuditGeoipUpdateCommand extends Command
 
         try {
             $month = $database->update();
+            $database->setProgress('locating');
+            $located = $recorder->locatePending(50000);
         } catch (\Throwable $e) {
+            $database->setProgress('failed', ['message' => $e->getMessage()]);
             $this->error($e->getMessage());
 
             return self::FAILURE;
         }
 
-        $this->info("DB-IP database {$month} installed. Rows located: ".$recorder->locatePending(50000));
+        $database->setProgress('done', ['message' => "DB-IP database {$month} installed. Rows located: {$located}"]);
+        $this->info("DB-IP database {$month} installed. Rows located: {$located}");
 
         return self::SUCCESS;
     }

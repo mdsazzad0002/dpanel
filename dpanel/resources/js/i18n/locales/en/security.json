@@ -223,7 +223,17 @@
             "starting": "Starting…",
             "updateNow": "Update now",
             "download": "Download database",
-            "notDownloaded": "The IP location database is not downloaded yet, so logins are saved without a place. Download it once (about 130 MB); it then updates itself every month and fills in the saved rows."
+            "notDownloaded": "The IP location database is not downloaded yet, so logins are saved without a place. Download it once (about 130 MB); it then updates itself every month and fills in the saved rows.",
+            "progress": {
+                "busy": "Downloading…",
+                "queued": "Starting the download…",
+                "downloading": "Downloading {done} / {total} MB ({percent}%)",
+                "downloadingUnknown": "Downloading {done} MB…",
+                "unpacking": "Unpacking the database…",
+                "locating": "Placing saved logins on the map…",
+                "done": "Done",
+                "failed": "Download failed"
+            }
         },
         "location": {
             "httpsNote": "Every common browser gives a location here once the user allows it.",

@@ -223,7 +223,17 @@
             "starting": "শুরু হচ্ছে…",
             "updateNow": "এখনই হালনাগাদ করুন",
             "download": "Database download করুন",
-            "notDownloaded": "IP অবস্থানের database এখনও download হয়নি, তাই login জায়গা ছাড়াই save হচ্ছে। একবার download করুন (প্রায় ১৩০ MB); এরপর এটি প্রতি মাসে নিজে হালনাগাদ হয় এবং save করা সারিগুলো পূরণ করে।"
+            "notDownloaded": "IP অবস্থানের database এখনও download হয়নি, তাই login জায়গা ছাড়াই save হচ্ছে। একবার download করুন (প্রায় ১৩০ MB); এরপর এটি প্রতি মাসে নিজে হালনাগাদ হয় এবং save করা সারিগুলো পূরণ করে।",
+            "progress": {
+                "busy": "ডাউনলোড হচ্ছে…",
+                "queued": "ডাউনলোড শুরু হচ্ছে…",
+                "downloading": "ডাউনলোড হচ্ছে {done} / {total} MB ({percent}%)",
+                "downloadingUnknown": "ডাউনলোড হচ্ছে {done} MB…",
+                "unpacking": "ডাটাবেস আনপ্যাক হচ্ছে…",
+                "locating": "সেভ করা লগইনগুলো ম্যাপে বসানো হচ্ছে…",
+                "done": "সম্পন্ন",
+                "failed": "ডাউনলোড ব্যর্থ হয়েছে"
+            }
         },
         "location": {
             "httpsNote": "User অনুমতি দিলে সব সাধারণ browser এখানে অবস্থান দেয়।",

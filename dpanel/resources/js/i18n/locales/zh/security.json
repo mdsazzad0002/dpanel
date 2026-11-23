@@ -223,7 +223,17 @@
             "starting": "正在开始…",
             "updateNow": "立即更新",
             "download": "下载数据库",
-            "notDownloaded": "IP 定位数据库尚未下载，因此登录记录保存时没有位置。请下载一次（约 130 MB）；之后它每月自动更新，并补全已保存的记录。"
+            "notDownloaded": "IP 定位数据库尚未下载，因此登录记录保存时没有位置。请下载一次（约 130 MB）；之后它每月自动更新，并补全已保存的记录。",
+            "progress": {
+                "busy": "下载中…",
+                "queued": "正在开始下载…",
+                "downloading": "正在下载 {done} / {total} MB（{percent}%）",
+                "downloadingUnknown": "正在下载 {done} MB…",
+                "unpacking": "正在解压数据库…",
+                "locating": "正在将已保存的登录放到地图上…",
+                "done": "完成",
+                "failed": "下载失败"
+            }
         },
         "location": {
             "httpsNote": "只要用户允许，所有常见浏览器都会在此提供位置。",

@@ -2,6 +2,7 @@
 
 namespace App\Services\LoginAudit;
 
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
 use RuntimeException;
 
@@ -13,6 +14,13 @@ use RuntimeException;
 class GeoIpDatabase
 {
     private const URL = 'https://download.db-ip.com/free/dbip-city-lite-%s.mmdb.gz';
+
+    private const PROGRESS_KEY = 'login-audit:geoip-progress';
+
+    /** A running stage with no update for this long means the worker died. */
+    private const STALL_SECONDS = 120;
+
+    private const ACTIVE_STAGES = ['queued', 'downloading', 'unpacking', 'locating'];
 
     public function path(): string
     {
@@ -36,6 +44,49 @@ class GeoIpDatabase
         ];
     }
 
+    /**
+     * Where the current (or last) download is, for the progress bar.
+     *
+     * @return array{stage: string, downloaded: int, total: int, month: ?string, message: ?string, updated_at: int}|null
+     */
+    public function progress(): ?array
+    {
+        $progress = Cache::get(self::PROGRESS_KEY);
+        if (! is_array($progress)) {
+            return null;
+        }
+
+        if (in_array($progress['stage'] ?? '', self::ACTIVE_STAGES, true)
+            && now()->timestamp - (int) ($progress['updated_at'] ?? 0) > self::STALL_SECONDS) {
+            $progress['stage'] = 'failed';
+            $progress['message'] = 'The download stopped responding. Try again.';
+        }
+
+        return $progress;
+    }
+
+    public function isRunning(): bool
+    {
+        return in_array($this->progress()['stage'] ?? '', self::ACTIVE_STAGES, true);
+    }
+
+    public function setProgress(string $stage, array $extra = []): void
+    {
+        $previous = Cache::get(self::PROGRESS_KEY);
+        $base = is_array($previous) && $stage !== 'queued' ? $previous : [];
+
+        Cache::put(self::PROGRESS_KEY, [
+            'downloaded' => 0,
+            'total' => 0,
+            'month' => null,
+            'message' => null,
+            ...$base,
+            ...$extra,
+            'stage' => $stage,
+            'updated_at' => now()->timestamp,
+        ], now()->addDay());
+    }
+
     public function isStale(): bool
     {
         return ! $this->exists() || filemtime($this->path()) < strtotime('-32 days');
@@ -56,13 +107,25 @@ class GeoIpDatabase
         foreach ([date('Y-m'), date('Y-m', strtotime('first day of last month'))] as $month) {
             $url = sprintf(self::URL, $month);
             $gz = $dir.'/download.mmdb.gz';
+            $this->setProgress('downloading', ['month' => $month, 'downloaded' => 0, 'total' => 0, 'message' => null]);
+            $lastWrite = 0.0;
+            $onProgress = function ($total, $downloaded) use (&$lastWrite): void {
+                $now = microtime(true);
+                // About once a second is plenty for a progress bar.
+                if ($now - $lastWrite < 0.75 && ! ($total > 0 && $downloaded >= $total)) {
+                    return;
+                }
+                $lastWrite = $now;
+                $this->setProgress('downloading', ['downloaded' => (int) $downloaded, 'total' => (int) $total]);
+            };
             try {
-                $response = Http::timeout(600)->withOptions(['sink' => $gz])->get($url);
+                $response = Http::timeout(600)->withOptions(['sink' => $gz, 'progress' => $onProgress])->get($url);
                 if (! $response->successful()) {
                     $errors[] = "{$month}: HTTP {$response->status()}";
 
                     continue;
                 }
+                $this->setProgress('unpacking');
                 $this->unpack($gz, $dir.'/download.mmdb');
                 rename($dir.'/download.mmdb', $this->path());
 

@@ -1255,6 +1255,9 @@ Route::prefix('dpt{token}')
             Route::post('/security/login-audit/geoip', [LoginAuditController::class, 'geoip'])
                 ->middleware(['role:admin', 'throttle:3,10'])
                 ->name('security.login-audit.geoip');
+            Route::get('/security/login-audit/geoip/status', [LoginAuditController::class, 'geoipStatus'])
+                ->middleware(['role:admin', 'throttle:240,1'])
+                ->name('security.login-audit.geoip.status');
 
             // Server-wide bans, so admins only.
             Route::get('/security/fail2ban', [Fail2banController::class, 'index'])
