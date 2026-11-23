@@ -191,7 +191,8 @@
             "status": "状态",
             "lastUsed": "最后使用",
             "created": "创建时间",
-            "actions": "操作"
+            "actions": "操作",
+            "limits": "限制"
         },
         "empty": "还没有 API 密钥。",
         "prefixHint": "只显示前缀——创建后无法找回完整密钥。使用“重新生成”获取一个新的、可复制的密钥。",
@@ -204,7 +205,22 @@
         "disable": "停用",
         "enable": "启用",
         "revoke": "吊销",
-        "baseUrl": "基础 URL："
+        "baseUrl": "基础 URL：",
+        "limits": {
+            "edit": "限制",
+            "total": "总计",
+            "perIp": "每 IP",
+            "ipsOnly": "仅 {n} 个 IP",
+            "perKey": "此密钥每分钟请求数（所有 IP）",
+            "perKeyIp": "此密钥单个 IP 每分钟请求数",
+            "defaultPlaceholder": "默认：{n}（0 = 不限）",
+            "allowedIps": "允许的 IP（可选）",
+            "allowedIpsHint": "每行一个 IP 或 CIDR。留空 = 任意 IP。",
+            "hint": "留空使用默认值；0 = 不限。每个 IP 在所有密钥上合计限 {ip} 次/分钟，错误密钥达到 {bad} 次后会被锁定。",
+            "save": "保存限制",
+            "cancel": "取消",
+            "saveFailed": "无法保存限制。"
+        }
     },
     "logs": {
         "clearConfirm": "删除匹配的日志？",

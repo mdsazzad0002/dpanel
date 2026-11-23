@@ -88,6 +88,32 @@ class AppServiceProvider extends ServiceProvider
             return Limit::perMinute(1200)->by($token ? 'migration-token:'.$token->id : 'ip:'.$request->ip());
         });
 
+        // External AI Gateway /api/v1, after the key is known (the per-IP cap
+        // and bad-key lockout run in AuthenticateAiGatewayApiKey): one bucket
+        // per key and one per key+IP, both overridable on the API Keys page.
+        $aiGatewayTooMany = fn (string $message) => fn (Request $request, array $headers) => response()->json([
+            'error' => ['message' => $message, 'type' => 'rate_limit_error', 'code' => 'rate_limit_exceeded'],
+        ], 429, $headers);
+
+        RateLimiter::for('ai-gateway', function (Request $request) use ($aiGatewayTooMany) {
+            $key = $request->attributes->get('ai_gateway_api_key');
+            if (! $key instanceof \App\Models\AiGatewayApiKey) {
+                return Limit::none();
+            }
+
+            $limits = [];
+            if (($perKey = $key->effectiveRateLimit()) > 0) {
+                $limits[] = Limit::perMinute($perKey)->by('key:'.$key->id)
+                    ->response($aiGatewayTooMany('Rate limit reached for this API key.'));
+            }
+            if (($perKeyIp = $key->effectiveIpRateLimit()) > 0) {
+                $limits[] = Limit::perMinute($perKeyIp)->by('key:'.$key->id.'|ip:'.$request->ip())
+                    ->response($aiGatewayTooMany('Rate limit reached for this API key from your IP.'));
+            }
+
+            return $limits ?: Limit::none();
+        });
+
         // Extensions (U7): panel changes become signed webhooks.
         ExtensionEvents::listen();
     }

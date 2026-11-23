@@ -38,6 +38,19 @@ return [
         ['file' => 'ggml-large-v3-q5_0.bin', 'label' => 'Large v3', 'size_mb' => 1080, 'note' => 'Most accurate, slowest'],
     ],
 
+    // Request limits for the external /api/v1 endpoints (per minute; 0 = off).
+    // ip_per_minute is checked before the key is even looked up, so a flood
+    // from one address is cut off cheaply. key_* are defaults a key can
+    // override on the API Keys page.
+    'rate_limit' => [
+        'ip_per_minute' => (int) env('AIGATEWAY_IP_RATE_LIMIT', 120),
+        'key_per_minute' => (int) env('AIGATEWAY_KEY_RATE_LIMIT', 600),
+        'key_ip_per_minute' => (int) env('AIGATEWAY_KEY_IP_RATE_LIMIT', 60),
+        // Wrong/revoked keys from one IP before that IP is locked out.
+        'bad_key_attempts' => (int) env('AIGATEWAY_BAD_KEY_ATTEMPTS', 10),
+        'bad_key_lockout_seconds' => (int) env('AIGATEWAY_BAD_KEY_LOCKOUT', 900),
+    ],
+
     // Maximum number of retries for transient provider failures.
     'max_retries' => (int) env('AIGATEWAY_MAX_RETRIES', 1),
 

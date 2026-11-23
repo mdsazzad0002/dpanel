@@ -199,7 +199,7 @@ Route::get('/whmcs/sso/{token}', [WhmcsController::class, 'consumeSso'])->middle
 // External, OpenAI/OpenRouter-compatible AI Gateway API. Authenticated via
 // `Authorization: Bearer sk-ag-...` (see AiGatewayApiKeyController for issuing
 // keys), not the panel session — meant for use from outside the panel.
-Route::middleware(['ai_gateway.key', 'throttle:60,1'])->group(function (): void {
+Route::middleware(['ai_gateway.key', 'throttle:ai-gateway'])->group(function (): void {
     Route::get('/api/v1/models', [AiGatewayApiController::class, 'models'])->name('api.ai-gateway.models');
     Route::post('/api/v1/chat/completions', [AiGatewayApiController::class, 'chatCompletions'])->name('api.ai-gateway.chat.completions');
     Route::post('/api/v1/images/generations', [AiGatewayApiController::class, 'imageGenerations'])->name('api.ai-gateway.images.generations');
@@ -887,6 +887,7 @@ Route::prefix('dpt{token}')
                     Route::get('api-keys', [AiGatewayApiKeyController::class, 'index'])->name('ai-gateway.api-keys.index');
                     Route::post('api-keys', [AiGatewayApiKeyController::class, 'store'])->name('ai-gateway.api-keys.store');
                     Route::patch('api-keys/{apiKey}/toggle', [AiGatewayApiKeyController::class, 'toggle'])->name('ai-gateway.api-keys.toggle');
+                    Route::patch('api-keys/{apiKey}/limits', [AiGatewayApiKeyController::class, 'updateLimits'])->name('ai-gateway.api-keys.limits');
                     Route::post('api-keys/{apiKey}/regenerate', [AiGatewayApiKeyController::class, 'regenerate'])->name('ai-gateway.api-keys.regenerate');
                     Route::delete('api-keys/{apiKey}', [AiGatewayApiKeyController::class, 'destroy'])->name('ai-gateway.api-keys.destroy');
 

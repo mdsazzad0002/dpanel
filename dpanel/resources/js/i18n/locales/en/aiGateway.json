@@ -191,7 +191,8 @@
             "status": "Status",
             "lastUsed": "Last used",
             "created": "Created",
-            "actions": "Actions"
+            "actions": "Actions",
+            "limits": "Limits"
         },
         "empty": "No API keys yet.",
         "prefixHint": "Only the prefix is shown — the full secret can't be recovered once created. Use Regenerate for a fresh, copyable key.",
@@ -204,7 +205,22 @@
         "disable": "Disable",
         "enable": "Enable",
         "revoke": "Revoke",
-        "baseUrl": "Base URL:"
+        "baseUrl": "Base URL:",
+        "limits": {
+            "edit": "Limits",
+            "total": "total",
+            "perIp": "per IP",
+            "ipsOnly": "Only {n} IP(s)",
+            "perKey": "Requests/min for this key (all IPs)",
+            "perKeyIp": "Requests/min for this key from one IP",
+            "defaultPlaceholder": "Default: {n} (0 = unlimited)",
+            "allowedIps": "Allowed IPs (optional)",
+            "allowedIpsHint": "One IP or CIDR per line. Empty = any IP.",
+            "hint": "Leave a limit empty for the default; 0 = unlimited. Every IP is also capped at {ip} requests/min across all keys, and is locked out after {bad} wrong keys.",
+            "save": "Save limits",
+            "cancel": "Cancel",
+            "saveFailed": "Could not save the limits."
+        }
     },
     "logs": {
         "clearConfirm": "Delete matching logs?",
