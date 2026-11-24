@@ -136,12 +136,25 @@ const paginatedWebsites = computed(() => {
 const pageStart = computed(() => groupedWebsites.value.length === 0 ? 0 : (currentPage.value - 1) * perPage + 1);
 const pageEnd = computed(() => Math.min(currentPage.value * perPage, groupedWebsites.value.length));
 
+const mainTypes = ['primary', 'main'];
+const subdomainTypes = ['subdomain', 'sub'];
+const typeOf = (item) => String(item?.type ?? '').toLowerCase();
+
+// Counted apart, because the three are different things: a main domain and a
+// subdomain each have their own files, an alias only points at its main site.
+// Live/disabled count the sites with files, the ones whose status can change.
 const stats = computed(() => {
     const all = websiteRequests.value;
+    const withFiles = all.filter((w) => !aliasTypes.includes(typeOf(w)));
+    const statusIs = (value) => withFiles.filter((w) => String(w.status ?? '').toLowerCase() === value).length;
+
     return {
-        total: all.filter((w) => !aliasTypes.includes(String(w.type ?? '').toLowerCase())).length,
-        live: all.filter((w) => !aliasTypes.includes(String(w.type ?? '').toLowerCase()) && String(w.status ?? '').toLowerCase() === 'live').length,
-        disabled: all.filter((w) => !aliasTypes.includes(String(w.type ?? '').toLowerCase()) && String(w.status ?? '').toLowerCase() === 'disabled').length,
+        total: withFiles.length,
+        main: all.filter((w) => mainTypes.includes(typeOf(w))).length,
+        subdomains: all.filter((w) => subdomainTypes.includes(typeOf(w))).length,
+        aliases: all.filter((w) => aliasTypes.includes(typeOf(w))).length,
+        live: statusIs('live'),
+        disabled: statusIs('disabled'),
     };
 });
 
@@ -542,8 +555,8 @@ const saveOwnership = async () => {
                 {{ page.props.flash.error }}
             </div>
 
-            <!-- Stats Row -->
-            <div class="grid grid-cols-2 gap-3 sm:grid-cols-3">
+            <!-- Stats Row: main domains, subdomains and aliases counted apart -->
+            <div class="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-6">
                 <div class="rounded-xl border border-slate-200/80 bg-white p-4 shadow-sm dark:border-slate-800/80 dark:bg-slate-900/50">
                     <div class="flex items-center justify-between">
                         <p class="text-[11px] font-semibold uppercase tracking-wider text-slate-400 dark:text-slate-500">{{ t('websites.list.total') }}</p>
@@ -552,6 +565,33 @@ const saveOwnership = async () => {
                         </div>
                     </div>
                     <p class="mt-2 text-2xl font-bold text-slate-900 dark:text-slate-100">{{ stats.total }}</p>
+                </div>
+                <div class="rounded-xl border border-slate-200/80 bg-white p-4 shadow-sm dark:border-slate-800/80 dark:bg-slate-900/50">
+                    <div class="flex items-center justify-between">
+                        <p class="text-[11px] font-semibold uppercase tracking-wider text-slate-400 dark:text-slate-500">{{ t('websites.list.mainDomains') }}</p>
+                        <div class="flex h-8 w-8 items-center justify-center rounded-lg bg-indigo-100 dark:bg-indigo-500/15">
+                            <i class="bi bi-globe2 text-sm text-indigo-600 dark:text-indigo-400"></i>
+                        </div>
+                    </div>
+                    <p class="mt-2 text-2xl font-bold text-indigo-600 dark:text-indigo-400">{{ stats.main }}</p>
+                </div>
+                <div class="rounded-xl border border-slate-200/80 bg-white p-4 shadow-sm dark:border-slate-800/80 dark:bg-slate-900/50">
+                    <div class="flex items-center justify-between">
+                        <p class="text-[11px] font-semibold uppercase tracking-wider text-slate-400 dark:text-slate-500">{{ t('websites.list.subdomains') }}</p>
+                        <div class="flex h-8 w-8 items-center justify-center rounded-lg bg-sky-100 dark:bg-sky-500/15">
+                            <i class="bi bi-diagram-3 text-sm text-sky-600 dark:text-sky-400"></i>
+                        </div>
+                    </div>
+                    <p class="mt-2 text-2xl font-bold text-sky-600 dark:text-sky-400">{{ stats.subdomains }}</p>
+                </div>
+                <div class="rounded-xl border border-slate-200/80 bg-white p-4 shadow-sm dark:border-slate-800/80 dark:bg-slate-900/50">
+                    <div class="flex items-center justify-between">
+                        <p class="text-[11px] font-semibold uppercase tracking-wider text-slate-400 dark:text-slate-500">{{ t('websites.list.aliases') }}</p>
+                        <div class="flex h-8 w-8 items-center justify-center rounded-lg bg-violet-100 dark:bg-violet-500/15">
+                            <i class="bi bi-link-45deg text-sm text-violet-600 dark:text-violet-400"></i>
+                        </div>
+                    </div>
+                    <p class="mt-2 text-2xl font-bold text-violet-600 dark:text-violet-400">{{ stats.aliases }}</p>
                 </div>
                 <div class="rounded-xl border border-slate-200/80 bg-white p-4 shadow-sm dark:border-slate-800/80 dark:bg-slate-900/50">
                     <div class="flex items-center justify-between">
