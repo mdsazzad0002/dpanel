@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Website\WebsiteManage;
 
 use App\Http\Controllers\Controller;
+use App\Jobs\DeleteWebsiteJob;
 use App\Jobs\IssueWebsiteSslJob;
 use App\Models\Domain;
 use App\Models\SslCertificate;
@@ -15,9 +16,8 @@ use App\Services\PathService;
 use App\Services\Php\PhpService;
 use App\Services\ResourceQuotaService;
 use App\Services\Ssl\SslLifecycleService;
+use App\Services\Tasks\BackgroundTaskQueue;
 use App\Services\Website\LaravelQueueService;
-use App\Services\Website\WebsiteDeletionFailed;
-use App\Services\Website\WebsiteDeletionService;
 use App\Services\Website\WebsiteService;
 use App\Services\Website\WebsiteTrashService;
 use Illuminate\Http\JsonResponse;
@@ -44,7 +44,6 @@ class MainWebsiteController extends Controller
         protected CronSystemService $cronSystemService,
         protected WebsiteDnsProvisionService $websiteDnsProvisionService,
         protected ResourceQuotaService $quotas,
-        protected WebsiteDeletionService $websiteDeletion,
     ) {}
 
     /**
@@ -449,7 +448,13 @@ class MainWebsiteController extends Controller
     }
 
     /**
-     * Destroy a website and archive its files for restore.
+     * Queue a website's deletion and answer right away.
+     *
+     * Archiving a large site's files and databases takes minutes, so the work
+     * goes to DeleteWebsiteJob instead of holding this request. The panel's
+     * floating task queue shows a card per queued deletion (served by
+     * BackgroundTaskController) and up to three deletions run side by side. An
+     * alias has no files of its own, so it is still removed inline.
      */
     public function destroy(Request $request, string $token, string $id): RedirectResponse|JsonResponse
     {
@@ -465,19 +470,44 @@ class MainWebsiteController extends Controller
         if (! in_array($websiteType, ['primary', 'main', 'subdomain', 'sub'], true)) {
             return $this->destroyLinkedDomain($request, $website, $domain);
         }
-        try {
-            // "permanent" skips the trash archive; anything else keeps one (the default).
-            $toTrash = $request->input('mode') !== 'permanent';
-            // Databases are dropped from their server only when the admin ticked it.
-            $cleanupMessages = $this->websiteDeletion->delete($website, $request->user()?->id, $toTrash, $request->boolean('delete_databases'));
-        } catch (WebsiteDeletionFailed $e) {
-            return $this->websiteDestroyError($request, $e->getMessage(), $e->key, $e->getPrevious() ?? $e);
+
+        $userId = (int) ($request->user()?->id ?? 0);
+        // "permanent" skips the trash archive; anything else keeps one (the default).
+        $toTrash = $request->input('mode') !== 'permanent';
+        // Databases are dropped from their server only when the admin ticked it.
+        $dropDatabases = $request->boolean('delete_databases');
+
+        $pending = BackgroundTaskQueue::activeFor($userId, DeleteWebsiteJob::TASK_TYPE, 'website_id', (string) $website->id);
+        if ($pending !== null) {
+            return $this->websiteDestroyQueued($request, $domain, (string) $pending['id'], (string) $website->id, true);
         }
 
-        $message = 'Website deleted successfully.';
-        if ($cleanupMessages !== []) {
-            $message .= ' '.implode(' ', $cleanupMessages);
-        }
+        $taskId = BackgroundTaskQueue::start(DeleteWebsiteJob::TASK_TYPE, $userId, [
+            'title' => $domain,
+            'subtitle' => $toTrash ? 'Moving to Website Trash' : 'Deleting permanently',
+            'data' => [
+                'website_id' => (string) $website->id,
+                'domain' => $domain,
+                'mode' => $toTrash ? 'trash' : 'permanent',
+                'delete_databases' => $dropDatabases,
+            ],
+        ]);
+
+        DeleteWebsiteJob::dispatch($taskId, (string) $website->id, $userId, $toTrash, $dropDatabases);
+
+        return $this->websiteDestroyQueued($request, $domain, $taskId, (string) $website->id, false);
+    }
+
+    /**
+     * The queued-deletion answer, as JSON for the websites list (which adds a
+     * card to the floating task queue) or as a flash message for an Inertia
+     * visit from the website's own page.
+     */
+    private function websiteDestroyQueued(Request $request, string $domain, string $taskId, string $websiteId, bool $alreadyQueued): RedirectResponse|JsonResponse
+    {
+        $message = $alreadyQueued
+            ? "Deletion of {$domain} is already in the queue."
+            : "Deletion of {$domain} is queued and runs in the background.";
 
         if ($request->header('X-Inertia')) {
             return redirect()->route('websites.list')->with('success', $message);
@@ -486,26 +516,14 @@ class MainWebsiteController extends Controller
         if ($request->expectsJson()) {
             return response()->json([
                 'type' => 'success',
+                'queued' => true,
                 'message' => $message,
-                'website_id' => (string) $website->id,
-            ]);
+                'task_id' => $taskId,
+                'website_id' => $websiteId,
+            ], 202);
         }
 
         return redirect()->route('websites.list')->with('success', $message);
-    }
-
-    private function websiteDestroyError(Request $request, string $message, string $errorKey, \Throwable $error): RedirectResponse|JsonResponse
-    {
-        $detail = $message.' '.$error->getMessage();
-        if ($request->header('X-Inertia')) {
-            return back()->with('error', $detail);
-        }
-
-        return response()->json([
-            'type' => 'error',
-            'message' => $message,
-            'errors' => [$errorKey => $error->getMessage()],
-        ], 422);
     }
 
     /**

@@ -33,6 +33,16 @@ return [
             '/var/log/mail.log,/var/log/maillog'
         ))))),
     ],
+    // Queued background work (App\Services\Tasks\BackgroundTaskQueue): how
+    // many tasks of a type may run at the same time. Each type takes one of
+    // that many cache-lock slots, so the count holds across workers; the
+    // 'deletions' queue runs 3 worker processes to match (see the supervisor
+    // template in dscript/repository/templates/supervisor).
+    'background_tasks' => [
+        'concurrency' => [
+            'website_delete' => (int) env('dPanel_WEBSITE_DELETE_CONCURRENCY', 3),
+        ],
+    ],
     'panel_cookie_name' => env('dPanel_PANEL_COOKIE', 'panel_session_proof'),
     // Safety-net absolute session age, independent of activity — forces a
     // fresh login eventually even if the panel is kept busy nonstop.

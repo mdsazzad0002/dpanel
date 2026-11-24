@@ -7,6 +7,8 @@ import SslBadgeMenu from '@/Pages/Websites/components/SslBadgeMenu.vue';
 import SiteFavicon from '@/Pages/Websites/components/SiteFavicon.vue';
 import BulkDownloadPanel from '@/Pages/Websites/components/bulk-download/BulkDownloadPanel.vue';
 import DeleteWebsiteModal from '@/Pages/Websites/components/DeleteWebsiteModal.vue';
+import FloatingTaskQueue from '@/Components/FloatingTaskQueue.vue';
+import { useTaskQueue } from '@/composables/useTaskQueue';
 
 const { t } = useI18n();
 
@@ -188,6 +190,36 @@ const confirmDelete = async (mode, dropDatabases = false) => {
     deleteTarget.value = null;
 };
 
+// Deleting only queues the work (DeleteWebsiteJob) and the request comes back
+// at once, so a slow archive never blocks the page. The floating task queue is
+// the progress view; a few sites are deleted side by side (3 by default).
+const taskQueue = useTaskQueue({
+    type: 'website_delete',
+    onFinished: (task) => {
+        const websiteId = String(task?.data?.website_id || '');
+        deleteLoadingIds.delete(websiteId);
+
+        if (String(task.stage) === 'done') {
+            websiteRequests.value = websiteRequests.value.filter((item) => String(item.id) !== websiteId);
+            pushToast(t('websites.deleteQueue.doneToast', { domain: task.title }));
+            // The card stays a moment so the result is seen, then clears itself.
+            window.setTimeout(() => taskQueue.dismiss(task.id), 8000);
+        } else {
+            pushToast(task.message || t('websites.list.deleteFailed'), 'error');
+        }
+    },
+});
+
+const deleteTasks = taskQueue.tasks;
+
+// A site whose deletion is queued stays in the list, greyed out, until its job
+// reports back — including after a reload, where the poll fills this again.
+watch(taskQueue.tasks, (tasks) => {
+    tasks.forEach((task) => {
+        if (['queued', 'running'].includes(String(task.stage))) deleteLoadingIds.add(String(task?.data?.website_id || ''));
+    });
+});
+
 const deleteRequest = async (id, mode = 'trash', dropDatabases = false) => {
     const deletingId = String(id);
     if (!deletingId || deleteLoadingIds.has(deletingId)) return;
@@ -211,11 +243,25 @@ const deleteRequest = async (id, mode = 'trash', dropDatabases = false) => {
             throw new Error(detail ? `${data.message || t('websites.list.deleteFailed')} ${detail}` : (data.message || t('websites.list.deleteFailed')));
         }
 
+        if (data.queued && data.task_id) {
+            const domain = websiteRequests.value.find((item) => String(item.id) === deletingId)?.domain || '';
+            taskQueue.add({
+                id: String(data.task_id),
+                type: 'website_delete',
+                title: domain,
+                data: { website_id: deletingId },
+            });
+            pushToast(t('websites.deleteQueue.queuedToast', { domain }));
+
+            return;
+        }
+
+        // An alias has no files of its own and is removed inline.
         websiteRequests.value = websiteRequests.value.filter((item) => String(item.id) !== deletingId);
         pushToast(data.message || t('websites.list.deleted'));
+        deleteLoadingIds.delete(deletingId);
     } catch (error) {
         pushToast(error?.message || t('websites.list.deleteFailed'), 'error');
-    } finally {
         deleteLoadingIds.delete(deletingId);
     }
 };
@@ -465,6 +511,7 @@ const saveOwnership = async () => {
         </div>
 
         <div class="fixed bottom-5 right-5 z-[100] flex w-[min(22rem,calc(100vw-2rem))] flex-col gap-2">
+            <FloatingTaskQueue :tasks="deleteTasks" @dismiss="taskQueue.dismiss" />
             <div
                 v-for="toast in toasts"
                 :key="toast.id"

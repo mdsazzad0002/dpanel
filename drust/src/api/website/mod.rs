@@ -145,6 +145,12 @@ pub(super) fn delete_website(request: &DeleteRequest) -> Result<(), String> {
             fs::remove_dir_all(&home)
                 .map_err(|error| format!("cannot remove {}: {error}", home.display()))?;
         }
+        // The user is gone, so its PHP-FPM pools must go too: one left behind
+        // stops that whole php<v>-fpm service from starting again.
+        let errors = crate::edge_gateway::php_fpm_master::purge(user);
+        if !errors.is_empty() {
+            tracing::warn!(user, errors = %errors.join("; "), "PHP-FPM pool cleanup after website deletion was incomplete");
+        }
         return Ok(());
     }
 

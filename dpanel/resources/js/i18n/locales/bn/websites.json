@@ -30,6 +30,10 @@
         "dropDatabasesTrash": "MariaDB database server থেকে drop হয়; data trash archive-এ থাকে আর restore করলে ফিরে আসে। PostgreSQL আর MongoDB database থেকে যায়।",
         "dropDatabasesPermanent": "এই website-এর সব database আর তার user server থেকে drop হয়। Data চিরতরে চলে যায়।"
     },
+    "deleteQueue": {
+        "queuedToast": "{domain} মোছার কাজ কিউতে যোগ হয়েছে।",
+        "doneToast": "{domain} মুছে ফেলা হয়েছে।"
+    },
     "ssl": {
         "reinstallConfirm": "{domain}-এর SSL certificate আবার install করবেন? এখনকার certificate বৈধ থাকলেও নতুন একটা নেওয়া হবে।",
         "reinstallFailed": "SSL আবার install করা যায়নি।",

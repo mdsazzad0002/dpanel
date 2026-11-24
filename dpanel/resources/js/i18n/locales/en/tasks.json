@@ -1,0 +1,24 @@
+{
+    "queue": {
+        "title": "Background tasks",
+        "active": "{n} running",
+        "dismiss": "Dismiss",
+        "clearFinished": "Clear finished",
+        "collapse": "Hide",
+        "expand": "Show",
+        "stage": {
+            "queued": "Waiting in queue…",
+            "running": "Working…",
+            "done": "Finished",
+            "failed": "Failed"
+        }
+    },
+    "types": {
+        "website_delete": {
+            "queued": "Waiting in the delete queue…",
+            "running": "Deleting now…",
+            "done": "Website deleted",
+            "failed": "Deletion failed"
+        }
+    }
+}

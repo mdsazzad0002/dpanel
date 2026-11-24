@@ -258,6 +258,43 @@ pub fn release(owner: &str) -> Result<(), String> {
     if errors.is_empty() { Ok(()) } else { Err(errors.join("; ")) }
 }
 
+/// Remove every PHP-FPM pool of a site user whose account has been deleted,
+/// in both masters, and reload the shared masters that held one.
+///
+/// A pool whose Linux user is gone makes `php-fpm -t` fail, so the whole
+/// `php<v>-fpm` service refuses to start on its next restart and takes every
+/// other site on that version down with it. Called when a website is deleted
+/// together with its user (`POST /api/v1/website/delete`). Returns what could
+/// not be cleaned up; the deletion itself does not depend on it.
+pub fn purge(owner: &str) -> Vec<String> {
+    if !valid_owner(owner) {
+        return vec![format!("invalid site user: {owner}")];
+    }
+    let guard = match provision_lock() {
+        Ok(guard) => guard,
+        Err(error) => return vec![error],
+    };
+    // Gives back a dedicated master, and drops the shared pool of a user that
+    // is already gone.
+    let mut errors = release_locked(owner);
+    for version in versions_of(owner) {
+        let shared = shared_pool(owner, &version);
+        if !shared.is_file() {
+            continue;
+        }
+        if let Err(error) = fs::remove_file(&shared) {
+            errors.push(format!("cannot remove {}: {error}", shared.display()));
+            continue;
+        }
+        info!(owner, version, "removed the PHP-FPM pool of a deleted site user");
+        if let Err(error) = reload_fpm_service(&version) {
+            errors.push(error);
+        }
+    }
+    drop(guard);
+    errors
+}
+
 fn release_locked(owner: &str) -> Vec<String> {
     let _ = fs::remove_file(marker_dir().join(owner));
     let services = platform::services();

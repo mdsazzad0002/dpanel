@@ -30,6 +30,10 @@
         "dropDatabasesTrash": "MariaDB databases are dropped from the server; their data stays in the trash archive and comes back on restore. PostgreSQL and MongoDB databases are kept.",
         "dropDatabasesPermanent": "Every database of this website and its user are dropped from the server. Their data is gone for good."
     },
+    "deleteQueue": {
+        "queuedToast": "Deletion of {domain} is queued.",
+        "doneToast": "{domain} deleted."
+    },
     "ssl": {
         "reinstallConfirm": "Reinstall the SSL certificate for {domain}? A new certificate is issued even if the current one is still valid.",
         "reinstallFailed": "SSL reinstall failed.",

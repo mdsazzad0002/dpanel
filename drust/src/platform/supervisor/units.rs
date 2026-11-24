@@ -71,8 +71,9 @@ impl LocalUnits {
                 artisan.into_os_string(),
                 "queue:work".into(),
                 // One worker for every queue the panel uses: installers and
-                // exports go to `heavy`, so `default` alone leaves them waiting.
-                "--queue=heavy,server-commands,default".into(),
+                // exports go to `heavy` and website deletions to `deletions`,
+                // so `default` alone leaves them waiting.
+                "--queue=heavy,deletions,server-commands,default".into(),
                 // Installers run for minutes; the default 60 s would kill them.
                 "--timeout=3600".into(),
                 "--sleep=3".into(),

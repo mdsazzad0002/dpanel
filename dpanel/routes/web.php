@@ -1,5 +1,6 @@
 <?php
 use Illuminate\Http\Request;
+use App\Http\Controllers\BackgroundTaskController;
 use App\Http\Controllers\AiGatewayApiKeyController;
 use App\Http\Controllers\AiGatewayController;
 use App\Http\Controllers\AiGatewayMediaController;
@@ -283,6 +284,13 @@ Route::prefix('dpt{token}')
             ->name('notifications.clear');
 
         Route::middleware('auth')->group(function () {
+            // The floating task queue's cards: any queued background work of
+            // the signed-in user (see App\Services\Tasks\BackgroundTaskQueue).
+            Route::get('/tasks/queue', [BackgroundTaskController::class, 'index'])
+                ->name('tasks.queue.status');
+            Route::delete('/tasks/queue/{taskId}', [BackgroundTaskController::class, 'destroy'])
+                ->name('tasks.queue.dismiss');
+
             Route::redirect('/dpanel', '/servers')
                 ->middleware('role:admin|reseller|general|general_user')
                 ->name('dpanel.index');
