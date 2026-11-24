@@ -104,6 +104,47 @@ class GithubIntegrationTest extends TestCase
         $this->assertSame('refresh-2', $account->fresh()->refresh_token);
     }
 
+    public function test_parallel_requests_refresh_the_token_only_once(): void
+    {
+        GithubOAuthApp::create(['client_id' => 'cid', 'client_secret' => 'secret']);
+        $account = GithubAccount::create([
+            'user_id' => $this->user(), 'github_id' => 1, 'login' => 'octo',
+            'access_token' => 'old', 'refresh_token' => 'refresh-1', 'token_expires_at' => now()->addMinute(),
+        ]);
+        // Two requests that both loaded the account while its token was expiring.
+        $first = GithubAccount::query()->findOrFail($account->id);
+        $second = GithubAccount::query()->findOrFail($account->id);
+        Http::fake(['github.com/login/oauth/access_token' => Http::sequence()
+            ->push(['access_token' => 'new', 'refresh_token' => 'refresh-2', 'expires_in' => 28800])
+            ->push(['error' => 'bad_refresh_token', 'error_description' => 'The refresh token passed is incorrect or expired.'], 200)]);
+
+        $client = app(GithubClient::class);
+        $this->assertSame('new', $client->tokenFor($first));
+        // The second request must reuse the rotated token, not refresh again.
+        $this->assertSame('new', $client->tokenFor($second));
+        Http::assertSentCount(1);
+    }
+
+    public function test_dead_refresh_token_asks_for_a_reconnect(): void
+    {
+        GithubOAuthApp::create(['client_id' => 'cid', 'client_secret' => 'secret']);
+        $account = GithubAccount::create([
+            'user_id' => $this->user(), 'github_id' => 1, 'login' => 'octo',
+            'access_token' => 'old', 'refresh_token' => 'refresh-1', 'token_expires_at' => now()->addMinute(),
+        ]);
+        Http::fake(['github.com/login/oauth/access_token' => Http::response([
+            'error' => 'bad_refresh_token', 'error_description' => 'The refresh token passed is incorrect or expired.',
+        ])]);
+
+        try {
+            app(GithubClient::class)->tokenFor($account);
+            $this->fail('Expected the dead refresh token to fail.');
+        } catch (\RuntimeException $e) {
+            $this->assertStringContainsString('Reconnect this GitHub account', $e->getMessage());
+        }
+        $this->assertNull($account->fresh()->refresh_token);
+    }
+
     public function test_push_webhook_requires_valid_signature(): void
     {
         Queue::fake();

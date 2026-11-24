@@ -60,8 +60,17 @@ const loadRepositories = async () => {
     if (!selectedAccount.value || selectedAccount.value.foreign) { repositories.value = []; return; }
     loadingRepos.value = true; error.value = '';
     try {
-        const pages = await Promise.all([1, 2, 3].map((page) => getJson(panelRoute('github.accounts.repositories', { account: accountId.value, page }))));
-        repositories.value = pages.flatMap((data) => data.repositories || []);
+        // Sequential, not parallel: the first request may have to refresh the
+        // account's GitHub token, and a single-use refresh token cannot serve
+        // three requests at once. Stop as soon as a page is not full.
+        const collected = [];
+        for (let page = 1; page <= 3; page += 1) {
+            const data = await getJson(panelRoute('github.accounts.repositories', { account: accountId.value, page }));
+            const batch = data.repositories || [];
+            collected.push(...batch);
+            if (batch.length < 100) break;
+        }
+        repositories.value = collected;
     } catch (e) { error.value = e.message; repositories.value = []; } finally { loadingRepos.value = false; }
 };
 const loadBranches = async (fullName) => {

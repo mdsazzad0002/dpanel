@@ -5,7 +5,9 @@ namespace App\Services\Github;
 use App\Models\GithubAccount;
 use App\Models\GithubOAuthApp;
 use Illuminate\Http\Client\PendingRequest;
+use Illuminate\Contracts\Cache\LockTimeoutException;
 use Illuminate\Http\Client\Response;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
 
 /**
@@ -58,22 +60,75 @@ class GithubClient
     /** A valid access token for the account, refreshing an expiring one first. */
     public function tokenFor(GithubAccount $account): string
     {
-        $expiring = $account->token_expires_at && $account->token_expires_at->lte(now()->addMinutes(5));
-        if ($expiring && $account->refresh_token) {
-            $app = GithubOAuthApp::current() ?? throw new \RuntimeException('GitHub integration is not configured by the administrator.');
-            $token = $this->tokenRequest($app, [
-                'grant_type' => 'refresh_token',
-                'refresh_token' => $account->refresh_token,
-            ]);
-            $account->forceFill([
-                'access_token' => $token['access_token'],
-                'refresh_token' => $token['refresh_token'] ?? $account->refresh_token,
-                'token_expires_at' => $token['expires_at'],
-            ])->save();
+        if ($this->tokenExpiring($account) && $account->refresh_token) {
+            $this->refreshOnce($account);
         }
         $account->forceFill(['last_used_at' => now()])->saveQuietly();
 
         return (string) $account->access_token;
+    }
+
+    private function tokenExpiring(GithubAccount $account): bool
+    {
+        return $account->token_expires_at !== null && $account->token_expires_at->lte(now()->addMinutes(5));
+    }
+
+    /**
+     * A GitHub App refresh token is single-use, and a page often fires several
+     * requests at once (the repository list loads its pages in parallel). Left
+     * unsynchronised, the first request rotates the token and every other one
+     * fails with "The refresh token passed is incorrect or expired", so the
+     * refresh is serialised per account and re-checked against the database
+     * inside the lock: the later requests just pick up the fresh token.
+     */
+    private function refreshOnce(GithubAccount $account): void
+    {
+        $lock = Cache::lock("github:refresh:{$account->getKey()}", 60);
+        try {
+            $lock->block(30);
+            $fresh = GithubAccount::query()->whereKey($account->getKey())->first() ?? $account;
+            if ($this->tokenExpiring($fresh) && $fresh->refresh_token) {
+                $this->refresh($fresh);
+            }
+            $this->adopt($account, $fresh);
+        } catch (LockTimeoutException) {
+            // Another request is still refreshing: use whatever it has stored.
+            $this->adopt($account, GithubAccount::query()->whereKey($account->getKey())->first());
+        } finally {
+            $lock->release();
+        }
+    }
+
+    private function adopt(GithubAccount $account, ?GithubAccount $fresh): void
+    {
+        if ($fresh && $fresh !== $account) {
+            $account->setRawAttributes($fresh->getAttributes(), true);
+        }
+    }
+
+    private function refresh(GithubAccount $account): void
+    {
+        $app = GithubOAuthApp::current() ?? throw new \RuntimeException('GitHub integration is not configured by the administrator.');
+        try {
+            $token = $this->tokenRequest($app, [
+                'grant_type' => 'refresh_token',
+                'refresh_token' => $account->refresh_token,
+            ]);
+        } catch (GithubOAuthException $e) {
+            if ($e->refreshTokenRejected()) {
+                // The token is dead for good; drop it so every later request
+                // asks for a reconnect instead of hammering GitHub.
+                $account->forceFill(['refresh_token' => null])->save();
+
+                throw new \RuntimeException("GitHub sign-in for @{$account->login} has expired. Reconnect this GitHub account.");
+            }
+            throw $e;
+        }
+        $account->forceFill([
+            'access_token' => $token['access_token'],
+            'refresh_token' => $token['refresh_token'] ?? $account->refresh_token,
+            'token_expires_at' => $token['expires_at'],
+        ])->save();
     }
 
     /** @return list<array<string, mixed>> */
@@ -136,7 +191,10 @@ class GithubClient
         ], $params))->throw()->json();
 
         if (! empty($json['error']) || empty($json['access_token'])) {
-            throw new \RuntimeException((string) ($json['error_description'] ?? $json['error'] ?? 'GitHub did not return an access token.'));
+            throw new GithubOAuthException(
+                (string) ($json['error_description'] ?? $json['error'] ?? 'GitHub did not return an access token.'),
+                (string) ($json['error'] ?? ''),
+            );
         }
 
         return [
