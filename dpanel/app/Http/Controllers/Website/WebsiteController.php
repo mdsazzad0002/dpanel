@@ -4147,12 +4147,33 @@ class WebsiteController extends Controller
         return true;
     }
 
+    /**
+     * Keep the name the user gave the file: an upload, a rename or a copy has
+     * to end up with the name they can see and match, so only what would make
+     * the name a path or an unusable file is taken out — spaces, brackets,
+     * accents and non-Latin scripts all stay.
+     *
+     * Returns '' when nothing usable is left, which every caller reports as an
+     * invalid name.
+     */
     protected function sanitizeFilename(string $filename): string
     {
-        $filename = trim(str_replace(['\\', '/'], '-', $filename));
-        $filename = preg_replace('/[^a-zA-Z0-9._-]/', '-', $filename) ?? '';
-        $filename = trim($filename, '-');
+        // A name is one path segment: separators would move the file elsewhere.
+        $filename = str_replace(['\\', '/'], '-', $filename);
+        // NUL ends the path in every filesystem call; the other control
+        // characters make a name no terminal or client can type back. A name
+        // that is not valid UTF-8 fails the /u pass, so it is stripped byte by
+        // byte instead of being thrown away.
+        $filename = preg_replace('/[\x00-\x1F\x7F]/u', '', $filename)
+            ?? (preg_replace('/[\x00-\x1F\x7F]/', '', $filename) ?? '');
+        $filename = trim($filename);
         if ($filename === '.' || $filename === '..' || trim($filename, '.') === '') {
+            return '';
+        }
+        // ext4, XFS and APFS all cap one name at 255 bytes, so a long name in
+        // a non-Latin script fails at the filesystem rather than silently
+        // losing its tail.
+        if (strlen($filename) > 255) {
             return '';
         }
 

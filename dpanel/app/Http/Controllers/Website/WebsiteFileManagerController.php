@@ -23,9 +23,14 @@ class WebsiteFileManagerController extends WebsiteController
             'size' => ['required', 'integer', 'min:0', 'max:'.FilemanagerChunkUploads::MAX_BYTES],
         ]);
 
+        // The file keeps the name it has on the user's machine; only a name no
+        // filesystem can hold is turned down, and the reason is said out loud.
         $filename = $this->sanitizeFilename((string) $validated['name']);
         if ($filename === '') {
-            return response()->json(['success' => false, 'message' => 'Invalid file name.'], 422);
+            return response()->json([
+                'success' => false,
+                'message' => 'This file cannot be saved under the name "'.$validated['name'].'". A name can be at most 255 bytes and cannot be only dots.',
+            ], 422);
         }
         $scopeRoot = $this->sanitizeRelativePath((string) $request->query('root', ''));
         $currentPath = $this->sanitizeRelativePath((string) ($validated['path'] ?? ''));
