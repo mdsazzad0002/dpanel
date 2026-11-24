@@ -192,6 +192,12 @@
             "upload": "File upload করুন"
         }
     },
+    "settings": {
+        "tab": "Setting",
+        "open": "Website setting খুলুন",
+        "title": "Website setting",
+        "development": "Development setting"
+    },
     "sqlite": {
         "closeEsc": "বন্ধ করুন (Esc)",
         "ai": {

@@ -25,6 +25,13 @@ const props = defineProps({
         type: String,
         default: null,
     },
+    // Rendered inside another panel (the file manager drawer) instead of the
+    // Manage page hero: drop the column layout and the links that only make
+    // sense from the Manage page.
+    embedded: {
+        type: Boolean,
+        default: false,
+    },
 });
 
 const pushToast = inject('pushToast');
@@ -160,10 +167,10 @@ const checkWebsiteStatus = async () => {
 </script>
 
 <template>
-    <div class="mt-6 border-t border-slate-200 pt-5 dark:border-slate-800 lg:col-start-2 lg:row-start-1 lg:row-span-2 lg:mt-0 lg:border-t-0 lg:border-l lg:pl-6 lg:pt-0">
+    <div :class="embedded ? '' : 'mt-6 border-t border-slate-200 pt-5 dark:border-slate-800 lg:col-start-2 lg:row-start-1 lg:row-span-2 lg:mt-0 lg:border-t-0 lg:border-l lg:pl-6 lg:pt-0'">
         <p class="text-[11px] font-semibold uppercase tracking-wider text-slate-400 dark:text-slate-500">{{ t('websites.quick.title') }}</p>
-        <div class="mt-3 grid grid-cols-1 gap-2 lg:grid-cols-2">
-            <Link v-if="!isSystemWebsite" :href="panelRoute('websites.filemanager', { id: website.id })" as="button"
+        <div class="mt-3 grid grid-cols-1 gap-2" :class="embedded ? '' : 'lg:grid-cols-2'">
+            <Link v-if="!isSystemWebsite && !embedded" :href="panelRoute('websites.filemanager', { id: website.id })" as="button"
                 class="flex w-full items-center gap-3 rounded-xl border px-3.5 py-2.5 text-left text-[13px] font-medium transition-all duration-150 border-emerald-200 bg-emerald-50/50 text-emerald-700 hover:border-emerald-300 hover:bg-emerald-50 dark:border-emerald-800 dark:bg-emerald-500/10 dark:text-emerald-400 dark:hover:border-emerald-700">
                 <svg viewBox="0 0 24 24" class="h-4 w-4 shrink-0 fill-current opacity-70">
                     <path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z" />
@@ -271,10 +278,10 @@ const checkWebsiteStatus = async () => {
             </Deferred>
         </div>
         <div class="mt-2">
-            <Link :href="panelRoute('websites.list')" as="button"
+            <Link :href="embedded ? panelRoute('websites.manage', { id: website.id }) : panelRoute('websites.list')" as="button"
                 class="flex w-full items-center gap-3 rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 text-left text-[13px] font-medium text-slate-700 transition hover:border-slate-300 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300 dark:hover:border-slate-600 dark:hover:bg-slate-700">
                 <i class="bi bi-arrow-left text-base opacity-70"></i>
-                {{ t('websites.quick.backToList') }}
+                {{ embedded ? t('websites.quick.backToManage') : t('websites.quick.backToList') }}
             </Link>
         </div>
 

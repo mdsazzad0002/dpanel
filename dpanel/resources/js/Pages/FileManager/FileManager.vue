@@ -20,6 +20,9 @@ const props = defineProps({
     items: { type: Array, default: () => [] },
     selectedFile: { type: Object, default: null },
     canUseTerminal: { type: Boolean, default: false },
+    rootInspection: { type: Object, default: () => ({}) },
+    databaseConnection: { type: Object, default: () => ({ available: false }) },
+    connectedDatabase: { type: String, default: null },
 });
 </script>
 

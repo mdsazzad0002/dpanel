@@ -192,6 +192,12 @@
             "upload": "Upload File"
         }
     },
+    "settings": {
+        "tab": "Settings",
+        "open": "Open website settings",
+        "title": "Website Settings",
+        "development": "Development Settings"
+    },
     "sqlite": {
         "closeEsc": "Close (Esc)",
         "ai": {

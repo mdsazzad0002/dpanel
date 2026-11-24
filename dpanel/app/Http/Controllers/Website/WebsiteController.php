@@ -294,14 +294,6 @@ class WebsiteController extends Controller
             ],
         ];
 
-        $databaseRequests = DatabaseRequest::query()
-            ->visibleTo(request()->user())
-            ->whereRaw('LOWER(domain) = ?', [strtolower((string) ($website['domain'] ?? ''))])
-            ->where('status', 'active')
-            ->latest()
-            ->get();
-        $databaseRequest = $databaseRequests->first();
-
         // sslStatus/autoRenewNotice share one TLS handshake; autoRenewNotice's
         // closure reuses the status the sslStatus closure already resolved
         // instead of inspecting the certificate a second time.
@@ -348,17 +340,7 @@ class WebsiteController extends Controller
             'autoRenewNotice' => Inertia::defer(function () use ($website, &$sslStatus) {
                 return $this->autoRenewWebsiteSslIfNeeded($website, $sslStatus);
             }, 'ssl'),
-            'databaseConnection' => [
-                'available' => $databaseRequest !== null,
-                'database_name' => $databaseRequest?->database_name,
-                'status' => $databaseRequest?->status,
-                'databases' => $databaseRequests->map(fn (DatabaseRequest $database): array => [
-                    'id' => $database->id,
-                    'database_name' => $database->database_name,
-                    'database_user' => $database->database_user,
-                    'engine' => $database->isPostgresql() ? DatabaseRequest::ENGINE_POSTGRESQL : DatabaseRequest::ENGINE_MARIADB,
-                ])->values()->all(),
-            ],
+            'databaseConnection' => $this->websiteDatabaseConnection($website, request()->user()),
         ]);
     }
 
@@ -1437,6 +1419,34 @@ class WebsiteController extends Controller
     }
 
     /**
+     * The website's active databases, shaped for the quick-actions panel on
+     * the Manage page and in the file manager drawer.
+     *
+     * @return array<string, mixed>
+     */
+    private function websiteDatabaseConnection(array $website, ?\App\Models\User $user): array
+    {
+        $databaseRequests = DatabaseRequest::query()
+            ->visibleTo($user)
+            ->whereRaw('LOWER(domain) = ?', [strtolower((string) ($website['domain'] ?? ''))])
+            ->where('status', 'active')
+            ->latest()
+            ->get();
+
+        return [
+            'available' => $databaseRequests->isNotEmpty(),
+            'database_name' => $databaseRequests->first()?->database_name,
+            'status' => $databaseRequests->first()?->status,
+            'databases' => $databaseRequests->map(fn (DatabaseRequest $database): array => [
+                'id' => $database->id,
+                'database_name' => $database->database_name,
+                'database_user' => $database->database_user,
+                'engine' => $database->isPostgresql() ? DatabaseRequest::ENGINE_POSTGRESQL : DatabaseRequest::ENGINE_MARIADB,
+            ])->values()->all(),
+        ];
+    }
+
+    /**
      * File manager for website root.
      */
     public function fileManager(Request $request, string $token, string $id): Response
@@ -1476,6 +1486,12 @@ class WebsiteController extends Controller
         $selectedFile = $this->readSelectedFile($siteOwner, $basePath, $selectedFilePath, $request->boolean('full'));
         $directoryTree = $listing['directory_tree'];
 
+        // The quick-actions drawer runs the same project actions as the Manage
+        // page, so it gets the same inputs: rootInspection and
+        // connectedDatabase share one inspection, deferred so opening the file
+        // manager never waits on it.
+        $inspection = null;
+
         return Inertia::render('FileManager/FileManager', [
             'website' => [
                 'id' => $website['id'],
@@ -1498,6 +1514,15 @@ class WebsiteController extends Controller
             'directoryTree' => $directoryTree,
             'items' => $items,
             'selectedFile' => $selectedFile,
+            'rootInspection' => Inertia::defer(function () use ($website, &$inspection) {
+                return $inspection ??= $this->inspectWebsiteApplication($website);
+            }, 'diagnostics'),
+            'connectedDatabase' => Inertia::defer(function () use ($website, &$inspection) {
+                $inspection ??= $this->inspectWebsiteApplication($website);
+
+                return $this->detectConnectedDatabaseName($website, $inspection);
+            }, 'diagnostics'),
+            'databaseConnection' => $this->websiteDatabaseConnection($website, $request->user()),
         ]);
     }
 

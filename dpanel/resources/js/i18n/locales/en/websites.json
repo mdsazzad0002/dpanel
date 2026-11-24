@@ -120,7 +120,8 @@
         "clearCache": "Clear {app} Cache",
         "checking": "Checking…",
         "checkStatus": "Check Status",
-        "backToList": "Back to List"
+        "backToList": "Back to List",
+        "backToManage": "Back to Manage"
     },
     "services": {
         "exportShare": "Export & Share",

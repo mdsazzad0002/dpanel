@@ -120,7 +120,8 @@
         "clearCache": "{app} cache মুছুন",
         "checking": "দেখা হচ্ছে…",
         "checkStatus": "অবস্থা দেখুন",
-        "backToList": "তালিকায় ফিরুন"
+        "backToList": "তালিকায় ফিরুন",
+        "backToManage": "Manage-এ ফিরুন"
     },
     "services": {
         "exportShare": "Export ও share",

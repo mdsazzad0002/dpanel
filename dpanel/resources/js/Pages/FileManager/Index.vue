@@ -4,7 +4,7 @@ defineOptions({
 });
 
 import { Head } from '@inertiajs/vue3';
-import { ref } from 'vue';
+import { provide, ref } from 'vue';
 import { useFileManager } from './composables/useFileManager';
 import TopBar from './components/TopBar.vue';
 import SidebarTree from './components/SidebarTree.vue';
@@ -25,6 +25,7 @@ import UnzipModal from './components/UnzipModal.vue';
 import TrashModal from './components/TrashModal.vue';
 import CreateFolderModal from './components/CreateFolderModal.vue';
 import CreateFileModal from './components/CreateFileModal.vue';
+import SiteSettingsOffcanvas from './components/SiteSettingsOffcanvas.vue';
 import WebsiteTerminal from '@/Components/WebsiteTerminal.vue';
 import { useI18n } from 'vue-i18n';
 
@@ -45,9 +46,19 @@ const props = defineProps({
     items: { type: Array, default: () => [] },
     selectedFile: { type: Object, default: null },
     canUseTerminal: { type: Boolean, default: false },
+    rootInspection: { type: Object, default: () => ({}) },
+    databaseConnection: { type: Object, default: () => ({ available: false }) },
+    connectedDatabase: { type: String, default: null },
 });
 
 const fm = useFileManager(props);
+
+// The quick-action and development-settings panels are shared with the Manage
+// page, where they report through an injected toast; here that is the file
+// manager's own toast stack.
+provide('pushToast', fm.pushToast);
+
+const settingsOpen = ref(false);
 
 // Mounted on first open and kept alive afterwards so closing the drawer
 // doesn't drop the shell session.
@@ -120,17 +131,38 @@ const openTerminal = () => {
         <SqliteOffcanvas :fm="fm" />
         <ToastStack :fm="fm" />
 
-        <button
-            v-if="props.canUseTerminal"
-            v-show="!terminalOpen"
-            type="button"
-            class="fixed right-0 top-1/2 z-30 flex -translate-y-1/2 flex-col items-center gap-2 rounded-l-lg bg-slate-900 px-1.5 py-3 text-xs font-semibold tracking-wide text-slate-100 shadow-lg transition hover:bg-slate-800 hover:pr-2.5 dark:bg-slate-800 dark:hover:bg-slate-700"
-            :title="t('fileManager.index.openTerminal')"
-            @click="openTerminal"
-        >
-            <i class="bi bi-chevron-left text-[10px]"></i>
-            <span class="rotate-180 [writing-mode:vertical-rl]">{{ t('fileManager.index.terminal') }}</span>
-        </button>
+        <div class="fixed right-0 top-1/2 z-30 flex -translate-y-1/2 flex-col items-end gap-2">
+            <button
+                v-if="props.canUseTerminal"
+                v-show="!terminalOpen"
+                type="button"
+                class="flex flex-col items-center gap-2 rounded-l-lg bg-slate-900 px-1.5 py-3 text-xs font-semibold tracking-wide text-slate-100 shadow-lg transition hover:bg-slate-800 hover:pr-2.5 dark:bg-slate-800 dark:hover:bg-slate-700"
+                :title="t('fileManager.index.openTerminal')"
+                @click="openTerminal"
+            >
+                <i class="bi bi-chevron-left text-[10px]"></i>
+                <span class="rotate-180 [writing-mode:vertical-rl]">{{ t('fileManager.index.terminal') }}</span>
+            </button>
+            <button
+                v-show="!settingsOpen"
+                type="button"
+                class="flex flex-col items-center gap-2 rounded-l-lg bg-blue-600 px-1.5 py-3 text-xs font-semibold tracking-wide text-white shadow-lg transition hover:bg-blue-500 hover:pr-2.5"
+                :title="t('fileManager.settings.open')"
+                @click="settingsOpen = true"
+            >
+                <i class="bi bi-chevron-left text-[10px]"></i>
+                <span class="rotate-180 [writing-mode:vertical-rl]">{{ t('fileManager.settings.tab') }}</span>
+            </button>
+        </div>
+
+        <SiteSettingsOffcanvas
+            :show="settingsOpen"
+            :website="props.website"
+            :root-inspection="props.rootInspection"
+            :database-connection="props.databaseConnection"
+            :connected-database="props.connectedDatabase"
+            @close="settingsOpen = false"
+        />
 
         <template v-if="props.canUseTerminal && terminalMounted">
             <Transition enter-from-class="opacity-0" leave-to-class="opacity-0" enter-active-class="transition-opacity duration-200" leave-active-class="transition-opacity duration-200">
