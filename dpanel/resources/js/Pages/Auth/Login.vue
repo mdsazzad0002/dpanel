@@ -5,7 +5,7 @@ import InputError from '@/Components/InputError.vue';
 import InputLabel from '@/Components/InputLabel.vue';
 import PrimaryButton from '@/Components/PrimaryButton.vue';
 import TextInput from '@/Components/TextInput.vue';
-import { Head, Link, useForm } from '@inertiajs/vue3';
+import { Head, Link, router, useForm } from '@inertiajs/vue3';
 import axios from 'axios';
 import { ref } from 'vue';
 import { readDeviceLocation } from '@/composables/deviceLocation';
@@ -45,6 +45,9 @@ const submit = async () => {
 
     form.clearErrors();
     form.processing = true;
+    // Set once the panel visit starts, so the button stays busy until the
+    // first page is on screen instead of flicking back to "Sign in".
+    let navigating = false;
 
     let location = {};
     if (askLocation) {
@@ -67,13 +70,30 @@ const submit = async () => {
         const response = await axios.post('/login', { ...form.data(), ...location }, {
             headers: { Accept: 'application/json', 'X-Requested-With': 'XMLHttpRequest' },
         });
-        await new Promise((resolve) => setTimeout(resolve, 700));
         const target = response?.data?.redirect;
         if (typeof target !== 'string' || target === '') {
             form.setError('email', t('auth.login.noRedirect'));
             return;
         }
-        window.location.assign(target);
+
+        // An Inertia visit, not window.location: the panel is already running
+        // in this tab, so signing in keeps the loaded application and only
+        // fetches the first page. A full load would download the bundle again
+        // and throw away everything this tab has cached.
+        //
+        // The rotated CSRF token and the new /dpt<token> prefix come with that
+        // page's props, which app.js applies on every navigate.
+        navigating = true;
+        router.visit(target, {
+            replace: true,
+            onFinish: () => {
+                form.processing = false;
+                // Nothing from the login screen is worth keeping behind the panel.
+                form.reset('password');
+            },
+        });
+
+        return;
     } catch (error) {
         const data = error?.response?.data || {};
         Object.entries(data.errors || {}).forEach(([key, messages]) => {
@@ -81,8 +101,10 @@ const submit = async () => {
             form.setError(field, Array.isArray(messages) ? messages[0] : messages);
         });
     } finally {
-        form.processing = false;
-        form.reset('password');
+        if (! navigating) {
+            form.processing = false;
+            form.reset('password');
+        }
     }
 };
 </script>

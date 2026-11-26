@@ -17,9 +17,11 @@ import TopbarProfileMenu from '@/Layouts/components/TopbarProfileMenu.vue';
 import LanguageSwitch from '@/Components/i18n/LanguageSwitch.vue';
 import { Link, router, usePage, useRemember } from '@inertiajs/vue3';
 import { buildPanelMenu, filterPanelMenu, resolveItemRouteName, sectionLabel } from '@/navigation/panelMenu';
+import { usePanelStore } from '@/stores/panel';
 import { useI18n } from 'vue-i18n';
 
 const { t } = useI18n();
+const panel = usePanelStore();
 
 const sidebarOpen = useRemember(false, 'layout.sidebar.open');
 const sidebarCollapsed = useRemember(false, 'layout.sidebar.collapsed');
@@ -281,10 +283,11 @@ const applyTheme = (mode) => {
     document.documentElement.classList.toggle('dark', mode === 'dark');
 };
 
+// Through the panel store (stores/panel.js): it paints <html>, mirrors the
+// choice to localStorage for the next first paint, and keeps it in IndexedDB.
 const toggleTheme = () => {
-    theme.value = theme.value === 'dark' ? 'light' : 'dark';
-    localStorage.setItem('dpanel-theme', theme.value);
-    applyTheme(theme.value);
+    panel.toggleTheme();
+    theme.value = panel.theme;
 };
 
 const toggleSidebar = () => {
@@ -574,6 +577,9 @@ onMounted(() => {
     const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
     theme.value = savedTheme ?? (prefersDark ? 'dark' : 'light');
     applyTheme(theme.value);
+    // app.js already painted this from localStorage; tell the store what the
+    // page settled on so both agree before anything toggles it.
+    panel.theme = theme.value;
 
     const activeGroup = menuItems.value.find(
         (item) =>

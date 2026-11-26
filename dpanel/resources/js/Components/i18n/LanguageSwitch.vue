@@ -2,15 +2,19 @@
 import { computed } from 'vue';
 import { useI18n } from 'vue-i18n';
 import SearchableSelect from '@/Components/SearchableSelect.vue';
-import { LOCALES, setLocale } from '@/i18n';
+import { LOCALES } from '@/i18n';
+import { usePanelStore } from '@/stores/panel';
 
 const { locale, t } = useI18n();
+const panel = usePanelStore();
 
 const options = LOCALES.map((item) => ({ value: item.code, label: item.label, keywords: item.keywords }));
 
 const current = computed({
     get: () => locale.value,
-    set: (code) => setLocale(code),
+    // Through the store: it loads that language's bundle (one chunk, or the
+    // IndexedDB copy) and remembers the choice for the next visit.
+    set: (code) => panel.useLocale(code),
 });
 </script>
 

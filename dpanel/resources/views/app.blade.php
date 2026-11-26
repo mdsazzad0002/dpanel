@@ -29,6 +29,16 @@
         <!-- Scripts -->
         @routes
         @vite(['resources/js/app.js', "resources/js/Pages/{$page['component']}.vue"])
+        {{-- The panel waits for English (its fallback language) before it
+             mounts, and that bundle is a chunk of its own so the other four
+             languages stay out of the entry file: preloading it here starts
+             the download beside app.js instead of after it. rescue() keeps
+             the dev server, and a build made before this chunk existed,
+             to no preload rather than an error. --}}
+        @php($localeChunk = file_exists(public_path('hot')) ? null : rescue(fn () => \Illuminate\Support\Facades\Vite::asset('resources/js/i18n/locales/en/index.js'), null, false))
+        @if ($localeChunk)
+            <link rel="modulepreload" href="{{ $localeChunk }}" />
+        @endif
         @inertiaHead
     </head>
     <body class="font-sans antialiased">
