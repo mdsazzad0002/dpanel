@@ -2,6 +2,7 @@
 
 namespace App\Services\Backup;
 
+use App\Services\Tasks\TaskProgressMirror;
 use Illuminate\Support\Facades\Cache;
 
 /**
@@ -22,6 +23,10 @@ class QuickExportJobStatus
     public static function set(string $exportId, array $data): void
     {
         Cache::put(self::key($exportId), array_merge(['updated_at' => now()->toIso8601String()], $data), now()->addHours(self::TTL_HOURS));
+
+        // Also moves the card in the panel's queue window, when this
+        // operation was queued as a background task.
+        TaskProgressMirror::mirror($exportId, $data);
     }
 
     public static function get(string $exportId): ?array

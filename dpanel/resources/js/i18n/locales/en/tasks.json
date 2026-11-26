@@ -11,7 +11,8 @@
             "running": "Working…",
             "done": "Finished",
             "failed": "Failed"
-        }
+        },
+        "queuedBy": "Queued by {name}"
     },
     "types": {
         "website_delete": {
@@ -19,6 +20,42 @@
             "running": "Deleting now…",
             "done": "Website deleted",
             "failed": "Deletion failed"
+        },
+        "website_clone": {
+            "queued": "Waiting in the clone queue…",
+            "running": "Cloning now…",
+            "done": "Clone finished",
+            "failed": "Clone failed"
+        },
+        "website_share": {
+            "queued": "Waiting to build the share package…",
+            "running": "Packaging now…",
+            "done": "Share package ready",
+            "failed": "Share failed"
+        },
+        "website_import": {
+            "queued": "Waiting in the import queue…",
+            "running": "Importing now…",
+            "done": "Import finished",
+            "failed": "Import failed"
+        },
+        "website_push": {
+            "queued": "Waiting to push to live…",
+            "running": "Pushing to live…",
+            "done": "Pushed to live",
+            "failed": "Push failed"
+        },
+        "website_quick_export": {
+            "queued": "Waiting in the export queue…",
+            "running": "Exporting now…",
+            "done": "Export ready",
+            "failed": "Export failed"
+        },
+        "backup_restore": {
+            "queued": "Waiting in the restore queue…",
+            "running": "Restoring now…",
+            "done": "Restore finished",
+            "failed": "Restore failed"
         }
     }
 }

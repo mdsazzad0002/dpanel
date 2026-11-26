@@ -195,7 +195,26 @@ class WebsiteDeleteQueueTest extends TestCase
         $this->assertSame(3, BackgroundTaskQueue::concurrency(DeleteWebsiteJob::TASK_TYPE));
     }
 
-    public function test_another_user_does_not_see_the_card(): void
+    public function test_a_user_who_is_not_responsible_for_the_work_does_not_see_the_card(): void
+    {
+        Bus::fake();
+        $admin = $this->admin();
+        $site = $this->site('shop.test', 'shop_test');
+
+        $this->actingAsPanel($admin)->deleteJson("/dpt{$this->token}/websites/{$site->id}", ['mode' => 'trash']);
+
+        $this->actingAsPanel(User::factory()->create(['role' => 'general']))
+            ->getJson("/dpt{$this->token}/tasks/queue")
+            ->assertOk()
+            ->assertJsonCount(0, 'tasks');
+    }
+
+    /**
+     * The queue window is the panel's view of what is still being waited for,
+     * so another admin sees this deletion and whose it is (TaskQueueWindowTest
+     * covers the scoping itself).
+     */
+    public function test_an_admin_sees_another_users_queued_deletion(): void
     {
         Bus::fake();
         $admin = $this->admin();
@@ -206,6 +225,9 @@ class WebsiteDeleteQueueTest extends TestCase
         $this->actingAsPanel($this->admin())
             ->getJson("/dpt{$this->token}/tasks/queue")
             ->assertOk()
-            ->assertJsonCount(0, 'tasks');
+            ->assertJsonCount(1, 'tasks')
+            ->assertJsonPath('tasks.0.title', 'shop.test')
+            ->assertJsonPath('tasks.0.user_name', $admin->name)
+            ->assertJsonPath('tasks.0.own', false);
     }
 }

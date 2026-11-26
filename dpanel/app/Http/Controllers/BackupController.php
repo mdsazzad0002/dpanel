@@ -11,6 +11,7 @@ use App\Models\Website;
 use App\Services\Backup\BackupRestoreStatus;
 use App\Services\Backup\QuickExportJobStatus;
 use App\Services\Backup\WebsiteArchiver;
+use App\Services\Tasks\BackgroundTaskQueue;
 use App\Support\BackupSettings;
 use Carbon\Carbon;
 use Illuminate\Http\JsonResponse;
@@ -314,6 +315,13 @@ class BackupController extends Controller
         }
 
         $exportId = (string) Str::uuid();
+        // The task takes the export's own id, so QuickExportJobStatus moves
+        // this card as the job works and the queue window shows the export.
+        BackgroundTaskQueue::start('website_quick_export', (int) $request->user()->id, [
+            'title' => (string) $website->domain,
+            'subtitle' => $content === 'database' ? 'Exporting the database' : 'Exporting '.$content,
+            'data' => ['website_id' => (string) $website->id, 'content' => $content],
+        ], $exportId);
         QuickExportJobStatus::set($exportId, ['stage' => 'queued']);
 
         QuickExportJob::dispatch($exportId, (string) $id, (int) $request->user()->id, $content, $validated['database_id'] ?? null);
@@ -495,6 +503,11 @@ class BackupController extends Controller
         // extract/import, which inline turned every hiccup into a bare 500.
         // Backups/Index.vue polls restoreStatus() for the step and percent.
         $restoreId = (string) Str::uuid();
+        BackgroundTaskQueue::start('backup_restore', (int) ($request->user()?->id ?? 0), [
+            'title' => (string) $file,
+            'subtitle' => 'Restoring a backup',
+            'data' => ['run' => $run, 'file' => $file],
+        ], $restoreId);
         BackupRestoreStatus::set($restoreId, [
             'stage' => 'queued',
             'step' => 'queued',

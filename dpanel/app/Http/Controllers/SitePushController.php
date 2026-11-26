@@ -7,6 +7,7 @@ use App\Models\Website;
 use App\Models\WebsitePushToken;
 use App\Services\Backup\CloneShareJobStatus;
 use App\Services\SitePush\SitePushClient;
+use App\Services\Tasks\BackgroundTaskQueue;
 use App\Services\Website\WebsiteAccessService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -133,6 +134,13 @@ class SitePushController extends Controller
         $mode = (string) ($options['mode'] ?? 'site');
 
         $pushId = (string) Str::uuid();
+        // Started before the first status write, so the job's progress moves
+        // this card as well (the task carries the push's own id).
+        BackgroundTaskQueue::start('website_push', (int) $request->user()->id, [
+            'title' => (string) $website->domain,
+            'subtitle' => 'Pushing to '.$confirmed,
+            'data' => ['website_id' => (string) $website->id, 'live_domain' => $confirmed, 'mode' => $mode],
+        ], $pushId);
         CloneShareJobStatus::set($pushId, ['stage' => 'queued', 'percent' => 0, 'message' => 'Waiting for the backup worker', 'live_url' => $hostUrl]);
         PushWebsiteToLiveJob::dispatch($pushId, (string) $website->id, (int) $request->user()->id, $hostUrl, Crypt::encryptString($pushToken), $confirmed, $mode, $mode === 'files' && (bool) ($options['delete_missing'] ?? false));
 

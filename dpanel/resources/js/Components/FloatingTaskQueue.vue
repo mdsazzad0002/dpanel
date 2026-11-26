@@ -37,12 +37,30 @@ const stageLabel = (task) => {
     return te(key) ? t(key) : t(`tasks.queue.stage.${task.stage}`);
 };
 
+// A percent from the job's own progress store, when it reports one.
+const percentOf = (task) => {
+    const value = Number(task?.percent);
+
+    return Number.isFinite(value) && value > 0 ? Math.min(100, Math.round(value)) : null;
+};
+
 const items = computed(() => props.tasks.map((task) => {
     const stage = STAGE_STYLES[String(task?.stage || '')] ? String(task.stage) : 'queued';
+    // own is false only for a card the server says belongs to someone else
+    // (an admin or reseller watching a user's work).
+    const own = task?.own !== false;
 
     return {
         ...task,
         stage,
+        own,
+        userName: own ? '' : String(task?.user_name || ''),
+        percent: percentOf(task),
+        // While work runs, the job's own progress word ("archiving",
+        // "restoring") says more than the static subtitle it was queued with.
+        detail: stage === 'running' && task?.progress_stage
+            ? String(task.progress_stage).replace(/_/g, ' ')
+            : String(task?.subtitle || ''),
         style: STAGE_STYLES[stage],
         finished: stage === 'done' || stage === 'failed',
         label: stageLabel({ ...task, stage }),
@@ -51,6 +69,8 @@ const items = computed(() => props.tasks.map((task) => {
 
 const activeCount = computed(() => items.value.filter((item) => !item.finished).length);
 const finishedItems = computed(() => items.value.filter((item) => item.finished));
+// Only a card of your own can be cleared; see BackgroundTaskController::destroy.
+const dismissableItems = computed(() => finishedItems.value.filter((item) => item.own));
 </script>
 
 <template>
@@ -65,10 +85,10 @@ const finishedItems = computed(() => items.value.filter((item) => item.finished)
                 <span v-if="activeCount">· {{ t('tasks.queue.active', { n: activeCount }) }}</span>
             </p>
             <button
-                v-if="finishedItems.length"
+                v-if="dismissableItems.length"
                 type="button"
                 class="rounded-md px-1.5 py-0.5 text-[11px] font-medium text-slate-500 transition hover:bg-slate-100 hover:text-slate-700 dark:text-slate-400 dark:hover:bg-slate-800"
-                @click="finishedItems.forEach((item) => emit('dismiss', item.id))"
+                @click="dismissableItems.forEach((item) => emit('dismiss', item.id))"
             >
                 {{ t('tasks.queue.clearFinished') }}
             </button>
@@ -87,10 +107,19 @@ const finishedItems = computed(() => items.value.filter((item) => item.finished)
                 <div class="flex items-start gap-2">
                     <i class="bi mt-0.5 text-base" :class="[item.style.icon, item.style.tone]"></i>
                     <div class="min-w-0 flex-1">
-                        <p class="truncate text-sm font-semibold text-slate-900 dark:text-slate-100">{{ item.title || item.id }}</p>
+                        <div class="flex items-center gap-1.5">
+                            <p class="min-w-0 flex-1 truncate text-sm font-semibold text-slate-900 dark:text-slate-100">{{ item.title || item.id }}</p>
+                            <span
+                                v-if="item.userName"
+                                class="shrink-0 rounded-full bg-slate-100 px-1.5 py-0.5 text-[10px] font-medium text-slate-600 dark:bg-slate-800 dark:text-slate-300"
+                                :title="t('tasks.queue.queuedBy', { name: item.userName })"
+                            >
+                                <i class="bi bi-person"></i> {{ item.userName }}
+                            </span>
+                        </div>
                         <p class="mt-0.5 text-xs" :class="item.style.tone">
                             {{ item.label }}
-                            <span v-if="item.subtitle" class="text-slate-500 dark:text-slate-400">· {{ item.subtitle }}</span>
+                            <span v-if="item.detail" class="text-slate-500 dark:text-slate-400">· {{ item.detail }}</span>
                         </p>
                         <p
                             v-if="item.message"
@@ -105,7 +134,7 @@ const finishedItems = computed(() => items.value.filter((item) => item.finished)
                         </div>
                     </div>
                     <button
-                        v-if="item.finished"
+                        v-if="item.finished && item.own"
                         type="button"
                         class="shrink-0 rounded-md p-1 text-slate-400 transition hover:bg-slate-100 hover:text-slate-600 dark:hover:bg-slate-800"
                         :title="t('tasks.queue.dismiss')"
@@ -116,7 +145,12 @@ const finishedItems = computed(() => items.value.filter((item) => item.finished)
                 </div>
 
                 <div v-if="!item.finished" class="mt-2 h-1 overflow-hidden rounded-full bg-slate-200 dark:bg-slate-700">
-                    <div class="h-full rounded-full transition-all" :class="item.style.bar"></div>
+                    <div
+                        v-if="item.percent"
+                        class="h-full rounded-full bg-indigo-500 transition-all"
+                        :style="{ width: item.percent + '%' }"
+                    ></div>
+                    <div v-else class="h-full rounded-full transition-all" :class="item.style.bar"></div>
                 </div>
             </article>
         </div>

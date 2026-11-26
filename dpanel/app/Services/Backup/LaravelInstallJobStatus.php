@@ -2,6 +2,7 @@
 
 namespace App\Services\Backup;
 
+use App\Services\Tasks\TaskProgressMirror;
 use Illuminate\Support\Facades\Cache;
 
 /**
@@ -20,6 +21,10 @@ class LaravelInstallJobStatus
     public static function set(string $jobId, array $data): void
     {
         Cache::put(self::key($jobId), array_merge(['updated_at' => now()->toIso8601String()], $data), now()->addHours(self::TTL_HOURS));
+
+        // Also moves the card in the panel's queue window, when this
+        // operation was queued as a background task.
+        TaskProgressMirror::mirror($jobId, $data);
     }
 
     public static function get(string $jobId): ?array

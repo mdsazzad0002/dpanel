@@ -14,26 +14,58 @@ export const isTaskActive = (task) => ACTIVE_STAGES.includes(String(task?.stage 
  * called once per task as it reaches 'done' or 'failed' (also for a task this
  * page did not start, so a second tab or a reload still settles up).
  *
- *   const queue = useTaskQueue({ type: 'website_delete', onFinished: (task) => … });
+ *   const queue = useTaskQueue({ onFinished: (task) => … });
  *   queue.add({ id: data.task_id, title: domain, stage: 'queued' });
  *
- * @param {{type?: string, onFinished?: (task: object) => void, intervalMs?: number}} options
+ * Pass no type to watch every kind of work (the main queue window does), or a
+ * type to follow one. The server decides whose tasks come back: your own in
+ * any stage, plus the still-unfinished work of the users you are responsible
+ * for, each carrying `user_name` and `own`.
+ *
+ * Polling runs every intervalMs while something is unfinished. With no active
+ * task it drops to idleIntervalMs — so a window left open still picks up work
+ * another user queues — or stops when that is 0.
+ *
+ * @param {{type?: string, onFinished?: (task: object) => void, intervalMs?: number, idleIntervalMs?: number, autoDismissMs?: number}} options
  */
-export function useTaskQueue({ type = null, onFinished = null, intervalMs = 3000 } = {}) {
+export function useTaskQueue({
+    type = null,
+    onFinished = null,
+    intervalMs = 3000,
+    idleIntervalMs = 0,
+    autoDismissMs = 0,
+} = {}) {
     const { panelRoute, csrfHeaders } = usePanelApi();
     const tasks = ref([]);
     const activeTasks = computed(() => tasks.value.filter(isTaskActive));
     const settled = new Set();
     let timer = null;
 
+    let delay = 0;
+
     const stop = () => {
         if (timer) window.clearInterval(timer);
         timer = null;
+        delay = 0;
     };
 
-    const start = () => {
-        if (!timer) timer = window.setInterval(poll, intervalMs);
+    /** Run the poll on this interval; 0 stops it. */
+    const every = (ms) => {
+        if (ms <= 0) {
+            stop();
+
+            return;
+        }
+        if (timer && delay === ms) return;
+        stop();
+        delay = ms;
+        timer = window.setInterval(poll, ms);
     };
+
+    const start = () => every(intervalMs);
+
+    /** Fast while work is unfinished, slow (or stopped) when nothing is. */
+    const retune = () => every(activeTasks.value.length ? intervalMs : idleIntervalMs);
 
     const poll = async () => {
         try {
@@ -46,15 +78,22 @@ export function useTaskQueue({ type = null, onFinished = null, intervalMs = 3000
             const data = await response.json().catch(() => ({}));
             const incoming = Array.isArray(data.tasks) ? data.tasks : [];
 
+            tasks.value = incoming;
+
             incoming.forEach((task) => {
                 const id = String(task.id);
                 if (isTaskActive(task) || settled.has(id)) return;
                 settled.add(id);
                 if (onFinished) onFinished(task);
+                // A result of your own stays a moment so it is seen, then
+                // clears itself; a failure stays until it is dismissed, so the
+                // message can be read.
+                if (autoDismissMs > 0 && task?.own !== false && String(task.stage) === 'done') {
+                    window.setTimeout(() => dismiss(id), autoDismissMs);
+                }
             });
 
-            tasks.value = incoming;
-            if (activeTasks.value.length === 0) stop();
+            retune();
         } catch (error) {
             // A failed poll is simply retried on the next tick.
         }
@@ -84,7 +123,7 @@ export function useTaskQueue({ type = null, onFinished = null, intervalMs = 3000
     };
 
     // Cards are picked back up after a reload, or when another tab queued them.
-    onMounted(() => poll().then(() => { if (activeTasks.value.length) start(); }));
+    onMounted(() => poll().then(retune));
     onUnmounted(stop);
 
     return { tasks, activeTasks, add, dismiss, poll, start, stop };

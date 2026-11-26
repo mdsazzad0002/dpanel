@@ -2,6 +2,7 @@
 
 namespace App\Services\Backup;
 
+use App\Services\Tasks\TaskProgressMirror;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\File;
 
@@ -35,6 +36,10 @@ class BackupRestoreStatus
             array_merge(is_array($current) ? $current : [], ['updated_at' => now()->toIso8601String()], $data),
             now()->addHours(self::TTL_HOURS)
         );
+
+        // Also moves the card in the panel's queue window, when this
+        // operation was queued as a background task.
+        TaskProgressMirror::mirror($restoreId, $data);
     }
 
     public static function get(string $restoreId): ?array

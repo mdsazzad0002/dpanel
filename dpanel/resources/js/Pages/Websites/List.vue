@@ -8,7 +8,7 @@ import SiteFavicon from '@/Pages/Websites/components/SiteFavicon.vue';
 import BulkDownloadPanel from '@/Pages/Websites/components/bulk-download/BulkDownloadPanel.vue';
 import DeleteWebsiteModal from '@/Pages/Websites/components/DeleteWebsiteModal.vue';
 import FloatingTaskQueue from '@/Components/FloatingTaskQueue.vue';
-import { useTaskQueue } from '@/composables/useTaskQueue';
+import { isTaskActive, useTaskQueue } from '@/composables/useTaskQueue';
 
 const { t } = useI18n();
 
@@ -203,32 +203,44 @@ const confirmDelete = async (mode, dropDatabases = false) => {
     deleteTarget.value = null;
 };
 
-// Deleting only queues the work (DeleteWebsiteJob) and the request comes back
-// at once, so a slow archive never blocks the page. The floating task queue is
-// the progress view; a few sites are deleted side by side (3 by default).
+// The main queue window: every piece of queued work this user may see, not
+// deletions alone — clones, shares, imports, pushes to live, quick exports,
+// backup restores. Deleting only queues the work (DeleteWebsiteJob) and the
+// request comes back at once, so a slow archive never blocks the page; a few
+// sites are deleted side by side (3 by default).
+//
+// With nothing left to wait for the poll drops to 15s rather than stopping, so
+// work another user queues still turns up in the window.
 const taskQueue = useTaskQueue({
-    type: 'website_delete',
+    idleIntervalMs: 15000,
+    autoDismissMs: 8000,
     onFinished: (task) => {
+        // Only a deletion changes this page; the other types just show a card.
+        if (String(task.type) !== 'website_delete') return;
+
         const websiteId = String(task?.data?.website_id || '');
         deleteLoadingIds.delete(websiteId);
 
         if (String(task.stage) === 'done') {
             websiteRequests.value = websiteRequests.value.filter((item) => String(item.id) !== websiteId);
             pushToast(t('websites.deleteQueue.doneToast', { domain: task.title }));
-            // The card stays a moment so the result is seen, then clears itself.
-            window.setTimeout(() => taskQueue.dismiss(task.id), 8000);
         } else {
             pushToast(task.message || t('websites.list.deleteFailed'), 'error');
         }
     },
 });
 
-const deleteTasks = taskQueue.tasks;
+// What the window lists: anything still being waited for (whoever queued it),
+// plus this user's own just-finished results, which clear themselves.
+const queueTasks = computed(() => taskQueue.tasks.value.filter(
+    (task) => isTaskActive(task) || task?.own !== false,
+));
 
 // A site whose deletion is queued stays in the list, greyed out, until its job
 // reports back — including after a reload, where the poll fills this again.
 watch(taskQueue.tasks, (tasks) => {
     tasks.forEach((task) => {
+        if (String(task.type) !== 'website_delete') return;
         if (['queued', 'running'].includes(String(task.stage))) deleteLoadingIds.add(String(task?.data?.website_id || ''));
     });
 });
@@ -524,7 +536,7 @@ const saveOwnership = async () => {
         </div>
 
         <div class="fixed bottom-5 right-5 z-[100] flex w-[min(22rem,calc(100vw-2rem))] flex-col gap-2">
-            <FloatingTaskQueue :tasks="deleteTasks" @dismiss="taskQueue.dismiss" />
+            <FloatingTaskQueue :tasks="queueTasks" @dismiss="taskQueue.dismiss" />
             <div
                 v-for="toast in toasts"
                 :key="toast.id"

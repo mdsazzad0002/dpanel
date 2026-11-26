@@ -8,6 +8,7 @@ use App\Jobs\ShareWebsitePackageJob;
 use App\Models\DatabaseRequest;
 use App\Models\Website;
 use App\Services\Backup\CloneShareJobStatus;
+use App\Services\Tasks\BackgroundTaskQueue;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
@@ -50,6 +51,14 @@ class CloneShareController extends Controller
         }
 
         $cloneId = (string) Str::uuid();
+        // The task carries the clone's own id, so the job's progress writes
+        // (CloneShareJobStatus) move this card too, and the panel's queue
+        // window shows the clone beside everything else that is waiting.
+        BackgroundTaskQueue::start('website_clone', (int) $request->user()->id, [
+            'title' => (string) $source->domain,
+            'subtitle' => 'Cloning into '.$target->domain,
+            'data' => ['website_id' => (string) $source->id, 'target_website_id' => (string) $target->id],
+        ], $cloneId);
         CloneShareJobStatus::set($cloneId, ['stage' => 'queued']);
 
         CloneWebsiteJob::dispatch($cloneId, (string) $id, (string) $data['target_website_id'], (int) $request->user()->id, (string) ($data['new_database_name'] ?? ''), $databaseTarget);
@@ -71,6 +80,11 @@ class CloneShareController extends Controller
         }
 
         $shareId = (string) Str::uuid();
+        BackgroundTaskQueue::start('website_share', (int) $request->user()->id, [
+            'title' => (string) $website->domain,
+            'subtitle' => 'Building a share package',
+            'data' => ['website_id' => (string) $website->id],
+        ], $shareId);
         CloneShareJobStatus::set($shareId, ['stage' => 'queued']);
 
         ShareWebsitePackageJob::dispatch($shareId, (string) $id, (int) $request->user()->id);
@@ -95,6 +109,11 @@ class CloneShareController extends Controller
         }
 
         $cloneId = (string) Str::uuid();
+        BackgroundTaskQueue::start('website_import', (int) $request->user()->id, [
+            'title' => (string) $target->domain,
+            'subtitle' => 'Importing a shared package',
+            'data' => ['website_id' => (string) $target->id],
+        ], $cloneId);
         CloneShareJobStatus::set($cloneId, ['stage' => 'queued']);
 
         ImportSharedWebsiteJob::dispatch($cloneId, (string) $data['source_url'], (string) $id, (int) $request->user()->id, $data['database_target'] ?? null, (string) ($data['new_database_name'] ?? ''));
