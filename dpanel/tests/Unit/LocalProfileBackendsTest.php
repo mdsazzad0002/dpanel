@@ -80,8 +80,22 @@ class LocalProfileBackendsTest extends TestCase
         $this->env('CACHE_STORE', 'redis');
 
         $this->assertSame('redis', $this->configFile('queue')['default']);
-        $this->assertSame('redis', $this->configFile('cache')['default']);
         $this->assertSame(90, $this->configFile('queue')['connections']['database']['retry_after']);
+
+        // Redis stays the cache, behind the failover store: a refused
+        // connection falls back to the database instead of failing the request.
+        $cache = $this->configFile('cache');
+        $this->assertSame('failover', $cache['default']);
+        $this->assertSame(['redis', 'database'], $cache['stores']['failover']['stores']);
+    }
+
+    public function test_the_cache_fallback_can_be_switched_off(): void
+    {
+        $this->env('DPANEL_PROFILE', 'server');
+        $this->env('CACHE_STORE', 'redis');
+        $this->env('CACHE_FALLBACK', 'false');
+
+        $this->assertSame('redis', $this->configFile('cache')['default']);
     }
 
     public function test_a_local_database_queue_outlives_a_long_job(): void

@@ -588,7 +588,7 @@ Route::prefix('dpt{token}')
                 ->middleware('role_or_permission:admin|reseller|manage_mail_dns')
                 ->name('emails.guide.bimi.destroy');
             Route::post('/emails/guide/dkim', [EmailController::class, 'generateDkim'])
-                ->middleware(['role_or_permission:admin|reseller|manage_mail_dns', 'throttle:3,1'])
+                ->middleware(['role_or_permission:admin|reseller|manage_mail_dns', 'throttle:10,1'])
                 ->name('emails.guide.dkim');
             Route::post('/emails/guide/apply-zone', [EmailController::class, 'applyDnsZone'])
                 ->middleware(['role_or_permission:admin|reseller|manage_mail_dns', 'throttle:10,1'])

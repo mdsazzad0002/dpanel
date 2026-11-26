@@ -28,12 +28,19 @@ return Application::configure(basePath: dirname(__DIR__))
                 | Request::HEADER_X_FORWARDED_PROTO,
         );
 
+        // The backstop limit for routes with no `throttle:` of their own; it
+        // counts per route and per user under its own key prefix.
         $middleware->web(append: [
+            \App\Http\Middleware\BaselineRateLimit::class,
             \App\Http\Middleware\EndSuspendedSessions::class,
             \App\Http\Middleware\ApplyPanelRouteDefaults::class,
             \App\Http\Middleware\HandleInertiaRequests::class,
             \App\Http\Middleware\AddPanelNoCacheHeaders::class,
             \Illuminate\Http\Middleware\AddLinkHeadersForPreloadedAssets::class,
+        ]);
+
+        $middleware->api(append: [
+            \App\Http\Middleware\BaselineRateLimit::class,
         ]);
 
         $middleware->validateCsrfTokens(except: [

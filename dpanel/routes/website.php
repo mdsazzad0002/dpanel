@@ -117,19 +117,19 @@ Route::get('/websites/{id}/quick-export', [WebsiteOperationsController::class, '
     ->middleware('role_or_permission:admin|reseller|manage_websites')
     ->name('websites.quick-export.page');
 Route::post('/websites/{id}/quick-export', [BackupController::class, 'quickExport'])
-    ->middleware(['role_or_permission:admin|reseller|manage_websites', 'throttle:3,1'])
+    ->middleware(['role_or_permission:admin|reseller|manage_websites', 'throttle:10,1'])
     ->name('websites.quick-export');
 Route::get('/websites/{id}/quick-export/status/{exportId}', [BackupController::class, 'quickExportStatus'])
     ->middleware('role_or_permission:admin|reseller|manage_websites')
     ->name('websites.quick-export.status');
 Route::post('/websites/{id}/clone-share/clone', [CloneShareController::class, 'clone'])
-    ->middleware(['role_or_permission:admin|reseller|manage_websites', 'throttle:3,1'])
+    ->middleware(['role_or_permission:admin|reseller|manage_websites', 'throttle:10,1'])
     ->name('websites.clone-share.clone');
 Route::post('/websites/{id}/clone-share/share', [CloneShareController::class, 'share'])
-    ->middleware(['role_or_permission:admin|reseller|manage_websites', 'throttle:3,1'])
+    ->middleware(['role_or_permission:admin|reseller|manage_websites', 'throttle:10,1'])
     ->name('websites.clone-share.share');
 Route::post('/websites/{id}/clone-share/import', [CloneShareController::class, 'importFromUrl'])
-    ->middleware(['role_or_permission:admin|reseller|manage_websites', 'throttle:3,1'])
+    ->middleware(['role_or_permission:admin|reseller|manage_websites', 'throttle:10,1'])
     ->name('websites.clone-share.import');
 Route::get('/websites/{id}/clone-share/status/{jobId}', [CloneShareController::class, 'status'])
     ->middleware('role_or_permission:admin|reseller|manage_websites')
@@ -152,7 +152,7 @@ Route::post('/websites/{id}/push-to-live/connect', [SitePushController::class, '
     ->middleware(['role_or_permission:admin|reseller|manage_websites', 'throttle:10,1'])
     ->name('websites.push-to-live.connect');
 Route::post('/websites/{id}/push-to-live/push', [SitePushController::class, 'push'])
-    ->middleware(['role_or_permission:admin|reseller|manage_websites', 'throttle:3,1'])
+    ->middleware(['role_or_permission:admin|reseller|manage_websites', 'throttle:10,1'])
     ->name('websites.push-to-live.push');
 Route::get('/websites/{id}/push-to-live/status/{pushId}', [SitePushController::class, 'status'])
     ->middleware('role_or_permission:admin|reseller|manage_websites')
@@ -501,7 +501,7 @@ Route::delete('/websites/{id}/filemanager/trash', [FilemanagerTrashController::c
     ->middleware('role_or_permission:admin|reseller|manage_websites')
     ->name('websites.filemanager.trash.destroy');
 Route::post('/websites/bulk-export', [WebsiteBulkExportController::class, 'store'])
-    ->middleware(['role_or_permission:admin|reseller|manage_websites', 'throttle:3,1'])
+    ->middleware(['role_or_permission:admin|reseller|manage_websites', 'throttle:10,1'])
     ->name('websites.bulk-export');
 Route::get('/websites/list', [WebsiteController::class, 'index'])
     ->middleware('role_or_permission:admin|reseller|manage_websites')

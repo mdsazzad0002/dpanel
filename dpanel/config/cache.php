@@ -3,6 +3,16 @@
 use App\Support\Platform\LocalProfile;
 use Illuminate\Support\Str;
 
+$cacheBackend = LocalProfile::backend((string) env('CACHE_STORE', 'database'));
+
+// A refused Redis connection used to surface as a 500 on any page that reads
+// the cache (panel permissions, rate limiter, dashboards). With the fallback
+// on, the default store is Laravel's `failover` driver: Redis first, the
+// `cache` database table when Redis cannot be reached. Set CACHE_FALLBACK=false
+// to go straight to the configured backend again.
+$cacheFallback = filter_var(env('CACHE_FALLBACK', true), FILTER_VALIDATE_BOOLEAN)
+    && $cacheBackend === 'redis';
+
 return [
 
     /*
@@ -16,7 +26,7 @@ return [
     |
     */
 
-    'default' => LocalProfile::backend((string) env('CACHE_STORE', 'database')),
+    'default' => $cacheFallback ? 'failover' : $cacheBackend,
 
     /*
     |--------------------------------------------------------------------------
@@ -92,11 +102,12 @@ return [
             'driver' => 'octane',
         ],
 
+        // Tried in order; the first store that answers without throwing wins.
         'failover' => [
             'driver' => 'failover',
             'stores' => [
+                'redis',
                 'database',
-                'array',
             ],
         ],
 

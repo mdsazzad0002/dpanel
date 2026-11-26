@@ -190,4 +190,26 @@ return [
 
     // Days a login_events row is kept (panel and SSH login audit).
     'login_audit_retention_days' => (int) env('DPANEL_LOGIN_AUDIT_RETENTION_DAYS', 15),
+
+    // Request throttling (App\Http\Middleware\ThrottleRequestsPerRoute).
+    // A limiter must never be the reason a panel request fails, so:
+    //   - `enabled` is the kill switch: off means every throttle passes through.
+    //   - a cache backend that is down (Redis refused) lets the request
+    //     through instead of raising a 500; see `fail_open`.
+    //   - `baseline_per_minute` is the abuse backstop for the routes that
+    //     carry no `throttle:` of their own. It is counted per route and per
+    //     user, so it only ever stops one endpoint being hammered.
+    'rate_limit' => [
+        'enabled' => filter_var(env('DPANEL_RATE_LIMIT_ENABLED', true), FILTER_VALIDATE_BOOLEAN),
+        'fail_open' => filter_var(env('DPANEL_RATE_LIMIT_FAIL_OPEN', true), FILTER_VALIDATE_BOOLEAN),
+        'baseline_per_minute' => (int) env('DPANEL_RATE_LIMIT_BASELINE', 1200),
+        // Routes one page legitimately calls many times over (a file, logo or
+        // attachment fetched per item), so no ceiling applies to them.
+        'baseline_exempt' => [
+            'storage.local',
+            'storage.local.*',
+            'branding.logo',
+            'ai-gateway.media.show',
+        ],
+    ],
 ];
