@@ -54,6 +54,7 @@ use App\Http\Controllers\PageController;
 use App\Http\Controllers\PanelSearchController;
 use App\Http\Controllers\PhpManagementController;
 use App\Http\Controllers\PhpWorkersController;
+use App\Http\Controllers\XSendfileController;
 use App\Http\Controllers\MongoAdminController;
 use App\Http\Controllers\MongodbController;
 use App\Http\Controllers\PostgresqlController;
@@ -1141,6 +1142,10 @@ Route::prefix('dpt{token}')
             Route::post('/php/workers', [PhpWorkersController::class, 'update'])
                 ->middleware('role:admin')
                 ->name('php.workers.update');
+
+            Route::get('/php/xsendfile', [XSendfileController::class, 'index'])
+                ->middleware('role_or_permission:admin|reseller|general|general_user|manage_websites')
+                ->name('php.xsendfile');
 
             Route::get('/php/settings', [PhpManagementController::class, 'config'])
                 ->middleware('role:admin|reseller')

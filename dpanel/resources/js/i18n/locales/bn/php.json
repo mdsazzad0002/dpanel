@@ -86,5 +86,51 @@
         "reset": "Auto-তে ফেরান",
         "extra": "সব worker ব্যস্ত থাকলে সর্বোচ্চ আরও {size} memory",
         "mixed": "PHP version-গুলোর limit আলাদা; save করলে সবগুলো একই হবে।"
+    },
+    "xsendfile": {
+        "title": "X-Sendfile",
+        "subtitle": "আপনার PHP app-এর video ও বড় file web server দিয়ে পাঠান।",
+        "builtIn": "Built in: কিছু install বা চালু করতে হবে না",
+        "what": {
+            "title": "এটা কী কাজে লাগে",
+            "body": "সাধারণত PHP নিজেই একটা সুরক্ষিত file পড়ে byte ধরে ধরে পাঠায়। একটা লম্বা video পুরো playback জুড়ে একটা PHP worker আটকে রাখে। X-Sendfile দিলে PHP শুধু দেখে কে file-টা দেখতে পারবে, তারপর file-এর নাম দিয়ে একটা header পাঠায়। বাকি file পাঠানোর কাজ dPanel-এর web server করে।",
+            "p1": "Video দ্রুত চালু হয় ও সামনে-পিছে টানা যায়: byte range সাথে সাথে উত্তর পায়।",
+            "p2": "PHP worker milliseconds-এ ছাড়া পায়, তাই চাপের সময়ও site দ্রুত থাকে।",
+            "p3": "Private file private থাকে: public/-এর বাইরে রাখুন, কোনো URL দিতে হবে না।",
+            "p4": "Download থেমে গেলে আবার চালু করা যায়, PHP memory প্রায় লাগে না।"
+        },
+        "how": {
+            "title": "কীভাবে কাজ করে",
+            "s1": "Browser আপনার app-এর কাছে একটা file চায়, যেমন /media/12/video।",
+            "s2": "আপনার PHP code login বা payment দেখে, তারপর file-এর পুরো path দিয়ে X-Sendfile header পাঠায়।",
+            "s3": "dPanel byte range সহ file পাঠায়, আর আপনার বাকি header (type, download নাম, caching) রেখে দেয়।"
+        },
+        "rules": {
+            "title": "নিয়ম",
+            "r1": "Path পুরোটা দিতে হবে, যেমন /home/{user}/media/video.mp4।",
+            "r2": "File-টা website মালিকের home folder-এর (/home/{user}) ভেতরে থাকতে হবে এবং ওই user-এর হতে হবে। Symlink আসলে যেখানে যায় সেটাই ধরা হয়।",
+            "r3": "অন্য যেকোনো file-এ 404 Not Found আসে, তাই কোনো site অন্য site-এর বা server-এর file পাঠাতে পারে না।",
+            "r4": "Header-এর সাথে কোনো body পাঠাবেন না; dPanel সেটা file দিয়ে বদলে দেয়।",
+            "r5": "PHP-এর Content-Type, Content-Disposition, Cache-Control ও cookie রাখা হয়।"
+        },
+        "examples": {
+            "title": "কীভাবে ব্যবহার করবেন",
+            "php": "Plain PHP",
+            "laravel": "Laravel",
+            "wordpress": "WordPress",
+            "laravelNote": "আপনার app-এ যদি এর setting থাকে, যেমন .env-এ MEDIA_XSENDFILE=true বা XSENDFILE=true, তাহলে সেটা চালু করলেই হবে।",
+            "wordpressNote": "WooCommerce: WooCommerce → Settings → Products → Downloads → File download method → X-Accel-Redirect/X-Sendfile। Easy Digital Downloads ও অন্য download plugin-এও এমন option আছে।"
+        },
+        "check": {
+            "title": "কাজ করছে কিনা দেখুন",
+            "body": "আপনার app দিয়ে একটা file-এর ছোট একটা অংশ চান। উত্তরে 206 Partial Content আর Content-Range header এলে বুঝবেন dPanel পাঠিয়েছে।",
+            "look": "যা আসা উচিত: HTTP/1.1 206 Partial Content এবং content-range: bytes 0-99/…"
+        },
+        "apache": {
+            "title": "আমার app Apache mod_xsendfile চাইছে",
+            "body": "dPanel website চালায় নিজের web server দিয়ে, Apache দিয়ে না, তাই কোনো module install করতে হবে না। mod_xsendfile-এর জন্য লেখা app যেমন আছে তেমনই কাজ করে: শুধু app-এর X-Sendfile setting চালু করুন আর file site মালিকের home folder-এর ভেতরে রাখুন।"
+        },
+        "copy": "Copy",
+        "copied": "Copied"
     }
 }

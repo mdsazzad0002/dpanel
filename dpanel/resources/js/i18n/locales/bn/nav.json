@@ -33,6 +33,8 @@
     "phpManagerHint": "Version, extension ও config",
     "phpWorkers": "PHP Worker",
     "phpWorkersHint": "প্রতি site-এর worker সীমা ও ব্যবহার",
+    "xsendfile": "X-Sendfile",
+    "xsendfileHint": "PHP থেকে দ্রুত video ও file download",
     "emailManagement": "Email পরিচালনা",
     "emailManagementHint": "Mailbox-এর কাজ",
     "emailsList": "Email তালিকা",

@@ -86,5 +86,51 @@
         "reset": "Reset to auto",
         "extra": "Up to {size} more memory when every worker is busy",
         "mixed": "PHP versions have different limits; saving sets them all."
+    },
+    "xsendfile": {
+        "title": "X-Sendfile",
+        "subtitle": "Let the web server send videos and large files for your PHP app.",
+        "builtIn": "Built in: nothing to install or turn on",
+        "what": {
+            "title": "What it is for",
+            "body": "Normally PHP reads a protected file and sends it itself, byte by byte. A long video keeps a PHP worker busy for the whole playback. With X-Sendfile, PHP only checks who may see the file and answers with one header that names it. dPanel's web server then sends the file.",
+            "p1": "Videos start and seek faster: byte ranges are answered at once.",
+            "p2": "PHP workers are freed in milliseconds, so the site stays fast under load.",
+            "p3": "Private files stay private: keep them outside public/ and give them no URL.",
+            "p4": "Downloads can be resumed, and use almost no PHP memory."
+        },
+        "how": {
+            "title": "How it works",
+            "s1": "The browser asks your app for a file, for example /media/12/video.",
+            "s2": "Your PHP code checks the login or payment, then sends an X-Sendfile header with the file's full path.",
+            "s3": "dPanel sends the file, with byte ranges, and keeps your other headers (type, download name, caching)."
+        },
+        "rules": {
+            "title": "Rules",
+            "r1": "The path must be absolute, for example /home/{user}/media/video.mp4.",
+            "r2": "The file must be inside the website owner's home folder (/home/{user}) and owned by that user. Symlinks are followed to where they really point.",
+            "r3": "Any other file gets 404 Not Found, so a site can never send another site's or the server's files.",
+            "r4": "Send no body with the header; dPanel replaces it with the file.",
+            "r5": "Content-Type, Content-Disposition, Cache-Control and cookies from PHP are kept."
+        },
+        "examples": {
+            "title": "How to use it",
+            "php": "Plain PHP",
+            "laravel": "Laravel",
+            "wordpress": "WordPress",
+            "laravelNote": "If your app has a setting for it, such as MEDIA_XSENDFILE=true or XSENDFILE=true in .env, turning it on is enough.",
+            "wordpressNote": "WooCommerce: WooCommerce → Settings → Products → Downloads → File download method → X-Accel-Redirect/X-Sendfile. Easy Digital Downloads and other download plugins have a similar option."
+        },
+        "check": {
+            "title": "Check that it works",
+            "body": "Ask for a small part of a file through your app. A 206 Partial Content answer with a Content-Range header means dPanel sent it.",
+            "look": "Expected: HTTP/1.1 206 Partial Content and content-range: bytes 0-99/…"
+        },
+        "apache": {
+            "title": "My app asks for Apache mod_xsendfile",
+            "body": "dPanel serves websites with its own web server, not Apache, so there is no module to install. Apps written for mod_xsendfile work as they are: turn on their X-Sendfile setting and keep the files inside the site owner's home folder."
+        },
+        "copy": "Copy",
+        "copied": "Copied"
     }
 }

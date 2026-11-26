@@ -21,6 +21,7 @@ mod python_process;
 pub(crate) mod rust_process;
 mod redirects;
 mod remote_share;
+mod sendfile;
 mod server;
 mod site_guards;
 mod waf;

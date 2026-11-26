@@ -243,11 +243,13 @@ pub async fn dispatch(
                         Ok(request) => request,
                         Err(response) => return annotated_response(response, site_match, route_match),
                     };
+                    let owner = user_pool_owner(site.scope.as_str(), site.site_owner.as_deref());
+                    let request_headers = request.headers().clone();
                     let response = execute_php_front_controller(
                         request,
                         &config.document_root,
                         site.php_version.as_deref(),
-                        user_pool_owner(site.scope.as_str(), site.site_owner.as_deref()),
+                        owner,
                     )
                     .await
                     .unwrap_or_else(|error| {
@@ -256,6 +258,7 @@ pub async fn dispatch(
                             &format!("PHP application unavailable: {error}"),
                         )
                     });
+                    let response = send_app_file(response, &request_headers, owner).await;
                     annotated_response(response, site_match, route_match)
                 }
                 Ok(StaticPlan::Asset(Ok(asset))) => annotated_response(
@@ -830,6 +833,42 @@ fn repair_phpmyadmin_sensitive_permissions(root: &Path) -> Result<(), String> {
     Ok(())
 }
 
+/// Answers a PHP response that carries `X-Sendfile` with the file it names,
+/// sent by the gateway with byte ranges. A file the site may not send is a
+/// 404, as with mod_xsendfile. System sites (no owner) never get this.
+async fn send_app_file(
+    response: Response,
+    request_headers: &axum::http::HeaderMap,
+    owner: Option<&str>,
+) -> Response {
+    let Some(owner) = owner else { return response };
+    let Some(requested) = response
+        .headers()
+        .get(super::sendfile::SENDFILE_HEADER)
+        .and_then(|value| value.to_str().ok())
+        .map(str::to_owned)
+    else {
+        return response;
+    };
+    let owner = owner.to_string();
+    let loaded = tokio::task::spawn_blocking(move || {
+        super::sendfile::allowed_file(&requested, &owner).map(|file| load_static_asset(&file))
+    })
+    .await;
+    let asset = match loaded {
+        Ok(Some(Ok(asset))) => asset,
+        Ok(None) => return simple_response(StatusCode::NOT_FOUND, "file not found"),
+        _ => return simple_response(StatusCode::INTERNAL_SERVER_ERROR, "file unavailable"),
+    };
+    let mut file_response = static_response(asset, request_headers).await;
+    if file_response.status().is_success() {
+        // The app decides how its file is cached, as with mod_xsendfile.
+        file_response.headers_mut().remove(header::CACHE_CONTROL);
+        super::sendfile::carry_app_headers(response.headers(), &mut file_response);
+    }
+    file_response
+}
+
 fn user_pool_owner<'a>(scope: &str, site_owner: Option<&'a str>) -> Option<&'a str> {
     if scope.eq_ignore_ascii_case("system") {
         None
@@ -865,20 +904,66 @@ async fn static_response(
         response.extensions_mut().insert(super::edge_cache::StaticFileResponse);
         return response;
     }
-    let memory_body = match &asset.body {
-        StaticAssetBody::Memory(body) => Some(body.clone()),
-        StaticAssetBody::Stream(_) => None,
-    };
-    let body = match asset.body {
-        StaticAssetBody::Memory(body) => Body::from(body),
-        StaticAssetBody::Stream(path) => match tokio::fs::File::open(path).await {
-            Ok(file) => Body::from_stream(tokio_util::io::ReaderStream::new(file)),
+    let size = match &asset.body {
+        StaticAssetBody::Memory(body) => body.len() as u64,
+        StaticAssetBody::Stream(path) => match tokio::fs::metadata(path).await {
+            Ok(meta) => meta.len(),
             Err(_) => return simple_response(StatusCode::NOT_FOUND, "static file unavailable"),
         },
     };
+    // Video players seek, and resume downloads, with byte ranges.
+    let range = super::sendfile::requested_range(request_headers, &asset.etag, size);
+    if range == super::sendfile::ByteRange::Unsatisfiable {
+        let mut response = super::sendfile::unsatisfiable(size);
+        response.extensions_mut().insert(super::edge_cache::StaticFileResponse);
+        return response;
+    }
+    // Only a whole in-memory file is worth compressing.
+    let memory_body = match (&asset.body, &range) {
+        (StaticAssetBody::Memory(body), super::sendfile::ByteRange::Full) => Some(body.clone()),
+        _ => None,
+    };
+    let partial = match range {
+        super::sendfile::ByteRange::Partial { start, end } => Some((start, end)),
+        _ => None,
+    };
+    let body = match (asset.body, partial) {
+        (StaticAssetBody::Memory(body), Some((start, end))) => {
+            Body::from(body.slice(start as usize..=end as usize))
+        }
+        (StaticAssetBody::Memory(body), None) => Body::from(body),
+        (StaticAssetBody::Stream(path), partial) => {
+            use tokio::io::{AsyncReadExt, AsyncSeekExt};
+            let Ok(mut file) = tokio::fs::File::open(path).await else {
+                return simple_response(StatusCode::NOT_FOUND, "static file unavailable");
+            };
+            match partial {
+                Some((start, end)) => {
+                    if file.seek(std::io::SeekFrom::Start(start)).await.is_err() {
+                        return simple_response(StatusCode::NOT_FOUND, "static file unavailable");
+                    }
+                    Body::from_stream(tokio_util::io::ReaderStream::new(file.take(end - start + 1)))
+                }
+                None => Body::from_stream(tokio_util::io::ReaderStream::new(file)),
+            }
+        }
+    };
     let mut response = Response::new(body);
-    *response.status_mut() = StatusCode::OK;
+    *response.status_mut() = if partial.is_some() { StatusCode::PARTIAL_CONTENT } else { StatusCode::OK };
     let headers = response.headers_mut();
+    match partial {
+        Some((start, end)) => {
+            if let Ok(value) = HeaderValue::from_str(&format!("bytes {start}-{end}/{size}")) {
+                headers.insert(header::CONTENT_RANGE, value);
+            }
+            headers.insert(header::CONTENT_LENGTH, HeaderValue::from(end - start + 1));
+        }
+        // A streamed body has no length of its own; players want one.
+        None if memory_body.is_none() => {
+            headers.insert(header::CONTENT_LENGTH, HeaderValue::from(size));
+        }
+        None => {}
+    }
     headers.insert(
         header::CONTENT_TYPE,
         HeaderValue::from_str(&asset.content_type)
