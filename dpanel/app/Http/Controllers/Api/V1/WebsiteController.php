@@ -92,7 +92,24 @@ class WebsiteController extends ApiController
             return $this->panelError($response);
         }
 
-        return response()->json(['message' => (string) ($response->getData(true)['message'] ?? 'Website deleted.')]);
+        $payload = $response->getData(true);
+
+        // A main site's or subdomain's files are archived off the request path
+        // (DeleteWebsiteJob), so the site is still there when this answers.
+        // Saying 200 would promise work that has not happened: 202 and the
+        // task id let the caller follow it, as the migration endpoints do.
+        if (! empty($payload['queued'])) {
+            return response()->json([
+                'message' => (string) ($payload['message'] ?? 'Website deletion is queued.'),
+                'data' => [
+                    'status' => 'queued',
+                    'task_id' => (string) ($payload['task_id'] ?? ''),
+                    'website_id' => (string) $found->id,
+                ],
+            ], 202);
+        }
+
+        return response()->json(['message' => (string) ($payload['message'] ?? 'Website deleted.')]);
     }
 
     /** @return array<string, mixed> */

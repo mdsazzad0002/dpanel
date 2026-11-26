@@ -150,8 +150,14 @@ paths:
         archived to the trash first, then the site, its cron jobs and (when no
         other site shares it) its system account are removed. An alias or
         subdomain is removed without touching shared files.
+
+        Archiving a large site takes minutes, so a main site or subdomain is
+        deleted in the background: the answer is `202` and the site is still
+        listed until the work finishes. An alias is removed at once and
+        answers `200`.
       responses:
         "200": { $ref: "#/components/responses/Message" }
+        "202": { description: "Queued; `data`: `status` `queued`, `task_id`, `website_id`." }
         "401": { $ref: "#/components/responses/Unauthorized" }
         "403": { $ref: "#/components/responses/Forbidden" }
         "404": { $ref: "#/components/responses/NotFound" }

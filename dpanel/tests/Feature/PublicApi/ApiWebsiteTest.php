@@ -2,6 +2,7 @@
 
 namespace Tests\Feature\PublicApi;
 
+use App\Jobs\DeleteWebsiteJob;
 use App\Models\ActivityLog;
 use App\Models\Website;
 use Illuminate\Support\Facades\Bus;
@@ -119,7 +120,12 @@ class ApiWebsiteTest extends PublicApiTestCase
         $this->api($plain, 'DELETE', "/websites/{$site->id}")->assertForbidden();
     }
 
-    public function test_deleting_a_subdomain_keeps_its_parent(): void
+    /**
+     * Deleting a main site or a subdomain is queued (DeleteWebsiteJob), so the
+     * API answers 202 with the task id and the site is still there until the
+     * job has run. Running it here proves the whole way through.
+     */
+    public function test_deleting_a_subdomain_is_queued_and_keeps_its_parent(): void
     {
         $customer = $this->user();
         $parent = $this->website($customer, 'shop.test');
@@ -127,12 +133,29 @@ class ApiWebsiteTest extends PublicApiTestCase
         $plain = $this->token($customer, ['websites:write']);
         // A subdomain has a directory of its own: dRust archives and removes it.
         config(['dpanel.execution_api_base_url' => 'http://drust.test', 'dpanel.execution_api_token' => 'secret']);
-        \Illuminate\Support\Facades\Http::fake(['drust.test/*' => \Illuminate\Support\Facades\Http::response(['success' => true])]);
+        Http::fake(['drust.test/*' => Http::response(['success' => true])]);
 
-        $this->api($plain, 'DELETE', "/websites/{$sub->id}")->assertOk()->assertJsonStructure(['message']);
+        $response = $this->api($plain, 'DELETE', "/websites/{$sub->id}")
+            ->assertStatus(202)
+            ->assertJsonStructure(['message', 'data' => ['status', 'task_id', 'website_id']])
+            ->assertJsonPath('data.status', 'queued')
+            ->assertJsonPath('data.website_id', (string) $sub->id);
+
+        $taskId = $response->json('data.task_id');
+        $this->assertNotEmpty($taskId);
+        Bus::assertDispatched(DeleteWebsiteJob::class, fn (DeleteWebsiteJob $job): bool => $job->taskId === $taskId
+            && $job->websiteId === (string) $sub->id);
+
+        // Nothing is deleted on the request path.
+        $this->assertTrue(Website::query()->whereKey($sub->id)->exists());
+
+        (new DeleteWebsiteJob($taskId, (string) $sub->id, (int) $customer->id))->handle(
+            app(\App\Services\Website\WebsiteDeletionService::class),
+            app(\App\Services\NotificationService::class),
+        );
 
         $this->assertFalse(Website::query()->whereKey($sub->id)->exists());
         $this->assertTrue(Website::query()->whereKey($parent->id)->exists());
-        \Illuminate\Support\Facades\Http::assertSent(fn ($request) => str_ends_with($request->url(), '/api/v1/website/delete') && $request['delete_user'] === false);
+        Http::assertSent(fn ($request) => str_ends_with($request->url(), '/api/v1/website/delete') && $request['delete_user'] === false);
     }
 }

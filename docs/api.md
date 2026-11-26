@@ -71,7 +71,7 @@ path and the status.
 | `GET /websites` | `websites:read` | List websites |
 | `GET /websites/{id}` | `websites:read` | Show a website |
 | `POST /websites` | `websites:write` | Create a website or subdomain |
-| `DELETE /websites/{id}` | `websites:write` | Delete a website |
+| `DELETE /websites/{id}` | `websites:write` | Delete a website (a main site or subdomain answers `202`: the archive runs in the background) |
 | `GET /dns/zones` | `dns:read` | List zones |
 | `GET /dns/zones/{zone}/records` | `dns:read` | List a zone's records |
 | `POST /dns/zones/{zone}/records` | `dns:write` | Add a record |
