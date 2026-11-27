@@ -9,7 +9,11 @@ use App\Models\McpAccessToken;
 use App\Models\User;
 use App\Models\Website;
 use App\Models\WebsiteIpRule;
+use App\Models\AiGatewayProvider;
 use App\Services\AiGateway\ChatMemory;
+use App\Services\AiGateway\Providers\AnthropicAdapter;
+use App\Services\Mcp\GatewayChatTools;
+use Illuminate\Support\Facades\Http;
 use App\Services\Cron\CronSystemService;
 use App\Services\EdgeGatewayReloader;
 use App\Services\Mcp\McpToolException;
@@ -138,6 +142,83 @@ class AiChatAgentTest extends TestCase
 
         $this->assertTrue($tool->handle(['action' => 'remove', 'domain' => 'example.com', 'ip' => '203.0.113.9'], $token)['removed']);
         $this->assertSame(0, WebsiteIpRule::query()->count());
+    }
+
+    public function test_long_history_is_trimmed_to_the_newest_messages(): void
+    {
+        $old = str_repeat('a', 30000);
+        $messages = [
+            ['role' => 'system', 'content' => 'persona'],
+            ['role' => 'user', 'content' => $old],
+            ['role' => 'assistant', 'content' => $old],
+            ['role' => 'user', 'content' => 'recent question'],
+            ['role' => 'assistant', 'content' => 'recent answer'],
+            ['role' => 'user', 'content' => 'now this'],
+        ];
+
+        $trimmed = $this->invoke('trimHistory', [$messages, 1]);
+
+        $this->assertSame('persona', $trimmed[0]['content']);
+        $this->assertStringContainsString('left out to save tokens', $trimmed[1]['content']);
+        $this->assertSame(['user', 'assistant', 'user', 'assistant', 'user'], array_column(array_slice($trimmed, 1), 'role'));
+        $this->assertSame('now this', end($trimmed)['content']);
+        $this->assertStringNotContainsString($old, json_encode($trimmed));
+
+        // A short conversation is left as it is.
+        $short = [['role' => 'user', 'content' => 'hi'], ['role' => 'assistant', 'content' => 'hello'], ['role' => 'user', 'content' => 'ok']];
+        $this->assertSame($short, $this->invoke('trimHistory', [$short, 0]));
+    }
+
+    public function test_older_tool_results_are_cut_once_the_budget_is_passed(): void
+    {
+        $big = str_repeat('x', 15000);
+        $messages = [['role' => 'user', 'content' => 'go']];
+        foreach (range(1, 3) as $n) {
+            $messages[] = ['role' => 'tool', 'tool_call_id' => "c{$n}", 'content' => $big];
+        }
+        $args = [&$messages, 1];
+        $this->assertFalse($this->invoke('compactToolResults', $args), 'under budget: untouched');
+
+        $messages[] = ['role' => 'tool', 'tool_call_id' => 'c4', 'content' => $big];
+        $messages[] = ['role' => 'tool', 'tool_call_id' => 'c5', 'content' => $big];
+        $args = [&$messages, 1];
+        $this->assertTrue($this->invoke('compactToolResults', $args));
+
+        foreach (array_slice($messages, 1, 4) as $message) {
+            $this->assertLessThan(1500, mb_strlen($message['content']));
+        }
+        $this->assertSame($big, end($messages)['content'], 'the newest round stays whole');
+    }
+
+    public function test_anthropic_tool_loops_use_prompt_cache_and_one_shot_calls_do_not(): void
+    {
+        Http::fake(['*' => Http::response([
+            'content' => [['type' => 'text', 'text' => 'ok']],
+            'model' => 'claude-test',
+            'usage' => ['input_tokens' => 100, 'cache_read_input_tokens' => 9000, 'cache_creation_input_tokens' => 500, 'output_tokens' => 20],
+        ])]);
+        $provider = new AiGatewayProvider(['name' => 'Anthropic', 'driver' => 'anthropic', 'credentials' => ['api_key' => 'k']]);
+        $adapter = app(AnthropicAdapter::class);
+        $messages = [['role' => 'system', 'content' => 'rules'], ['role' => 'user', 'content' => 'hi']];
+        $tools = [['type' => 'function', 'function' => ['name' => 't', 'description' => 'd', 'parameters' => ['type' => 'object', 'properties' => new \stdClass]]]];
+
+        $result = $adapter->chat($provider, 'claude-test', $messages, ['tools' => $tools]);
+        $this->assertSame(9600, $result['input_tokens']);
+        $this->assertSame(9000, $result['cache_read_tokens']);
+        $this->assertSame(500, $result['cache_write_tokens']);
+
+        $adapter->chat($provider, 'claude-test', $messages);
+
+        $bodies = Http::recorded()->map(fn (array $pair) => $pair[0]->data())->values();
+        $this->assertSame('ephemeral', $bodies[0]['system'][0]['cache_control']['type']);
+        $this->assertSame('ephemeral', $bodies[0]['messages'][0]['content'][0]['cache_control']['type']);
+        $this->assertSame('rules', $bodies[1]['system'], 'no cache markers on a one-shot call');
+        $this->assertSame('hi', $bodies[1]['messages'][0]['content']);
+    }
+
+    private function invoke(string $method, array $args): mixed
+    {
+        return (new \ReflectionMethod(GatewayChatTools::class, $method))->invokeArgs(app(GatewayChatTools::class), $args);
     }
 
     private function site(): Website

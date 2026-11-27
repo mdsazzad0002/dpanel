@@ -19,6 +19,9 @@ class MailAi
     /** Each message body sent to the model is cut at this size. */
     private const MAX_MESSAGE_CHARS = 6000;
 
+    /** Earlier messages of the thread only give context, so they get less room. */
+    private const MAX_EARLIER_CHARS = 1500;
+
     /** Older messages of a long conversation are left out after this many. */
     private const MAX_THREAD_MESSAGES = 8;
 
@@ -188,7 +191,7 @@ TXT;
         foreach ($others as $row) {
             $cached = $bodies[$row['folder'].':'.$row['uid']] ?? null;
             $body = trim((string) ($cached?->body_text ?: ($cached?->snippet ?: ($row['snippet'] ?? ''))));
-            $blocks[] = $this->block($row, $body);
+            $blocks[] = $this->block($row, $body, self::MAX_EARLIER_CHARS);
         }
         $blocks[] = $this->block($open, (string) ($open['text'] ?? ''));
 
@@ -196,11 +199,11 @@ TXT;
     }
 
     /** @param  array<string, mixed>  $message */
-    private function block(array $message, string $body): string
+    private function block(array $message, string $body, int $limit = self::MAX_MESSAGE_CHARS): string
     {
         $body = $this->withoutQuotes($body);
-        if (mb_strlen($body) > self::MAX_MESSAGE_CHARS) {
-            $body = mb_substr($body, 0, self::MAX_MESSAGE_CHARS)."\n[message cut short]";
+        if (mb_strlen($body) > $limit) {
+            $body = mb_substr($body, 0, $limit)."\n[message cut short]";
         }
 
         return '--- Message ---'

@@ -60,6 +60,8 @@ class AnthropicAdapter implements ProviderAdapter
             }
         }
 
+        $body = $this->withPromptCache($body, $options);
+
         $response = Http::withToken($apiKey)
             ->withHeaders(['anthropic-version' => '2023-06-01'])
             ->timeout($options['timeout'] ?? config('aigateway.timeout', 90))
@@ -82,7 +84,7 @@ class AnthropicAdapter implements ProviderAdapter
 
         return [
             'content' => $content,
-            'input_tokens' => (int) ($usage['input_tokens'] ?? 0),
+            ...$this->inputUsage($usage),
             'output_tokens' => (int) ($usage['output_tokens'] ?? 0),
             'model' => $json['model'] ?? $model,
             'raw' => $json,
@@ -125,6 +127,8 @@ class AnthropicAdapter implements ProviderAdapter
             }
         }
 
+        $body = $this->withPromptCache($body, $options);
+
         $response = Http::withToken($apiKey)
             ->withHeaders(['anthropic-version' => '2023-06-01'])
             ->timeout($options['timeout'] ?? config('aigateway.timeout', 90))
@@ -138,7 +142,7 @@ class AnthropicAdapter implements ProviderAdapter
         }
 
         $content = '';
-        $inputTokens = 0;
+        $inputUsage = $this->inputUsage([]);
         $outputTokens = 0;
         $finalModel = $model;
         $stopReason = null;
@@ -171,7 +175,7 @@ class AnthropicAdapter implements ProviderAdapter
                 $index = $json['index'] ?? 0;
 
                 if ($type === 'message_start') {
-                    $inputTokens = (int) ($json['message']['usage']['input_tokens'] ?? $inputTokens);
+                    $inputUsage = $this->inputUsage($json['message']['usage'] ?? []);
                     $finalModel = $json['message']['model'] ?? $finalModel;
                 } elseif ($type === 'content_block_start') {
                     $block = $json['content_block'] ?? [];
@@ -204,7 +208,7 @@ class AnthropicAdapter implements ProviderAdapter
 
         return [
             'content' => $content,
-            'input_tokens' => $inputTokens,
+            ...$inputUsage,
             'output_tokens' => $outputTokens,
             'model' => $finalModel,
             'raw' => $raw,
@@ -244,6 +248,55 @@ class AnthropicAdapter implements ProviderAdapter
     public function transcribe(AiGatewayProvider $provider, string $model, string $audio, string $filename, string $mime, array $options = []): array
     {
         throw new \App\Services\AiGateway\Exceptions\AiGatewayException("Anthropic models cannot take audio; [{$provider->name}] / {$model} should not have the transcription capability.");
+    }
+
+    /**
+     * Prompt caching for tool loops, where every round resends the same
+     * tools, system prompt and earlier rounds: a breakpoint after the system
+     * prompt caches tools + system, and one on the newest message lets the
+     * next round read everything before it at a tenth of the input price.
+     * One-shot calls (no tools, or `cache` => false) skip it, since a cache
+     * write costs 25% more and would never be read.
+     */
+    private function withPromptCache(array $body, array $options): array
+    {
+        if (! ($options['cache'] ?? ! empty($options['tools']))) {
+            return $body;
+        }
+        $mark = ['type' => 'ephemeral'];
+
+        if (isset($body['system'])) {
+            $body['system'] = [['type' => 'text', 'text' => $body['system'], 'cache_control' => $mark]];
+        } elseif (! empty($body['tools'])) {
+            $body['tools'][array_key_last($body['tools'])]['cache_control'] = $mark;
+        }
+
+        $last = array_key_last($body['messages']);
+        if ($last !== null) {
+            $content = $body['messages'][$last]['content'];
+            if (is_string($content) && $content !== '') {
+                $body['messages'][$last]['content'] = [['type' => 'text', 'text' => $content, 'cache_control' => $mark]];
+            } elseif (is_array($content) && $content !== []) {
+                $body['messages'][$last]['content'][array_key_last($content)]['cache_control'] = $mark;
+            }
+        }
+
+        return $body;
+    }
+
+    /**
+     * Anthropic counts cached input apart from `input_tokens`. The gateway
+     * keeps input_tokens as everything the model read, and passes the cached
+     * parts on so the cost uses their own prices.
+     *
+     * @return array{input_tokens: int, cache_read_tokens: int, cache_write_tokens: int}
+     */
+    private function inputUsage(array $usage): array
+    {
+        $read = (int) ($usage['cache_read_input_tokens'] ?? 0);
+        $write = (int) ($usage['cache_creation_input_tokens'] ?? 0);
+
+        return ['input_tokens' => (int) ($usage['input_tokens'] ?? 0) + $read + $write, 'cache_read_tokens' => $read, 'cache_write_tokens' => $write];
     }
 
     private function convertMessages(array $messages, ?string $system): array

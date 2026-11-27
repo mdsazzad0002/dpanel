@@ -24,7 +24,20 @@ class GatewayChatTools
     public const MODES = [self::MODE_OFF, McpAccessToken::SCOPE_READ, McpAccessToken::SCOPE_FULL];
 
     /** Tool output handed back to the model is cut to this many characters. */
-    private const MAX_RESULT_CHARS = 40000;
+    private const MAX_RESULT_CHARS = 16000;
+
+    /**
+     * Every model turn resends all earlier tool results, so once this
+     * message's results pass this size, all but the newest round are cut to
+     * COMPACT_CHARS. Done in one go rather than every round, so a provider's
+     * prompt cache is rebuilt once instead of on each turn.
+     */
+    private const TOOL_OUTPUT_BUDGET = 60000;
+
+    private const COMPACT_CHARS = 1200;
+
+    /** Earlier conversation sent with each message, newest first; older text is dropped. */
+    private const HISTORY_BUDGET = 40000;
 
     /** Model turns per message; each turn may call several tools. */
     private const MAX_TOOL_ROUNDS = 20;
@@ -139,6 +152,7 @@ class GatewayChatTools
         while (($messages[$at]['role'] ?? null) === 'system') {
             $at++;
         }
+        $messages = $this->trimHistory($messages, $at);
         $prompt = $this->systemPrompt($token);
         if ($token->user) {
             // Memory is panel-side notes, not server state, so read-only chats keep it too.
@@ -225,9 +239,72 @@ class GatewayChatTools
 
                 $messages[] = ['role' => 'tool', 'tool_call_id' => $id, 'name' => $outcome['name'], 'content' => $outcome['content']];
             }
+
+            if ($this->compactToolResults($messages, count($calls))) {
+                // Cut results can no longer be reused as they were.
+                $seen = [];
+            }
         }
 
         return [...$result, 'content' => implode("\n\n", $texts), 'input_tokens' => $inputTokens, 'output_tokens' => $outputTokens];
+    }
+
+    /**
+     * Keeps the newest earlier messages that fit HISTORY_BUDGET, and always
+     * the last one (the new request). System messages before $at stay.
+     *
+     * @param  array<int, array<string, mixed>>  $messages
+     * @return array<int, array<string, mixed>>
+     */
+    private function trimHistory(array $messages, int $at): array
+    {
+        $system = array_slice($messages, 0, $at);
+        $rest = array_slice($messages, $at);
+        $kept = [];
+        $used = 0;
+        foreach (array_reverse($rest) as $i => $message) {
+            $used += mb_strlen((string) ($message['content'] ?? ''));
+            if ($i > 0 && $used > self::HISTORY_BUDGET) {
+                break;
+            }
+            array_unshift($kept, $message);
+        }
+        // A conversation must not start with the assistant's reply.
+        while (count($kept) > 1 && ($kept[0]['role'] ?? null) === 'assistant') {
+            array_shift($kept);
+        }
+        if (count($kept) < count($rest)) {
+            array_unshift($kept, ['role' => 'user', 'content' => '[Earlier messages of this conversation were left out to save tokens. Ask if something from them is needed.]'], ['role' => 'assistant', 'content' => 'OK.']);
+        }
+
+        return [...$system, ...$kept];
+    }
+
+    /**
+     * Cuts every tool result except the newest $keepLast to COMPACT_CHARS
+     * once all of them together pass TOOL_OUTPUT_BUDGET.
+     *
+     * @param  array<int, array<string, mixed>>  $messages
+     * @return bool whether anything was cut
+     */
+    private function compactToolResults(array &$messages, int $keepLast): bool
+    {
+        $tools = array_keys(array_filter($messages, fn (array $m): bool => ($m['role'] ?? null) === 'tool'));
+        $total = array_sum(array_map(fn (int $i): int => mb_strlen((string) $messages[$i]['content']), $tools));
+        if ($total <= self::TOOL_OUTPUT_BUDGET) {
+            return false;
+        }
+
+        $cut = false;
+        foreach (array_slice($tools, 0, max(0, count($tools) - $keepLast)) as $i) {
+            $content = (string) $messages[$i]['content'];
+            if (mb_strlen($content) > self::COMPACT_CHARS + 200) {
+                $messages[$i]['content'] = mb_substr($content, 0, self::COMPACT_CHARS).'… [older result shortened to save tokens; call the tool again, narrower, if you need the rest]';
+                $cut = true;
+            }
+        }
+
+        return $cut;
     }
 
     /**

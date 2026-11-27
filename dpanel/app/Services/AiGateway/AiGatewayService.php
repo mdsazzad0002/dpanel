@@ -135,7 +135,9 @@ class AiGatewayService
         $cost = $this->calculateCost(
             $modelRecord,
             $result['input_tokens'],
-            $result['output_tokens']
+            $result['output_tokens'],
+            (int) ($result['cache_read_tokens'] ?? 0),
+            (int) ($result['cache_write_tokens'] ?? 0),
         );
 
         AiGatewayUsageRecord::record(
@@ -213,7 +215,9 @@ class AiGatewayService
         $cost = $this->calculateCost(
             $modelRecord,
             $result['input_tokens'],
-            $result['output_tokens']
+            $result['output_tokens'],
+            (int) ($result['cache_read_tokens'] ?? 0),
+            (int) ($result['cache_write_tokens'] ?? 0),
         );
 
         AiGatewayUsageRecord::record(
@@ -609,13 +613,15 @@ class AiGatewayService
         return $result;
     }
 
-    private function calculateCost(?AiGatewayModel $model, int $inputTokens, int $outputTokens): float
+    /** Cached input is billed apart: reads at 10% of the input price, writes at 125%. */
+    private function calculateCost(?AiGatewayModel $model, int $inputTokens, int $outputTokens, int $cacheRead = 0, int $cacheWrite = 0): float
     {
         $inputPrice = $model?->input_price ?: 0;
         $outputPrice = $model?->output_price ?: 0;
+        $billedInput = max(0, $inputTokens - $cacheRead - $cacheWrite) + $cacheRead * 0.1 + $cacheWrite * 1.25;
 
         return round(
-            ($inputTokens / 1_000_000 * $inputPrice) + ($outputTokens / 1_000_000 * $outputPrice),
+            ($billedInput / 1_000_000 * $inputPrice) + ($outputTokens / 1_000_000 * $outputPrice),
             6
         );
     }
