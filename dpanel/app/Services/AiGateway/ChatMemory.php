@@ -2,7 +2,7 @@
 
 namespace App\Services\AiGateway;
 
-use App\Models\AiMemory;
+use App\Models\AiChatMemory;
 use App\Models\User;
 use Illuminate\Support\Str;
 
@@ -27,10 +27,10 @@ class ChatMemory
     /** The prompt section: how to use memory, and the index of what is stored. */
     public function promptFor(User $user): string
     {
-        $entries = AiMemory::query()->where('user_id', $user->id)->latest('updated_at')->limit(self::INDEX_LIMIT)->get(['name', 'type', 'description']);
+        $entries = AiChatMemory::query()->where('user_id', $user->id)->latest('updated_at')->limit(self::INDEX_LIMIT)->get(['name', 'type', 'description']);
         $index = $entries->isEmpty()
             ? '(nothing saved yet)'
-            : $entries->map(fn (AiMemory $m): string => "- {$m->name} [{$m->type}]: {$m->description}")->implode("\n");
+            : $entries->map(fn (AiChatMemory $m): string => "- {$m->name} [{$m->type}]: {$m->description}")->implode("\n");
 
         return implode("\n", [
             'Long-term memory: you keep notes across conversations with this admin. Below is the index (name [type]: description). Bodies are not loaded: call memory_read with the names that matter for the current request before acting on them. Memories reflect when they were written; check against the live server before relying on a detail.',
@@ -59,7 +59,7 @@ class ChatMemory
                         'type' => 'object',
                         'properties' => [
                             'name' => ['type' => 'string', 'description' => 'Short kebab-case slug, e.g. prefers-bangla or shop-site-is-critical.'],
-                            'type' => ['type' => 'string', 'enum' => AiMemory::TYPES],
+                            'type' => ['type' => 'string', 'enum' => AiChatMemory::TYPES],
                             'description' => ['type' => 'string', 'description' => 'One line, used to decide relevance later (max 200 characters).'],
                             'body' => ['type' => 'string', 'description' => 'The fact itself. For feedback and project add "Why:" and "How to apply:" lines.'],
                         ],
@@ -120,19 +120,19 @@ class ChatMemory
         $description = trim((string) ($arguments['description'] ?? ''));
         $body = trim((string) ($arguments['body'] ?? ''));
 
-        if ($name === '' || ! in_array($type, AiMemory::TYPES, true) || $description === '' || $body === '') {
-            throw new \InvalidArgumentException('name, type ('.implode('|', AiMemory::TYPES).'), description and body are all required.');
+        if ($name === '' || ! in_array($type, AiChatMemory::TYPES, true) || $description === '' || $body === '') {
+            throw new \InvalidArgumentException('name, type ('.implode('|', AiChatMemory::TYPES).'), description and body are all required.');
         }
         if ($this->looksSecret($body.' '.$description)) {
             throw new \InvalidArgumentException('That looks like a password, key or token. Secrets are never saved to memory.');
         }
 
-        $exists = AiMemory::query()->where('user_id', $user->id)->where('name', $name)->exists();
-        if (! $exists && AiMemory::query()->where('user_id', $user->id)->count() >= self::MAX_ENTRIES) {
+        $exists = AiChatMemory::query()->where('user_id', $user->id)->where('name', $name)->exists();
+        if (! $exists && AiChatMemory::query()->where('user_id', $user->id)->count() >= self::MAX_ENTRIES) {
             throw new \InvalidArgumentException('Memory is full ('.self::MAX_ENTRIES.' entries). Delete outdated entries first.');
         }
 
-        AiMemory::query()->updateOrCreate(
+        AiChatMemory::query()->updateOrCreate(
             ['user_id' => $user->id, 'name' => $name],
             ['type' => $type, 'description' => mb_substr($description, 0, 200), 'body' => mb_substr($body, 0, self::MAX_BODY_CHARS)],
         );
@@ -144,10 +144,10 @@ class ChatMemory
     private function read(User $user, array $names): array
     {
         $names = array_slice(array_values(array_unique(array_filter(array_map(fn ($n) => $this->slug((string) $n), $names)))), 0, 10);
-        $found = AiMemory::query()->where('user_id', $user->id)->whereIn('name', $names)->get()->keyBy('name');
+        $found = AiChatMemory::query()->where('user_id', $user->id)->whereIn('name', $names)->get()->keyBy('name');
 
         return [
-            'memories' => $found->map(fn (AiMemory $m): array => [
+            'memories' => $found->map(fn (AiChatMemory $m): array => [
                 'name' => $m->name,
                 'type' => $m->type,
                 'body' => $m->body,
@@ -159,7 +159,7 @@ class ChatMemory
 
     private function delete(User $user, string $name): array
     {
-        $deleted = AiMemory::query()->where('user_id', $user->id)->where('name', $this->slug($name))->delete();
+        $deleted = AiChatMemory::query()->where('user_id', $user->id)->where('name', $this->slug($name))->delete();
 
         return ['deleted' => $deleted > 0];
     }

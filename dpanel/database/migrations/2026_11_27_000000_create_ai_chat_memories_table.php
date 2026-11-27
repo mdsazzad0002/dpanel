@@ -12,7 +12,7 @@ return new class extends Migration
 {
     public function up(): void
     {
-        Schema::create('ai_memories', function (Blueprint $table) {
+        Schema::create('ai_chat_memories', function (Blueprint $table) {
             $table->id();
             $table->foreignId('user_id')->constrained()->cascadeOnDelete();
             $table->string('name', 80);
@@ -27,6 +27,6 @@ return new class extends Migration
 
     public function down(): void
     {
-        Schema::dropIfExists('ai_memories');
+        Schema::dropIfExists('ai_chat_memories');
     }
 };
