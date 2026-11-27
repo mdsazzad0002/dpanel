@@ -787,6 +787,41 @@
             "promotions": "প্রোমোশন",
             "updates": "আপডেট",
             "social": "সোশ্যাল"
+        },
+        "ai": {
+            "summarize": "সারাংশ",
+            "summaryTitle": "AI সারাংশ",
+            "summarizing": "Conversation পড়ছে…",
+            "regenerate": "আবার সারাংশ করুন",
+            "close": "বন্ধ করুন",
+            "action": "করণীয়",
+            "disclaimer": "এই conversation থেকে AI লিখেছে। জরুরি তথ্য message-এ মিলিয়ে নিন।",
+            "failed": "AI উত্তর দিতে পারেনি। আবার চেষ্টা করুন।",
+            "aiReply": "AI reply",
+            "helpMeWrite": "AI দিয়ে লিখুন",
+            "writing": "লিখছে…",
+            "generate": "Draft লিখুন",
+            "cancel": "বাতিল",
+            "toneLabel": "ধরন",
+            "tone": {
+                "friendly": "বন্ধুসুলভ",
+                "formal": "আনুষ্ঠানিক",
+                "short": "সংক্ষেপে"
+            },
+            "instructionsPlaceholder": "Reply-তে কী বলবেন? (ঐচ্ছিক, যেমন \"রাজি, তবে সোমবারে করতে বলুন\")",
+            "replaceDraft": "যা লিখেছেন তার জায়গায় AI draft বসাবেন?",
+            "reviewNote": "পাঠানোর আগে draft দেখে নিন।",
+            "composePlaceholder": "Email-এ কী লিখবেন? যেমন \"রহিমকে শুক্রবারের মধ্যে মার্চের invoice পাঠাতে বলুন\"",
+            "polish": {
+                "title": "AI দিয়ে ঠিক করুন",
+                "empty": "আগে কিছু লিখুন, তারপর AI দিয়ে ঠিক করুন।",
+                "improve": "বানান ও ভাষা ঠিক করুন",
+                "shorter": "ছোট করুন",
+                "formal": "আনুষ্ঠানিক করুন",
+                "friendly": "আরও বন্ধুসুলভ করুন",
+                "translateEn": "ইংরেজিতে অনুবাদ",
+                "translateBn": "বাংলায় অনুবাদ"
+            }
         }
     }
 }

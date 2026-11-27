@@ -3,12 +3,14 @@ import { useI18n } from 'vue-i18n';
 import { computed, ref } from 'vue';
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
 import { Head, Link, useForm, usePage } from '@inertiajs/vue3';
+import CronAiAssist from './components/cron/CronAiAssist.vue';
 
 const { t } = useI18n();
 
 const props = defineProps({
     website: { type: Object, required: true },
     cronJobs: { type: Array, default: () => [] },
+    aiAvailable: { type: Boolean, default: false },
 });
 
 const page = usePage();
@@ -67,6 +69,13 @@ const editItem = (item) => {
     form.command = item.command ?? '';
     form.status = item.status ?? 'active';
     form.description = item.description ?? '';
+};
+
+// The AI fills only what it gave; a name or command already typed stays.
+const fillFromAi = ({ expression, name, command }) => {
+    if (expression) form.expression = expression;
+    if (name && !form.name.trim()) form.name = name;
+    if (command && !form.command.trim()) form.command = command;
 };
 
 const resetForm = () => {
@@ -136,6 +145,13 @@ const toggleItem = (item) => {
             </section>
 
             <form class="grid gap-4 rounded-xl border border-slate-200 bg-white p-6 md:grid-cols-2 dark:border-slate-800 dark:bg-slate-900" @submit.prevent="submit">
+                <CronAiAssist
+                    v-if="aiAvailable"
+                    class="md:col-span-2"
+                    :endpoint="panelRoute('websites.cronjobs.ai', { id: website.id })"
+                    :command="form.command"
+                    @fill="fillFromAi"
+                />
                 <div>
                     <label class="mb-1 block text-sm">{{ t('websites.cron.name') }}</label>
                     <input v-model="form.name" type="text" :placeholder="t('websites.cron.namePlaceholder')" class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-800" />

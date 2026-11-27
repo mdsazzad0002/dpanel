@@ -3,6 +3,9 @@ import { computed, nextTick, onMounted, ref, watch } from 'vue';
 import RichTextEditor from './RichTextEditor.vue';
 import RecipientInput from './RecipientInput.vue';
 import MailAvatar from './MailAvatar.vue';
+import AiReplyAssist from './ai/AiReplyAssist.vue';
+import AiPolishMenu from './ai/AiPolishMenu.vue';
+import { textToHtml } from './ai/aiText';
 import { avatarColorOf, emailOf, initialsOf, nameOrEmail, sameAddress, splitAddresses, withoutAddress } from './mailAddresses';
 import { useI18n } from 'vue-i18n';
 
@@ -19,6 +22,10 @@ const props = defineProps({
     sendEndpoint: { type: String, default: '' },
     sandbox: { type: Boolean, default: false },
     isDark: { type: Boolean, default: false },
+    // Empty when the AI Gateway has no model: no "Help me write".
+    aiReplyEndpoint: { type: String, default: '' },
+    aiPolishEndpoint: { type: String, default: '' },
+    aiDraftOnOpen: { type: Boolean, default: false },
 });
 
 const emit = defineEmits(['sent', 'discard', 'pop-out', 'notify', 'update:mode']);
@@ -165,6 +172,13 @@ const send = async () => {
     }
 };
 
+// The AI draft replaces the body; the quote stays folded under it.
+const applyAiDraft = async (draft) => {
+    html.value = textToHtml(draft);
+    await nextTick();
+    editor.value?.focus(false);
+};
+
 const discard = () => {
     if (hasDraft.value && !confirm(t('email.mailbox.composer.discardReply'))) return;
     emit('discard');
@@ -240,6 +254,19 @@ const popOut = () => emit('pop-out', {
                 </div>
             </div>
 
+            <AiReplyAssist
+                v-if="aiReplyEndpoint && mode !== 'forward'"
+                :key="`${message.folder || folder}:${message.uid}`"
+                :endpoint="aiReplyEndpoint"
+                :folder="message.folder || folder"
+                :uid="message.uid"
+                :has-draft="hasDraft"
+                :auto-run="aiDraftOnOpen"
+                :is-dark="isDark"
+                @draft="applyAiDraft"
+                @notify="(msg, type) => emit('notify', msg, type)"
+            />
+
             <!-- Body, folded quote, formatting bar -->
             <RichTextEditor
                 ref="editor"
@@ -273,6 +300,14 @@ const popOut = () => emit('pop-out', {
                 <button type="button" :class="[showToolbar ? 'bg-blue-100 text-blue-800 dark:bg-blue-500/20 dark:text-blue-200' : ui.icon, 'flex h-10 w-10 items-center justify-center rounded-full text-sm font-semibold transition']" :title="t('email.mailbox.composer.formatting')" :aria-pressed="showToolbar" @click="showToolbar = !showToolbar">
                     Aa
                 </button>
+                <AiPolishMenu
+                    v-if="aiPolishEndpoint"
+                    :endpoint="aiPolishEndpoint"
+                    :text="text"
+                    :is-dark="isDark"
+                    @result="applyAiDraft"
+                    @notify="(msg) => emit('notify', msg)"
+                />
                 <span :class="[ui.muted, 'ml-1 hidden text-xs sm:inline']">{{ t('email.mailbox.composer.ctrlEnter') }}</span>
                 <button type="button" :class="[ui.icon, 'ml-auto flex h-10 w-10 items-center justify-center rounded-full transition hover:!text-rose-600']" :title="t('email.mailbox.composer.discard')" :aria-label="t('email.mailbox.composer.discardReplyLabel')" @click="discard">
                     <i class="bi bi-trash3"></i>

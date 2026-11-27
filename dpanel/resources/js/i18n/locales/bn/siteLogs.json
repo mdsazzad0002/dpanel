@@ -15,5 +15,21 @@
     "phpHelp": "এই account-এর সব site-এর PHP error। এই log আসার আগে বানানো site-এর PHP pool আবার না বানানো পর্যন্ত আগের জায়গাতেই log হয়।",
     "waf": "ফায়ারওয়াল",
     "noWafLog": "ফায়ারওয়াল এখনো কোনো request ধরেনি।",
-    "wafHelp": "Web application firewall যে request ধরেছে: সময়, client, request, কী করেছে (blocked, would-block বা matched), কোন status দিত, আর কোন rule। শুধু PHP বা app-এ যাওয়া request দেখা হয়।"
+    "wafHelp": "Web application firewall যে request ধরেছে: সময়, client, request, কী করেছে (blocked, would-block বা matched), কোন status দিত, আর কোন rule। শুধু PHP বা app-এ যাওয়া request দেখা হয়।",
+    "ai": {
+        "explain": "AI দিয়ে বুঝুন",
+        "working": "Log পড়ছে…",
+        "title": "AI ব্যাখ্যা",
+        "again": "আবার ব্যাখ্যা",
+        "close": "বন্ধ",
+        "failed": "AI log পড়তে পারেনি। আবার চেষ্টা করুন।",
+        "disclaimer": "সর্বশেষ log লাইন (সর্বোচ্চ ৫০০) থেকে AI লিখেছে। কিছু বদলানোর আগে মিলিয়ে নিন।",
+        "fixes": "প্রস্তাবিত সমাধান",
+        "banIp": "এই site-এ {ip} ban করুন",
+        "apply": "Apply",
+        "applied": "Apply হয়েছে",
+        "undo": "Undo",
+        "banConfirm": "এই website থেকে {ip} ban করবেন? এখান থেকে বা IP rules-এ গিয়ে ফেরানো যাবে।",
+        "applyFailed": "Apply করা যায়নি। আবার চেষ্টা করুন।"
+    }
 }

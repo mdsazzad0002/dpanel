@@ -505,7 +505,13 @@
             "edit_file": "Edit file",
             "file_operation": "File operation",
             "run_command": "Run command",
-            "restart_service": "Restart service"
+            "restart_service": "Restart service",
+            "manage_cron_job": "Cron job",
+            "manage_ip_rule": "IP rule",
+            "manage_dns_record": "DNS record",
+            "memory_save": "Saved to memory",
+            "memory_read": "Read memory",
+            "memory_delete": "Removed from memory"
         },
         "fullConfirm": "Full access lets the AI change this server: edit files, run commands and restart services. Every change is recorded and files are backed up. Continue?",
         "toolSummary": "Used {count} tool(s) · {seconds}s",
@@ -596,5 +602,18 @@
         "noKey": "no API key",
         "empty": "No providers configured yet.",
         "dragHint": "Drag to change the order (top runs first)"
+    },
+    "memory": {
+        "button": "Memory",
+        "title": "Chat memory",
+        "help": "What the AI remembers about you and your work across chats. It saves these itself; ask it to \"remember\" or \"forget\" something, or delete entries here.",
+        "loading": "Loading…",
+        "empty": "Nothing saved yet.",
+        "delete": "Delete",
+        "deleteConfirm": "Delete the memory \"{name}\"?",
+        "clear": "Delete all memories",
+        "clearConfirm": "Delete everything the AI remembers about you?",
+        "close": "Close",
+        "loadFailed": "Could not load the memory."
     }
 }

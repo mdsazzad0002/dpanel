@@ -2,6 +2,9 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import RichTextEditor from './RichTextEditor.vue';
 import RecipientInput from './RecipientInput.vue';
+import AiComposeAssist from './ai/AiComposeAssist.vue';
+import AiPolishMenu from './ai/AiPolishMenu.vue';
+import { textToHtml } from './ai/aiText';
 import { useI18n } from 'vue-i18n';
 
 const { t } = useI18n();
@@ -27,6 +30,11 @@ const props = defineProps({
         type: Boolean,
         default: false,
     },
+    // { compose, polish, ... } when the AI Gateway has a model, else null.
+    aiEndpoints: {
+        type: Object,
+        default: null,
+    },
 });
 
 const to = defineModel('to', { type: String, default: '' });
@@ -36,7 +44,16 @@ const subject = defineModel('subject', { type: String, default: '' });
 const body = defineModel('body', { type: String, default: '' });
 const html = defineModel('html', { type: String, default: '' });
 
-const emit = defineEmits(['update:open', 'send', 'discard']);
+const emit = defineEmits(['update:open', 'send', 'discard', 'notify']);
+
+// AI text is plain; the editor shows it as HTML and keeps the plain copy in sync.
+const applyAiDraft = ({ subject: aiSubject, text }) => {
+    if (aiSubject && subject.value.trim() === '') subject.value = aiSubject;
+    html.value = textToHtml(text);
+};
+const applyPolished = (text) => {
+    html.value = textToHtml(text);
+};
 
 const minimized = ref(false);
 const maximized = ref(false);
@@ -268,6 +285,16 @@ onBeforeUnmount(() => document.removeEventListener('keydown', handleDocumentKeyd
                     >
                 </div>
 
+                <AiComposeAssist
+                    v-if="aiEndpoints?.compose"
+                    :endpoint="aiEndpoints.compose"
+                    :to="to"
+                    :has-draft="body.trim() !== ''"
+                    :is-dark="isDark"
+                    @draft="applyAiDraft"
+                    @notify="(msg) => emit('notify', msg)"
+                />
+
                 <!-- Body -->
                 <RichTextEditor
                     ref="bodyInput"
@@ -296,6 +323,14 @@ onBeforeUnmount(() => document.removeEventListener('keydown', handleDocumentKeyd
                         :aria-pressed="showToolbar"
                         @click="showToolbar = !showToolbar"
                     >Aa</button>
+                    <AiPolishMenu
+                        v-if="aiEndpoints?.polish"
+                        :endpoint="aiEndpoints.polish"
+                        :text="body"
+                        :is-dark="isDark"
+                        @result="applyPolished"
+                        @notify="(msg) => emit('notify', msg)"
+                    />
                     <span :class="[ui.hint, 'hidden text-xs sm:inline']">{{ isMac ? '⌘' : 'Ctrl' }} + Enter</span>
 
                     <button

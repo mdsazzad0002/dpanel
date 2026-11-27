@@ -48,6 +48,9 @@ class McpServer
         Tools\FileOperationTool::class,
         Tools\RunCommandTool::class,
         Tools\RestartServiceTool::class,
+        Tools\ManageCronJobTool::class,
+        Tools\ManageIpRuleTool::class,
+        Tools\ManageDnsRecordTool::class,
         Tools\ListGitConflictsTool::class,
         Tools\ResolveGitConflictsTool::class,
     ];

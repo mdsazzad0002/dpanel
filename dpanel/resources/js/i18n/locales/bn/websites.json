@@ -716,7 +716,15 @@
         "edit": "বদলান",
         "delete": "মুছুন",
         "empty": "এই website-এ কোনো cron job যোগ করা হয়নি।",
-        "deleteConfirm": "এই cron job মুছে ফেলবেন?"
+        "deleteConfirm": "এই cron job মুছে ফেলবেন?",
+        "ai": {
+            "label": "সহজ ভাষায় কাজটা লিখুন",
+            "placeholder": "যেমন রোজ রাত ২টায় artisan schedule চালাও, বা every Monday 9am",
+            "fill": "AI দিয়ে পূরণ",
+            "working": "ভাবছে…",
+            "check": "Save করার আগে নিচের ঘরগুলো দেখে নিন।",
+            "failed": "AI schedule বানাতে পারেনি। আবার চেষ্টা করুন।"
+        }
     },
     "wpSso": {
         "failed": "Login link তৈরি করা যায়নি।",

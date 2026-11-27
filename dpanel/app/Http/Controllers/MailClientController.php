@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Jobs\SyncMailboxMetadataJob;
 use App\Models\Mailbox;
 use App\Models\MailboxMessageMetadata;
+use App\Services\Mail\MailAi;
 use App\Services\Mail\MailAvatarResolver;
 use App\Services\Mail\MailboxImapService;
 use App\Services\Mail\MailCategoryClassifier;
@@ -21,7 +22,7 @@ use RuntimeException;
 
 class MailClientController extends Controller
 {
-    public function show(Request $request, string $token, string $id, MailboxImapService $mailboxImapService): Response|RedirectResponse
+    public function show(Request $request, string $token, string $id, MailboxImapService $mailboxImapService, MailAi $mailAi): Response|RedirectResponse
     {
         $mailbox = Mailbox::query()->visibleTo(auth()->user())->find($id);
         abort_if($mailbox === null, 404);
@@ -70,6 +71,13 @@ class MailClientController extends Controller
             'bulkEndpoint' => route('mailbox.bulk', ['token' => $token, 'id' => $id]),
             'threadEndpoint' => route('mailbox.thread', ['token' => $token, 'id' => $id]),
             'contactsEndpoint' => route('mailbox.contacts', ['token' => $token, 'id' => $id]),
+            // Empty without an active AI Gateway model, so the AI buttons stay hidden.
+            'aiEndpoints' => $mailAi->available() ? [
+                'summary' => route('mailbox.ai.summary', ['token' => $token, 'id' => $id]),
+                'reply' => route('mailbox.ai.reply', ['token' => $token, 'id' => $id]),
+                'compose' => route('mailbox.ai.compose', ['token' => $token, 'id' => $id]),
+                'polish' => route('mailbox.ai.polish', ['token' => $token, 'id' => $id]),
+            ] : null,
             'composeDefaults' => [
                 'to' => '',
                 'subject' => '',

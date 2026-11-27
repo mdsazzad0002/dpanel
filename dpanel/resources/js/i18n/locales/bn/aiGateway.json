@@ -505,7 +505,13 @@
             "edit_file": "File সম্পাদনা",
             "file_operation": "File operation",
             "run_command": "Command চালানো",
-            "restart_service": "Service restart"
+            "restart_service": "Service restart",
+            "manage_cron_job": "Cron job",
+            "manage_ip_rule": "IP rule",
+            "manage_dns_record": "DNS record",
+            "memory_save": "Memory-তে রাখা হয়েছে",
+            "memory_read": "Memory পড়া হয়েছে",
+            "memory_delete": "Memory থেকে মোছা হয়েছে"
         },
         "fullConfirm": "Full access দিলে AI এই server বদলাতে পারবে: file সম্পাদনা, command চালানো ও service restart। প্রতিটি পরিবর্তন রেকর্ড হয় এবং file-এর backup রাখা হয়। চালিয়ে যাবেন?",
         "toolSummary": "{count}টি tool ব্যবহার · {seconds}s",
@@ -596,5 +602,18 @@
         "noKey": "API key নেই",
         "empty": "এখনো কোনো provider যোগ করা হয়নি।",
         "dragHint": "Drag করে ক্রম বদলান (উপরেরটা আগে চলে)"
+    },
+    "memory": {
+        "button": "Memory",
+        "title": "Chat memory",
+        "help": "বিভিন্ন chat জুড়ে আপনার ও আপনার কাজ সম্পর্কে AI যা মনে রাখে। AI নিজেই রাখে; কিছু \"মনে রাখো\" বা \"ভুলে যাও\" বলুন, অথবা এখান থেকে মুছুন।",
+        "loading": "লোড হচ্ছে…",
+        "empty": "এখনও কিছু রাখা হয়নি।",
+        "delete": "মুছুন",
+        "deleteConfirm": "\"{name}\" memory মুছবেন?",
+        "clear": "সব memory মুছুন",
+        "clearConfirm": "AI আপনার সম্পর্কে যা মনে রেখেছে সব মুছবেন?",
+        "close": "বন্ধ",
+        "loadFailed": "Memory লোড করা যায়নি।"
     }
 }

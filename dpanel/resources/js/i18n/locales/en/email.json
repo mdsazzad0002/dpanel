@@ -787,6 +787,41 @@
             "promotions": "Promotions",
             "updates": "Updates",
             "social": "Social"
+        },
+        "ai": {
+            "summarize": "Summarize",
+            "summaryTitle": "AI summary",
+            "summarizing": "Reading the conversation…",
+            "regenerate": "Summarize again",
+            "close": "Close",
+            "action": "To do",
+            "disclaimer": "Written by AI from this conversation. Check important details in the message.",
+            "failed": "The AI could not answer. Try again.",
+            "aiReply": "AI reply",
+            "helpMeWrite": "Help me write",
+            "writing": "Writing…",
+            "generate": "Write draft",
+            "cancel": "Cancel",
+            "toneLabel": "Tone",
+            "tone": {
+                "friendly": "Friendly",
+                "formal": "Formal",
+                "short": "Short"
+            },
+            "instructionsPlaceholder": "What should the reply say? (optional, e.g. \"accept, but ask to move it to Monday\")",
+            "replaceDraft": "Replace what you have written with an AI draft?",
+            "reviewNote": "Review the draft before sending.",
+            "composePlaceholder": "What should the email say? e.g. \"ask Rahim for the March invoice by Friday\"",
+            "polish": {
+                "title": "AI edit",
+                "empty": "Write something first, then let AI edit it.",
+                "improve": "Fix grammar and wording",
+                "shorter": "Make it shorter",
+                "formal": "Make it formal",
+                "friendly": "Make it friendlier",
+                "translateEn": "Translate to English",
+                "translateBn": "Translate to Bangla"
+            }
         }
     }
 }

@@ -15,5 +15,21 @@
     "phpHelp": "PHP errors of every site this account owns. Sites made before this log existed keep logging where they did until their PHP pool is made again.",
     "waf": "Firewall",
     "noWafLog": "The firewall has not matched any request yet.",
-    "wafHelp": "Requests the web application firewall matched: time, client, request, what it did (blocked, would-block or matched), the status it chose, and the rules. Only requests to PHP or an app are checked."
+    "wafHelp": "Requests the web application firewall matched: time, client, request, what it did (blocked, would-block or matched), the status it chose, and the rules. Only requests to PHP or an app are checked.",
+    "ai": {
+        "explain": "Explain with AI",
+        "working": "Reading the log…",
+        "title": "AI explanation",
+        "again": "Explain again",
+        "close": "Close",
+        "failed": "The AI could not read the log. Try again.",
+        "disclaimer": "Written by AI from the newest log lines (up to 500). Check before changing anything.",
+        "fixes": "Suggested fixes",
+        "banIp": "Ban {ip} on this site",
+        "apply": "Apply",
+        "applied": "Applied",
+        "undo": "Undo",
+        "banConfirm": "Ban {ip} from this website? It can be undone here or under IP rules.",
+        "applyFailed": "Could not apply. Try again."
+    }
 }

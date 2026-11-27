@@ -92,6 +92,11 @@ const props = defineProps({
         type: String,
         default: '',
     },
+    // { summary, reply } when the AI Gateway has a model, else null.
+    aiEndpoints: {
+        type: Object,
+        default: null,
+    },
     composeDefaults: {
         type: Object,
         default: () => ({
@@ -995,6 +1000,7 @@ watch(() => messageFilter.value, () => {
                     :send-endpoint="sendEndpoint"
                     :message-endpoint="messageEndpoint"
                     :thread-endpoint="threadEndpoint"
+                    :ai-endpoints="aiEndpoints"
                     :sandbox="mailbox.delivery_mode === 'sandbox'"
                     @open-message="openMessage"
                     @close-preview="closePreview"
@@ -1026,7 +1032,9 @@ watch(() => messageFilter.value, () => {
             :sending="sending"
             :from-email="mailbox.email"
             :sandbox="mailbox.delivery_mode === 'sandbox'"
+            :ai-endpoints="aiEndpoints"
             @send="submitSend"
+            @notify="pushToast"
             @discard="discardCompose"
         />
 

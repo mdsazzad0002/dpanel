@@ -25,6 +25,7 @@ use App\Http\Controllers\Website\WebsiteGitController;
 use App\Http\Controllers\Website\WebsiteHtaccessController;
 use App\Http\Controllers\Website\WebsiteSqliteController;
 use App\Http\Controllers\Website\WebsiteIpController;
+use App\Http\Controllers\Website\WebsiteAiController;
 use App\Http\Controllers\Website\WebsiteLogController;
 use App\Http\Controllers\Wordpress\WordpressSafeUpdateController;
 use App\Http\Controllers\Wordpress\WordpressToolkitController;
@@ -373,6 +374,9 @@ Route::get('/websites/{id}/logs', [WebsiteLogController::class, 'index'])
 Route::get('/websites/{id}/logs/lines', [WebsiteLogController::class, 'lines'])
     ->middleware(['role_or_permission:admin|reseller|manage_websites', 'throttle:60,1'])
     ->name('websites.logs.lines');
+Route::post('/websites/{id}/logs/explain', [WebsiteAiController::class, 'logs'])
+    ->middleware(['role_or_permission:admin|reseller|manage_websites', 'throttle:10,1'])
+    ->name('websites.logs.explain');
 
 Route::get('/websites/{id}/edge-cache', [WebsiteEdgeCacheController::class, 'index'])
     ->middleware('role_or_permission:admin|reseller|manage_websites')
@@ -431,6 +435,9 @@ Route::patch('/websites/{id}/filemanager/settings', [WebsiteFileManagerControlle
 Route::get('/websites/{id}/cron-jobs', [CronJobController::class, 'index'])
     ->middleware('role_or_permission:admin|reseller|manage_websites')
     ->name('websites.cronjobs.index');
+Route::post('/websites/{id}/cron-jobs/ai', [WebsiteAiController::class, 'cron'])
+    ->middleware(['role_or_permission:admin|reseller|manage_websites', 'throttle:20,1'])
+    ->name('websites.cronjobs.ai');
 Route::post('/websites/{id}/cron-jobs', [CronJobController::class, 'store'])
     ->middleware('role_or_permission:admin|reseller|manage_websites')
     ->name('websites.cronjobs.store');

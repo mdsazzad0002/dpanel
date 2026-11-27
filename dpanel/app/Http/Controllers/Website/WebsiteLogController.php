@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Website;
 
 use App\Http\Controllers\Controller;
 use App\Models\Website;
+use App\Services\AiGateway\PanelAi;
 use App\Services\Platform\SiteLogClient;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -13,12 +14,13 @@ use Inertia\Response;
 /** A website's access log, its firewall matches (S2) and its account's PHP error log (S4). */
 class WebsiteLogController extends Controller
 {
-    public function index(Request $request, string $token, string $id): Response
+    public function index(Request $request, PanelAi $ai, string $token, string $id): Response
     {
         $website = $this->website($request, $id);
 
         return Inertia::render('Websites/Logs/Index', [
             'website' => ['id' => (string) $website->id, 'domain' => (string) $website->domain],
+            'aiAvailable' => $ai->available(),
         ]);
     }
 

@@ -31,6 +31,8 @@ use App\Http\Controllers\DnsFindReplaceController;
 use App\Http\Controllers\DnsZoneConnectionController;
 use App\Http\Controllers\DnsZoneDnssecController;
 use App\Http\Controllers\DnsZoneFileController;
+use App\Http\Controllers\AiMemoryController;
+use App\Http\Controllers\Email\MailAiController;
 use App\Http\Controllers\Email\MailAutoresponderController;
 use App\Http\Controllers\Email\MailForwarderController;
 use App\Http\Controllers\Email\MailQueueController;
@@ -550,6 +552,20 @@ Route::prefix('dpt{token}')
                 ->middleware('role_or_permission:admin|reseller|manage_email')
                 ->name('mailbox.contacts.destroy');
 
+            // Webmail AI: summary and reply draft through the AI Gateway.
+            Route::post('/mail/{id}/ai/summary', [MailAiController::class, 'summary'])
+                ->middleware(['role_or_permission:admin|reseller|manage_email', 'throttle:20,1'])
+                ->name('mailbox.ai.summary');
+            Route::post('/mail/{id}/ai/reply', [MailAiController::class, 'reply'])
+                ->middleware(['role_or_permission:admin|reseller|manage_email', 'throttle:20,1'])
+                ->name('mailbox.ai.reply');
+            Route::post('/mail/{id}/ai/compose', [MailAiController::class, 'compose'])
+                ->middleware(['role_or_permission:admin|reseller|manage_email', 'throttle:20,1'])
+                ->name('mailbox.ai.compose');
+            Route::post('/mail/{id}/ai/polish', [MailAiController::class, 'polish'])
+                ->middleware(['role_or_permission:admin|reseller|manage_email', 'throttle:30,1'])
+                ->name('mailbox.ai.polish');
+
             Route::post('/mail/{id}/delete', [MailClientController::class, 'delete'])
                 ->middleware('role_or_permission:admin|reseller|manage_email')
                 ->name('mailbox.delete-message');
@@ -844,6 +860,11 @@ Route::prefix('dpt{token}')
                     Route::post('chat/history', [AiGatewayProviderController::class, 'chatHistorySaveAuto'])->name('ai-gateway.chat.auto.history.save');
                     Route::get('chat/history/{session}', [AiGatewayProviderController::class, 'chatHistoryShowAuto'])->name('ai-gateway.chat.auto.history.show');
                     Route::delete('chat/history/{session}', [AiGatewayProviderController::class, 'chatHistoryDestroyAuto'])->name('ai-gateway.chat.auto.history.destroy');
+
+                    // Long-term chat memory (admins with server tools): view and delete.
+                    Route::get('memories', [AiMemoryController::class, 'index'])->name('ai-gateway.memories.index');
+                    Route::delete('memories', [AiMemoryController::class, 'clear'])->name('ai-gateway.memories.clear');
+                    Route::delete('memories/{memory}', [AiMemoryController::class, 'destroy'])->whereNumber('memory')->name('ai-gateway.memories.destroy');
 
                     // Images: attach to a chat message, generate, and view.
                     Route::post('media', [AiGatewayMediaController::class, 'upload'])

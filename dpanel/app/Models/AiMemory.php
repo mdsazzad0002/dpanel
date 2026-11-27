@@ -2,39 +2,18 @@
 
 namespace App\Models;
 
-use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
+/** One long-term fact the AI Gateway chat remembers for an admin. */
 class AiMemory extends Model
 {
-    use HasFactory;
+    public const TYPES = ['user', 'feedback', 'project', 'reference'];
 
-    protected $fillable = [
-        'type',
-        'input_text',
-        'normalized_input',
-        'response_text',
-        'command_used',
-        'output_sample',
-        'tags',
-        'usage_count',
-        'success_count',
-        'fail_count',
-        'priority',
-        'confidence',
-        'last_used_at',
-    ];
+    protected $fillable = ['user_id', 'name', 'type', 'description', 'body'];
 
-    protected function casts(): array
+    public function user(): BelongsTo
     {
-        return [
-            'tags' => 'array',
-            'usage_count' => 'integer',
-            'success_count' => 'integer',
-            'fail_count' => 'integer',
-            'priority' => 'integer',
-            'confidence' => 'integer',
-            'last_used_at' => 'datetime',
-        ];
+        return $this->belongsTo(User::class);
     }
 }

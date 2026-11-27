@@ -2,6 +2,7 @@
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
 import MarkdownContent from '@/Components/MarkdownContent.vue';
 import Offcanvas from '@/Components/Offcanvas.vue';
+import ChatMemoryPanel from './components/ChatMemoryPanel.vue';
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { Head, Link, usePage } from '@inertiajs/vue3';
 import axios from 'axios';
@@ -80,8 +81,15 @@ const TOOL_META = {
     file_operation: 'bi-files',
     run_command: 'bi-terminal-fill',
     restart_service: 'bi-arrow-clockwise',
+    manage_cron_job: 'bi-clock',
+    manage_ip_rule: 'bi-shield-x',
+    manage_dns_record: 'bi-signpost',
+    memory_save: 'bi-journal-plus',
+    memory_read: 'bi-journal-text',
+    memory_delete: 'bi-journal-x',
 };
 const toolIcon = (step) => TOOL_META[step.name] ?? 'bi-tools';
+const memoryOpen = ref(false);
 const toolLabel = (step) => {
     const args = step.arguments && typeof step.arguments === 'object' ? step.arguments : {};
     const main = args.path || args.domain || args.command || args.service || args.pattern || args.name || '';
@@ -676,6 +684,9 @@ onBeforeUnmount(() => {
                                 <option value="read">{{ t('aiGateway.chat.toolsRead') }}</option>
                                 <option value="full">{{ t('aiGateway.chat.toolsFull') }}</option>
                             </select>
+                            <button type="button" class="flex h-7 items-center gap-1 rounded-lg border border-slate-300 px-2 text-xs hover:bg-slate-100 dark:border-slate-600 dark:hover:bg-slate-800" :title="t('aiGateway.memory.title')" @click.prevent="memoryOpen = true">
+                                <i class="bi bi-journal-bookmark"></i><span class="hidden md:inline">{{ t('aiGateway.memory.button') }}</span>
+                            </button>
                         </label>
                     </div>
                 </div>
@@ -829,5 +840,6 @@ onBeforeUnmount(() => {
                 </div>
             </div>
         </Offcanvas>
+        <ChatMemoryPanel v-if="canUseServerTools" :open="memoryOpen" :panel-route="panelRoute" @close="memoryOpen = false" />
     </AuthenticatedLayout>
 </template>

@@ -716,7 +716,15 @@
         "edit": "Edit",
         "delete": "Delete",
         "empty": "No cron jobs added for this website.",
-        "deleteConfirm": "Delete this cron job?"
+        "deleteConfirm": "Delete this cron job?",
+        "ai": {
+            "label": "Describe the job in plain words",
+            "placeholder": "e.g. every night at 2am run artisan schedule, or রোজ সকাল ৯টায়",
+            "fill": "Fill with AI",
+            "working": "Thinking…",
+            "check": "Check the fields below before saving.",
+            "failed": "The AI could not make a schedule. Try again."
+        }
     },
     "wpSso": {
         "failed": "Could not create a login link.",

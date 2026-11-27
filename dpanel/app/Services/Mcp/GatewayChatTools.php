@@ -4,6 +4,7 @@ namespace App\Services\Mcp;
 
 use App\Models\McpAccessToken;
 use App\Models\User;
+use App\Services\AiGateway\ChatMemory;
 use App\Services\Mcp\Contracts\McpTool;
 
 /**
@@ -37,6 +38,7 @@ class GatewayChatTools
     public function __construct(
         private readonly McpServer $server,
         private readonly McpCommandPolicy $policy,
+        private readonly ChatMemory $memory,
     ) {}
 
     /** Same rule as the remote endpoint: active admins only. */
@@ -137,8 +139,13 @@ class GatewayChatTools
         while (($messages[$at]['role'] ?? null) === 'system') {
             $at++;
         }
-        array_splice($messages, $at, 0, [['role' => 'system', 'content' => $this->systemPrompt($token)]]);
-        $options['tools'] = $this->definitions($token);
+        $prompt = $this->systemPrompt($token);
+        if ($token->user) {
+            // Memory is panel-side notes, not server state, so read-only chats keep it too.
+            $prompt .= "\n\n".$this->memory->promptFor($token->user);
+        }
+        array_splice($messages, $at, 0, [['role' => 'system', 'content' => $prompt]]);
+        $options['tools'] = [...$this->definitions($token), ...($token->user ? $this->memory->definitions() : [])];
 
         $texts = [];
         $inputTokens = 0;
@@ -238,7 +245,15 @@ class GatewayChatTools
             $tool = null;
         }
 
-        if (! $tool || ! is_array($arguments)) {
+        if (in_array($name, ChatMemory::TOOLS, true) && $token->user && is_array($arguments)) {
+            try {
+                $data = $this->memory->handle($token->user, $name, $arguments);
+                $isError = false;
+            } catch (\InvalidArgumentException $e) {
+                $data = ['error' => $e->getMessage()];
+                $isError = true;
+            }
+        } elseif (! $tool || ! is_array($arguments)) {
             $data = ['error' => $tool ? 'arguments must be a JSON object.' : "Unknown tool: {$name}"];
             $isError = true;
         } else {
@@ -296,6 +311,8 @@ class GatewayChatTools
             '- Hacked or suspicious traffic: list_security_findings, then read_file on the flagged files.',
             '- Scheduled jobs not running: list_cron_jobs, then the cron log.',
             '- Before a risky change: list_backups to know a recent backup exists.',
+            '- Panel tasks: prefer the panel\'s own action tools over editing files or running commands, because they also update the panel and roll back on failure: manage_cron_job (create/update/pause/delete a cron job), manage_ip_rule (ban or allow an IP for a site, undo with remove), manage_dns_record (add or delete a record; call list_dns_records first).',
+            '- A task that needs a few steps: do them one after another in this message without asking between steps, unless one is destructive. Then say in short bullets what changed and how to undo it.',
             'Answer format: lead with the cause (or the most likely one, and how sure you are), then the evidence from the tools in a few bullets, then the fix or the change made and how it was verified. Use short sections and code blocks for commands and file excerpts. Match the user\'s language.',
             'If a tool call is refused or fails, do not retry the same thing with small variations; read the error, switch to another tool, or tell the user what is needed.',
             $access,

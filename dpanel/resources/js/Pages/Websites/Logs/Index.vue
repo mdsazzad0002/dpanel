@@ -5,8 +5,9 @@ import { useI18n } from 'vue-i18n';
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
 import { usePanelApi } from '@/Pages/Websites/composables/usePanelApi';
 import LogLines from './components/LogLines.vue';
+import LogAiExplain from './components/LogAiExplain.vue';
 
-const props = defineProps({ website: { type: Object, required: true } });
+const props = defineProps({ website: { type: Object, required: true }, aiAvailable: { type: Boolean, default: false } });
 const { t } = useI18n();
 const { panelRoute } = usePanelApi();
 
@@ -82,6 +83,16 @@ onUnmounted(() => window.clearInterval(timer));
                     <i class="bi bi-arrow-clockwise" :class="{ 'animate-spin': loading }"></i> {{ t('common.refresh') }}
                 </button>
             </div>
+
+            <LogAiExplain
+                v-if="aiAvailable"
+                :endpoint="panelRoute('websites.logs.explain', { id: website.id })"
+                :website-id="String(website.id)"
+                :kind="kind"
+                :count="count"
+                :filter="filter"
+                :disabled="!exists || !lines.length"
+            />
 
             <div v-if="error" class="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-900 dark:bg-red-950 dark:text-red-300">{{ error }}</div>
             <LogLines :lines="shown" :empty-text="exists ? t('siteLogs.noMatch') : t({ access: 'siteLogs.noAccessLog', waf: 'siteLogs.noWafLog', php: 'siteLogs.noPhpLog' }[kind])" />

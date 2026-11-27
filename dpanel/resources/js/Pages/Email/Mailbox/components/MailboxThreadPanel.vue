@@ -7,6 +7,7 @@ import ContactCard from './ContactCard.vue';
 import InlineReplyBox from './InlineReplyBox.vue';
 import ThreadMessageCard from './ThreadMessageCard.vue';
 import MessageActions from './MessageActions.vue';
+import MailAiSummary from './ai/MailAiSummary.vue';
 import { mailDocument } from './mailFrame';
 import { useI18n } from 'vue-i18n';
 
@@ -101,6 +102,10 @@ const props = defineProps({
         type: Boolean,
         default: false,
     },
+    aiEndpoints: {
+        type: Object,
+        default: null,
+    },
 });
 
 const emit = defineEmits(['open-message', 'close-preview', 'start-compose', 'compose-to', 'pop-out-reply', 'reply-sent', 'notify', 'delete-message', 'toggle-read', 'change-page', 'toggle-select', 'select-all', 'bulk-action']);
@@ -110,7 +115,11 @@ const emit = defineEmits(['open-message', 'close-preview', 'start-compose', 'com
 const replyMode = ref('');
 const replyTarget = ref(null);
 const replyBox = ref(null);
-const startReply = async (mode, target = null) => {
+// "AI reply" opens the reply box and drafts the body right away.
+const aiDraftOnOpen = ref(false);
+const startAiReply = () => startReply('reply', null, true);
+const startReply = async (mode, target = null, aiDraft = false) => {
+    aiDraftOnOpen.value = aiDraft;
     // Like Gmail, the general Reply buttons answer the newest message of the conversation.
     const latest = threadAfter.value[threadAfter.value.length - 1];
     if (!target && latest && props.messageEndpoint) {
@@ -149,6 +158,7 @@ const onMainAction = (id) => {
 
 const onReplySent = (notice) => {
     replyMode.value = '';
+    aiDraftOnOpen.value = false;
     replyTarget.value = null;
     emit('reply-sent', notice);
     // The reply was saved to Sent before the request returned, so it joins the conversation now.
@@ -914,6 +924,14 @@ onBeforeUnmount(() => {
                             <h2 :class="[ui.strong, 'text-xl font-semibold leading-snug tracking-tight md:text-[26px]']">
                                 {{ currentMessage.subject || t('email.mailbox.details.noSubject') }}
                             </h2>
+                            <MailAiSummary
+                                v-if="aiEndpoints?.summary"
+                                :endpoint="aiEndpoints.summary"
+                                :folder="currentMessage.folder || activeFolder"
+                                :uid="currentMessage.uid"
+                                :is-dark="isDark"
+                                class="mt-3"
+                            />
                         </div>
 
                         <!-- Conversation: one card, messages divided like Gmail -->
@@ -1199,6 +1217,9 @@ onBeforeUnmount(() => {
                             <button type="button" :class="[ui.pill, 'inline-flex h-9 items-center gap-2 rounded-full border px-4 text-sm font-medium transition']" @click="startReply('forward')">
                                 <i class="bi bi-forward"></i> {{ t('email.mailbox.actions.forward') }}
                             </button>
+                            <button v-if="aiEndpoints?.reply" type="button" class="inline-flex h-9 items-center gap-2 rounded-full border border-violet-300 px-4 text-sm font-medium text-violet-700 transition hover:bg-violet-50 dark:border-violet-500/40 dark:text-violet-200 dark:hover:bg-violet-500/15" @click="startAiReply">
+                                <i class="bi bi-stars"></i> {{ t('email.mailbox.ai.aiReply') }}
+                            </button>
                         </div>
 
                         <div v-if="replyMode" ref="replyBox" class="mt-6 pb-24">
@@ -1211,8 +1232,11 @@ onBeforeUnmount(() => {
                                 :send-endpoint="sendEndpoint"
                                 :sandbox="sandbox"
                                 :is-dark="isDark"
+                                :ai-reply-endpoint="aiEndpoints?.reply || ''"
+                                :ai-polish-endpoint="aiEndpoints?.polish || ''"
+                                :ai-draft-on-open="aiDraftOnOpen"
                                 @sent="onReplySent"
-                                @discard="replyMode = ''; replyTarget = null"
+                                @discard="replyMode = ''; replyTarget = null; aiDraftOnOpen = false"
                                 @pop-out="popOutReply"
                                 @notify="(text, type) => emit('notify', text, type)"
                             />

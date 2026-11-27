@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\CronJob;
+use App\Services\AiGateway\PanelAi;
 use App\Models\Website;
 use App\Services\Cron\CronSystemService;
 use App\Support\BackupSettings;
@@ -49,6 +50,8 @@ class CronJobController extends Controller
                 'domain' => $website->domain ?? '',
             ],
             'cronJobs' => $jobs,
+            // No AI Gateway model: the "describe it" helper is not shown.
+            'aiAvailable' => app(PanelAi::class)->available(),
         ]);
     }
 
