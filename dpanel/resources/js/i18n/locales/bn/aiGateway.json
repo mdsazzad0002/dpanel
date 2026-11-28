@@ -164,6 +164,7 @@
             "configured": "(সেট করা আছে)",
             "testing": "Test হচ্ছে…",
             "testConnection": "Connection test করুন",
+            "testNoMessage": "Test শেষ হয়েছে, কিন্তু provider কোনো message পাঠায়নি।",
             "openChat": "Chat খুলুন",
             "addModelFirst": "আগে একটি model যোগ করুন",
             "saveChanges": "পরিবর্তন save করুন"
@@ -342,6 +343,14 @@
         "remoteFailed": "Provider-এ পৌঁছানো যায়নি — এর বদলে local model তালিকা দেখানো হচ্ছে।",
         "updateFailed": "Model update করা যায়নি।",
         "testFailed": "Test request ব্যর্থ হয়েছে।",
+        "testFailedStatus": "Test request ব্যর্থ হয়েছে ({status})।",
+        "testFailedNetwork": "Test request panel পর্যন্ত পৌঁছায়নি ({error})।",
+        "probe": {
+            "chat": "Chat",
+            "code": "Code",
+            "tools": "Tools",
+            "vision": "Vision"
+        },
         "ago": {
             "now": "এইমাত্র",
             "m": "{n} মিনিট আগে",

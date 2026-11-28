@@ -34,7 +34,7 @@ class ModelProber
             // Down, bad key or unknown model: nothing to learn, change nothing.
             return [
                 'ok' => false,
-                'message' => Str::limit($e->getMessage(), 300),
+                'message' => self::reason($e),
                 'latency_ms' => $this->ms($started),
                 'output_tokens' => 0,
                 'tokens_per_second' => 0.0,
@@ -146,10 +146,22 @@ class ModelProber
         try {
             [$ok, $note] = $probe();
         } catch (\Throwable $e) {
-            [$ok, $note] = [false, 'Not supported: '.Str::limit($e->getMessage(), 80)];
+            [$ok, $note] = [false, 'Not supported: '.Str::limit(self::reason($e), 80)];
         }
 
         return ['ok' => $ok, 'note' => $note];
+    }
+
+    /**
+     * Why a call failed, in words. Some client exceptions carry an empty
+     * message (a bare connection drop, for one), which would leave the panel
+     * showing "Failed" and nothing else — so fall back to the class name.
+     */
+    public static function reason(\Throwable $e): string
+    {
+        $message = trim($e->getMessage());
+
+        return $message !== '' ? Str::limit($message, 300) : class_basename($e).' with no message.';
     }
 
     private function redSquare(): string

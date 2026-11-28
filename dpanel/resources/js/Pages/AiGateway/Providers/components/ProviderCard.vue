@@ -50,6 +50,9 @@ const removeModel = (m) => {
 };
 
 const fmtSeconds = (ms) => (ms >= 1000 ? `${(ms / 1000).toFixed(1)}s` : `${ms}ms`);
+// What each probe (chat, code, tools, vision) found, so a pass or a failure
+// says why instead of only colouring the row.
+const probeNotes = (test) => Object.entries(test?.probes || {}).map(([name, probe]) => ({ name, ...probe }));
 const btn = 'rounded border border-slate-300 px-2 py-1 text-xs hover:bg-slate-100 disabled:opacity-50 dark:border-slate-600 dark:hover:bg-slate-700';
 </script>
 
@@ -107,10 +110,25 @@ const btn = 'rounded border border-slate-300 px-2 py-1 text-xs hover:bg-slate-10
                         <td class="px-4 py-1.5 text-slate-500">{{ (m.capabilities || []).join(', ') || '—' }}</td>
                         <td class="max-w-xs px-4 py-1.5">
                             <span v-if="testing[m.id]" class="text-amber-600"><i class="bi bi-hourglass-split"></i> {{ t('aiGateway.models.testing') }}</span>
-                            <div v-else-if="m.last_test" :class="m.last_test.ok ? 'text-emerald-600' : 'text-red-600'" :title="m.last_test.message">
-                                <i class="bi" :class="m.last_test.ok ? 'bi-check-circle' : 'bi-x-circle'"></i>
-                                {{ m.last_test.ok ? t('aiGateway.models.statusWorking') : t('aiGateway.models.statusFailed') }}
-                                <span class="text-slate-400">· {{ fmtSeconds(m.last_test.latency_ms) }}<template v-if="m.last_test.ok && m.last_test.tokens_per_second"> · {{ m.last_test.tokens_per_second }} tok/s</template></span>
+                            <div v-else-if="m.last_test">
+                                <div :class="m.last_test.ok ? 'text-emerald-600' : 'text-red-600'">
+                                    <i class="bi" :class="m.last_test.ok ? 'bi-check-circle' : 'bi-x-circle'"></i>
+                                    {{ m.last_test.ok ? t('aiGateway.models.statusWorking') : t('aiGateway.models.statusFailed') }}
+                                    <span class="text-slate-400"><template v-if="m.last_test.latency_ms"> · {{ fmtSeconds(m.last_test.latency_ms) }}</template><template v-if="m.last_test.ok && m.last_test.tokens_per_second"> · {{ m.last_test.tokens_per_second }} tok/s</template></span>
+                                </div>
+                                <!-- The reason in words: the model's own reply when it answered,
+                                     the provider's or panel's error when it didn't. -->
+                                <div v-if="m.last_test.message" class="mt-0.5 break-words text-[11px] leading-snug"
+                                    :class="m.last_test.ok ? 'text-slate-500' : 'text-red-600'" :title="m.last_test.message">
+                                    {{ m.last_test.message }}
+                                </div>
+                                <div v-if="probeNotes(m.last_test).length" class="mt-1 flex flex-wrap gap-1">
+                                    <span v-for="probe in probeNotes(m.last_test)" :key="probe.name" :title="probe.note"
+                                        class="rounded px-1 py-0.5 text-[10px]"
+                                        :class="probe.ok ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300' : 'bg-red-50 text-red-700 dark:bg-red-900/40 dark:text-red-300'">
+                                        <i class="bi" :class="probe.ok ? 'bi-check' : 'bi-x'"></i> {{ t('aiGateway.models.probe.' + probe.name, probe.name) }}: {{ probe.note }}
+                                    </span>
+                                </div>
                             </div>
                             <span v-else-if="!m.testable" class="text-slate-400">{{ t('aiGateway.models.notChat') }}</span>
                             <span v-else class="text-slate-400">{{ t('aiGateway.models.notTested') }}</span>

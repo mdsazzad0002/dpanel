@@ -164,6 +164,7 @@
             "configured": "（已配置）",
             "testing": "正在测试…",
             "testConnection": "测试连接",
+            "testNoMessage": "测试已完成，但提供方未返回任何消息。",
             "openChat": "打开聊天",
             "addModelFirst": "请先添加模型",
             "saveChanges": "保存更改"
@@ -342,6 +343,14 @@
         "remoteFailed": "无法访问提供商——改为显示本地模型列表。",
         "updateFailed": "无法更新模型。",
         "testFailed": "测试请求失败。",
+        "testFailedStatus": "测试请求失败（{status}）。",
+        "testFailedNetwork": "测试请求未到达面板（{error}）。",
+        "probe": {
+            "chat": "对话",
+            "code": "代码",
+            "tools": "工具",
+            "vision": "视觉"
+        },
         "ago": {
             "now": "刚刚",
             "m": "{n} 分钟前",

@@ -76,14 +76,25 @@ const submit = () => {
     }
 };
 
+// Why the test request itself failed, in words: the server's own reason when
+// it sent one, otherwise the HTTP status, otherwise "never got there" — so a
+// failed test always says something.
+const testErrorMessage = (e) => {
+    const body = e.response?.data;
+    const reason = typeof body === 'string' ? body.slice(0, 300) : (body?.message || body?.error);
+    if (reason) return reason;
+    if (e.response) return t('aiGateway.models.testFailedStatus', { status: [e.response.status, e.response.statusText].filter(Boolean).join(' ') });
+    return t('aiGateway.models.testFailedNetwork', { error: e.message || t('aiGateway.providers.requestFailed') });
+};
+
 const runTest = async () => {
     testing.value = true;
     testResult.value = null;
     try {
         const { data } = await axios.post(props.panelRoute('ai-gateway.providers.test', { provider: props.provider.id }));
-        testResult.value = data;
+        testResult.value = { ...data, message: data.message || t('aiGateway.providers.form.testNoMessage') };
     } catch (e) {
-        testResult.value = { ok: false, message: e.response?.data?.message || t('aiGateway.providers.requestFailed') };
+        testResult.value = { ok: false, message: testErrorMessage(e) };
     } finally {
         testing.value = false;
     }
@@ -160,7 +171,11 @@ const input = 'w-full rounded-md border border-slate-300 px-3 py-2 text-sm dark:
                         {{ testing ? t('aiGateway.providers.form.testing') : t('aiGateway.providers.form.testConnection') }}
                     </button>
                 </div>
-                <div v-if="testResult" class="rounded-md border px-3 py-2 text-sm" :class="testResult.ok ? 'border-emerald-200 bg-emerald-50 text-emerald-700' : 'border-red-200 bg-red-50 text-red-700'">{{ testResult.message }}</div>
+                <div v-if="testResult" class="rounded-md border px-3 py-2 text-sm" :class="testResult.ok ? 'border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-300' : 'border-red-200 bg-red-50 text-red-700 dark:border-red-800 dark:bg-red-900/30 dark:text-red-300'">
+                    <i class="bi" :class="testResult.ok ? 'bi-check-circle' : 'bi-x-circle'"></i>
+                    <span class="font-medium">{{ testResult.ok ? t('aiGateway.models.statusWorking') : t('aiGateway.models.statusFailed') }}</span>
+                    <span class="break-words"> — {{ testResult.message }}</span>
+                </div>
             </form>
 
             <section v-if="provider" class="border-t border-slate-200 pt-4 dark:border-slate-700">

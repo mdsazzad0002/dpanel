@@ -6,6 +6,7 @@ use App\Models\AiGatewayProvider;
 use App\Services\AiGateway\AiGatewayService;
 use App\Services\AiGateway\ChatHistoryStore;
 use App\Services\AiGateway\GatewayMedia;
+use App\Services\AiGateway\ModelProber;
 use App\Services\Mcp\GatewayChatTools;
 use App\Support\StreamsSseChat;
 use Illuminate\Http\JsonResponse;
@@ -229,11 +230,15 @@ class AiGatewayProviderController extends Controller
     {
         try {
             $result = $this->gateway->testProvider($provider);
+            $result['message'] = trim((string) ($result['message'] ?? '')) ?: ($result['ok']
+                ? 'Connected, but the provider said nothing about it.'
+                : 'The provider refused the test without giving a reason.');
             $message = 'Provider test: '.$result['message'];
         } catch (\Throwable $e) {
-            $provider->update(['last_test_status' => 'fail', 'last_test_message' => $e->getMessage(), 'last_tested_at' => now()]);
-            $result = ['ok' => false, 'message' => $e->getMessage()];
-            $message = 'Provider test failed: '.$e->getMessage();
+            $reason = ModelProber::reason($e);
+            $provider->update(['last_test_status' => 'fail', 'last_test_message' => $reason, 'last_tested_at' => now()]);
+            $result = ['ok' => false, 'message' => $reason];
+            $message = 'Provider test failed: '.$reason;
         }
 
         if ($request->wantsJson()) {

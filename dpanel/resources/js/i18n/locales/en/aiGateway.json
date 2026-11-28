@@ -164,6 +164,7 @@
             "configured": "(configured)",
             "testing": "Testing…",
             "testConnection": "Test Connection",
+            "testNoMessage": "The test finished but the provider sent no message.",
             "openChat": "Open Chat",
             "addModelFirst": "Add a model first",
             "saveChanges": "Save Changes"
@@ -342,6 +343,14 @@
         "remoteFailed": "Could not reach the provider — showing the local model list instead.",
         "updateFailed": "Could not update the model.",
         "testFailed": "The test request failed.",
+        "testFailedStatus": "The test request failed ({status}).",
+        "testFailedNetwork": "The test request never reached the panel ({error}).",
+        "probe": {
+            "chat": "Chat",
+            "code": "Code",
+            "tools": "Tools",
+            "vision": "Vision"
+        },
         "ago": {
             "now": "just now",
             "m": "{n}m ago",

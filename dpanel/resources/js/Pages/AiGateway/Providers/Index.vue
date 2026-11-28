@@ -74,6 +74,16 @@ watch(() => props.openPanel, (o) => {
 
 // Model tester: asks the model directly (no failover).
 const testing = reactive({});
+// Why the test request itself failed, in words: the server's own reason when
+// it sent one, otherwise the HTTP status, otherwise "never got there" — so a
+// failed test never shows up as a bare "Failed" with nothing to go on.
+const testErrorMessage = (e) => {
+    const body = e.response?.data;
+    const reason = typeof body === 'string' ? body.slice(0, 300) : (body?.message || body?.error);
+    if (reason) return reason;
+    if (e.response) return t('aiGateway.models.testFailedStatus', { status: [e.response.status, e.response.statusText].filter(Boolean).join(' ') });
+    return t('aiGateway.models.testFailedNetwork', { error: e.message || t('aiGateway.models.testFailed') });
+};
 const testAllRunning = ref(false);
 const testModel = async (m) => {
     testing[m.id] = true;
@@ -82,7 +92,7 @@ const testModel = async (m) => {
         m.last_test = data;
         if (data.capabilities) m.capabilities = data.capabilities;
     } catch (e) {
-        m.last_test = { ok: false, message: e.response?.data?.message || t('aiGateway.models.testFailed'), latency_ms: 0, tested_at: new Date().toISOString() };
+        m.last_test = { ok: false, message: testErrorMessage(e), latency_ms: 0, tested_at: new Date().toISOString() };
     } finally {
         delete testing[m.id];
     }
