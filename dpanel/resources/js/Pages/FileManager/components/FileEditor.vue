@@ -1,105 +1,95 @@
 <script setup>
+import { defineAsyncComponent, ref } from 'vue';
 import { useI18n } from 'vue-i18n';
 
 const { t } = useI18n();
-defineProps({
+const props = defineProps({
     fm: {
         type: Object,
         required: true,
     },
 });
+
+// CodeMirror is a few hundred kilobytes; it must not sit in the file
+// manager's chunk, which loads on every visit to the page. This keeps it in
+// a chunk of its own, fetched the first time a file is opened to edit.
+const CodeEditor = defineAsyncComponent(() => import('./CodeEditor.vue'));
+
+const cursor = ref({ line: 1, column: 1 });
+
+// Off by default, like VS Code: code reads better unwrapped, and long log
+// lines are the exception rather than the rule.
+const wrapLines = ref(false);
+
+function saveFromEditor() {
+    if (props.fm.saveInProgress || !props.fm.hasUnsavedChanges || props.fm.activeFile?.readonly) return;
+
+    props.fm.submitSaveFile();
+}
 </script>
 
 <template>
-    <div v-if="fm.modalType === 'editor'" class="flex min-h-0 flex-1 flex-col bg-slate-50 text-slate-800 dark:bg-[#1e1e1e] dark:text-slate-200">
-        <div class="flex items-center justify-between gap-3 border-b border-slate-200/80 bg-white/85 px-4 py-2.5 backdrop-blur dark:border-white/10 dark:bg-[#252526]">
-            <div class="min-w-0">
-                <div class="flex items-center gap-2 text-xs text-slate-600 dark:text-slate-300">
-                    <i class="bi bi-file-earmark-code text-sky-400"></i>
-                    <span class="truncate font-medium">{{ fm.editorFileName }}</span>
-                    <span v-if="fm.hasUnsavedChanges" class="h-2 w-2 rounded-full bg-amber-400"></span>
-                    <span v-if="fm.selectedFile?.readonly" class="rounded-full border border-amber-500/30 bg-amber-500/10 px-2 py-0.5 text-[10px] uppercase tracking-wide text-amber-700 dark:text-amber-300">{{ t('fileManager.editor.readonly') }}</span>
-                </div>
-                <p class="mt-1 truncate text-[11px] text-slate-500 dark:text-slate-400">{{ fm.saveForm.file_path }}</p>
-            </div>
+    <div v-if="fm.activeFile" class="flex min-h-0 flex-1 flex-col bg-white dark:bg-[#1e1e1e]">
+        <div class="flex items-center justify-between gap-3 border-b border-slate-200/80 bg-white/85 px-4 py-2 backdrop-blur dark:border-white/10 dark:bg-[#252526]">
+            <p class="min-w-0 truncate font-mono text-[11px] text-slate-500 dark:text-slate-400" :title="fm.editorPath">{{ fm.editorPath }}</p>
 
             <div class="flex shrink-0 items-center gap-2">
-                <button type="button" class="rounded-md border border-slate-300/80 bg-white px-3 py-1.5 text-xs text-slate-700 shadow-sm transition hover:bg-slate-50 dark:border-white/10 dark:bg-white/5 dark:text-slate-200 dark:hover:bg-white/10" @click="fm.closeModal">{{ t('common.close') }}</button>
-                <button type="button" class="rounded-md bg-sky-600 px-4 py-1.5 text-xs font-medium text-white shadow-sm transition hover:bg-sky-500 disabled:cursor-not-allowed disabled:opacity-50" :disabled="fm.saveInProgress || !fm.hasUnsavedChanges || fm.selectedFile?.readonly" @click="fm.submitSaveFile">
+                <span v-if="fm.activeFile.readonly" class="rounded-full border border-amber-500/30 bg-amber-500/10 px-2 py-0.5 text-[10px] uppercase tracking-wide text-amber-700 dark:text-amber-300">{{ t('fileManager.editor.readonly') }}</span>
+                <button
+                    type="button"
+                    class="rounded-md border px-2 py-1.5 text-xs shadow-sm transition"
+                    :class="wrapLines
+                        ? 'border-sky-500/60 bg-sky-50 text-sky-700 dark:bg-sky-500/10 dark:text-sky-300'
+                        : 'border-slate-300/80 bg-white text-slate-600 hover:bg-slate-50 dark:border-white/10 dark:bg-white/5 dark:text-slate-300 dark:hover:bg-white/10'"
+                    :title="t('fileManager.editor.wrapLines')"
+                    :aria-pressed="wrapLines"
+                    @click="wrapLines = !wrapLines"
+                >
+                    <i class="bi bi-text-wrap"></i>
+                </button>
+                <button
+                    type="button"
+                    class="rounded-md bg-sky-600 px-4 py-1.5 text-xs font-medium text-white shadow-sm transition hover:bg-sky-500 disabled:cursor-not-allowed disabled:opacity-50"
+                    :disabled="fm.saveInProgress || !fm.hasUnsavedChanges || fm.activeFile.readonly"
+                    :title="t('fileManager.editor.tipSave')"
+                    @click="fm.submitSaveFile"
+                >
                     {{ fm.saveInProgress ? t('fileManager.editor.saving') : t('common.save') }}
                 </button>
             </div>
         </div>
 
+        <div v-if="fm.activeFile.message" class="flex flex-wrap items-center justify-between gap-2 border-b border-amber-500/30 bg-amber-50 px-4 py-2 text-xs text-amber-800 dark:bg-amber-500/10 dark:text-amber-200">
+            <span>{{ fm.activeFile.message }}</span>
+            <button
+                v-if="fm.activeFile.partial && fm.activeFile.can_load_full"
+                type="button"
+                class="rounded-md border border-amber-500/40 bg-white px-3 py-1 font-medium text-amber-800 transition hover:bg-amber-100 dark:bg-white/5 dark:text-amber-200 dark:hover:bg-white/10"
+                @click="fm.loadFullFile"
+            >{{ t('fileManager.editor.openFull') }}</button>
+        </div>
+
         <div class="flex min-h-0 flex-1 overflow-hidden">
-            <aside class="hidden w-64 shrink-0 flex-col border-r border-slate-200/80 bg-slate-100/80 lg:flex dark:border-white/10 dark:bg-[#1f1f1f]">
-                <div class="border-b border-slate-200/80 px-4 py-3 dark:border-white/10">
-                    <p class="text-[10px] font-semibold uppercase tracking-[0.2em] text-slate-500 dark:text-slate-400">{{ t('fileManager.editor.explorer') }}</p>
-                </div>
-                <div class="space-y-4 px-4 py-4 text-sm">
-                    <div>
-                        <p class="text-[10px] uppercase tracking-[0.2em] text-slate-500 dark:text-slate-500">{{ t('fileManager.editor.file') }}</p>
-                        <p class="mt-1 break-all font-mono text-xs text-slate-800 dark:text-slate-200">{{ fm.editorFileName }}</p>
-                    </div>
-                    <div>
-                        <p class="text-[10px] uppercase tracking-[0.2em] text-slate-500 dark:text-slate-500">{{ t('fileManager.editor.folder') }}</p>
-                        <p class="mt-1 break-all font-mono text-xs text-slate-800 dark:text-slate-200">{{ fm.editorFileFolder }}</p>
-                    </div>
-                    <div>
-                        <p class="text-[10px] uppercase tracking-[0.2em] text-slate-500 dark:text-slate-500">{{ t('fileManager.editor.lines') }}</p>
-                        <p class="mt-1 font-mono text-xs text-slate-800 dark:text-slate-200">{{ fm.editorLineCount }}</p>
-                    </div>
-                    <div class="rounded-lg border border-slate-200 bg-white p-3 text-xs text-slate-600 shadow-sm dark:border-white/10 dark:bg-black/20 dark:text-slate-300">
-                        <p class="font-medium text-slate-800 dark:text-slate-100">{{ t('fileManager.editor.tips') }}</p>
-                        <ul class="mt-2 space-y-1 text-slate-500 dark:text-slate-400">
-                            <li>{{ t('fileManager.editor.tipSave') }}</li>
-                            <li>{{ t('fileManager.editor.tipFullscreen') }}</li>
-                            <li>{{ t('fileManager.editor.tipSplit') }}</li>
-                        </ul>
-                    </div>
-                </div>
-            </aside>
+            <CodeEditor
+                :key="fm.activeFilePath"
+                v-model="fm.editorContent"
+                :file-name="fm.editorFileName"
+                :readonly="!!fm.activeFile.readonly"
+                :wrap="wrapLines"
+                :goto-line="fm.activeFile.gotoLine || 0"
+                @goto-done="fm.clearGotoLine(fm.activeFilePath)"
+                @save="saveFromEditor"
+                @cursor="cursor = $event"
+                @toggle-wrap="wrapLines = !wrapLines"
+            />
+        </div>
 
-            <div class="flex min-w-0 flex-1 flex-col">
-                <div class="flex items-center justify-between border-b border-slate-200/80 bg-slate-100/90 px-4 py-2 text-xs text-slate-600 dark:border-white/10 dark:bg-[#2d2d2d] dark:text-slate-300">
-                    <div class="flex min-w-0 items-center gap-2">
-                        <span class="rounded-md border border-slate-200 bg-white px-2 py-1 font-mono text-[11px] text-slate-700 shadow-sm dark:border-white/10 dark:bg-white/5 dark:text-slate-200">{{ fm.editorFileName }}</span>
-                        <span class="truncate text-slate-500 dark:text-slate-400">{{ fm.editorFileFolder }}</span>
-                    </div>
-                    <div class="flex items-center gap-3 text-[11px] text-slate-500 dark:text-slate-400">
-                        <span>{{ fm.hasUnsavedChanges ? t('fileManager.editor.unsaved') : t('fileManager.editor.saved') }}</span>
-                        <span>{{ t('fileManager.editor.lineCount', { count: fm.editorLineCount }) }}</span>
-                    </div>
-                </div>
-
-                <div v-if="fm.selectedFile?.message" class="flex flex-wrap items-center justify-between gap-2 border-b border-amber-500/30 bg-amber-50 px-4 py-2 text-xs text-amber-800 dark:bg-amber-500/10 dark:text-amber-200">
-                    <span>{{ fm.selectedFile.message }}</span>
-                    <button
-                        v-if="fm.selectedFile.partial && fm.selectedFile.can_load_full"
-                        type="button"
-                        class="rounded-md border border-amber-500/40 bg-white px-3 py-1 font-medium text-amber-800 transition hover:bg-amber-100 dark:bg-white/5 dark:text-amber-200 dark:hover:bg-white/10"
-                        @click="fm.loadFullFile"
-                    >{{ t('fileManager.editor.openFull') }}</button>
-                </div>
-
-                <div class="editor-shell flex min-h-0 flex-1 bg-white dark:bg-[#1e1e1e]">
-                    <div class="editor-gutter hidden w-12 shrink-0 border-r border-slate-200/80 bg-slate-50 py-4 pr-2 text-right font-mono text-[11px] leading-6 text-slate-400 sm:block dark:border-white/10 dark:bg-[#1e1e1e] dark:text-slate-500">
-                        <div v-for="line in fm.editorLineCount" :key="line">{{ line }}</div>
-                    </div>
-
-                    <textarea
-                        v-model="fm.saveForm.content"
-                        class="editor-textarea min-h-0 flex-1 resize-none border-0 bg-transparent p-4 font-mono text-sm leading-6 text-slate-800 outline-none focus:ring-0 dark:text-slate-100"
-                        :readonly="fm.selectedFile?.readonly"
-                        spellcheck="false"
-                        wrap="off"
-                    ></textarea>
-                </div>
-
-                <div class="flex items-center justify-between border-t border-slate-200/80 bg-white px-4 py-2 text-[11px] text-slate-500 dark:border-white/10 dark:bg-[#252526] dark:text-slate-400">
-                    <span>{{ fm.saveForm.file_path }}</span>
-                    <span>{{ fm.hasUnsavedChanges ? t('fileManager.editor.modified') : t('fileManager.editor.noChanges') }}</span>
-                </div>
+        <div class="flex items-center justify-between gap-3 border-t border-slate-200/80 bg-white/80 px-4 py-1.5 text-[11px] text-slate-500 backdrop-blur dark:border-white/10 dark:bg-[#252526] dark:text-slate-400">
+            <span class="truncate">{{ fm.editorFileName }}</span>
+            <div class="flex shrink-0 items-center gap-3">
+                <span class="font-mono">{{ t('fileManager.editor.cursor', { line: cursor.line, column: cursor.column }) }}</span>
+                <span>{{ t('fileManager.editor.lineCount', { count: fm.editorLineCount }) }}</span>
+                <span>{{ fm.hasUnsavedChanges ? t('fileManager.editor.modified') : t('fileManager.editor.noChanges') }}</span>
             </div>
         </div>
     </div>

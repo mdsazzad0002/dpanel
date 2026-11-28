@@ -68,7 +68,16 @@
         "copy": "कॉपी करें",
         "zip": "Zip बनाएँ",
         "unzip": "आर्काइव एक्सट्रैक्ट करें",
-        "delete": "हटाएँ"
+        "delete": "हटाएँ",
+        "copyPath": "पथ कॉपी करें",
+        "copyRelativePath": "सापेक्ष पथ कॉपी करें",
+        "pathCopied": "कॉपी हुआ: {path}",
+        "copyFailed": "क्लिपबोर्ड पर कॉपी नहीं हो सका",
+        "selectedItems": "{count} चयनित",
+        "deleteSelected": "{count} आइटम हटाएँ",
+        "currentFolder": "वर्तमान फ़ोल्डर",
+        "selectAll": "यहाँ सब चुनें",
+        "refresh": "रिफ़्रेश"
     },
     "trash": {
         "intro": "हटाए गए आइटम स्थायी रूप से हटाए जाने से पहले zip करके यहाँ रखे जाते हैं।",
@@ -112,22 +121,23 @@
         "goToPath": "पथ पर जाएँ...",
         "dropUp": "आइटम को एक स्तर ऊपर ले जाने के लिए यहाँ छोड़ें",
         "up": "ऊपर की डायरेक्टरी",
-        "root": "रूट पर जाएँ"
+        "root": "रूट पर जाएँ",
+        "expand": "{name} खोलें",
+        "collapse": "{name} बंद करें",
+        "resize": "साइडबार का आकार बदलें",
+        "treeFailed": "वह फ़ोल्डर पढ़ा नहीं जा सका"
     },
     "editor": {
+        "filesTab": "फ़ाइलें",
+        "filesTabTitle": "फ़ाइल सूची पर लौटें",
         "readonly": "केवल पढ़ने के लिए",
         "saving": "सहेजा जा रहा है...",
-        "explorer": "एक्सप्लोरर",
-        "file": "फ़ाइल",
-        "folder": "फ़ोल्डर",
-        "lines": "पंक्तियाँ",
-        "tips": "सुझाव",
+        "closeTab": "{name} बंद करें",
+        "confirmClose": "{name} में बिना सहेजे बदलाव हैं। फिर भी बंद करें?",
         "tipSave": "सहेजने के लिए Ctrl/Cmd+S",
-        "tipFullscreen": "पूर्ण-स्क्रीन कोड संपादन उपयोग करें",
-        "tipSplit": "फ़ाइलों को ज़िम्मेदारी के अनुसार अलग रखें",
-        "unsaved": "बिना सहेजे बदलाव",
-        "saved": "सहेजा गया",
         "lineCount": "{count} पंक्तियाँ",
+        "cursor": "पंक्ति {line}, स्तंभ {column}",
+        "wrapLines": "वर्ड रैप चालू/बंद करें (Alt+Z)",
         "openFull": "पूरी फ़ाइल खोलें",
         "modified": "बदला गया",
         "noChanges": "कोई बदलाव नहीं"
@@ -136,8 +146,7 @@
         "exit": "फ़ाइल मैनेजर से बाहर निकलें",
         "toggleSidebar": "साइडबार दिखाएँ/छिपाएँ",
         "root": "रूट पर जाएँ",
-        "browse": "{url} ब्राउज़ करें",
-        "search": "फ़ाइलें खोजें..."
+        "browse": "{url} ब्राउज़ करें"
     },
     "table": {
         "open": "खोलें",
@@ -152,7 +161,6 @@
         "modified": "बदला गया",
         "calculate": "गणना करें",
         "calculating": "गणना हो रही है…",
-        "noMatch": "कोई फ़ाइल आपकी खोज से मेल नहीं खाती",
         "empty": "इस डायरेक्टरी में कोई फ़ाइल नहीं"
     },
     "switcher": {
@@ -406,5 +414,33 @@
         "trashHint": "बहाल करें या स्थायी रूप से हटाएँ",
         "delete": "हटाएँ",
         "deleteHint": "चयनित आइटम हटाएँ"
+    },
+    "palette": {
+        "caseSensitive": "केस मिलाएँ",
+        "empty": "कोई फ़ाइल खोलें, वह यहाँ दिखेगी",
+        "failed": "खोज नहीं चल सकी",
+        "groupFiles": "फ़ाइलें",
+        "groupFolders": "फ़ोल्डर",
+        "groupOpen": "खुले",
+        "groupRecent": "हाल के",
+        "hintMove": "चलने के लिए",
+        "hintOpen": "खोलने के लिए",
+        "includeHint": "केवल इस पैटर्न से मेल खाती फ़ाइलें",
+        "includeIgnored": "अनदेखे",
+        "includeIgnoredHint": ".git, node_modules आदि के भीतर भी देखें",
+        "includePlaceholder": "*.php",
+        "modeFiles": "फ़ाइलें",
+        "modeText": "टेक्स्ट",
+        "noResults": "“{query}” से कुछ मेल नहीं खाता",
+        "openHint": "लोड की गई हर चीज़ में खोजें (Ctrl/Cmd+K)",
+        "placeholder": "फ़ाइलें और फ़ोल्डर खोजें…",
+        "placeholderText": "फ़ाइलों के भीतर का टेक्स्ट खोजें…",
+        "scope": "सर्वर पर पूरे खाते में खोजता है",
+        "scopeFolder": "यह फ़ोल्डर",
+        "scopeFolderHint": "केवल इसी फ़ोल्डर के भीतर खोजें",
+        "searching": "खोजा जा रहा है…",
+        "trigger": "खोजें",
+        "truncated": "केवल पहले कुछ परिणाम दिखाए जा रहे हैं",
+        "wholeWord": "पूरा शब्द"
     }
 }

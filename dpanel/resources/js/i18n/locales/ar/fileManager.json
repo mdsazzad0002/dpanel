@@ -68,7 +68,16 @@
         "copy": "نسخ",
         "zip": "إنشاء Zip",
         "unzip": "فك ضغط الأرشيف",
-        "delete": "حذف"
+        "delete": "حذف",
+        "copyPath": "نسخ المسار",
+        "copyRelativePath": "نسخ المسار النسبي",
+        "pathCopied": "تم النسخ: {path}",
+        "copyFailed": "تعذّر النسخ إلى الحافظة",
+        "selectedItems": "تم تحديد {count} عنصرًا",
+        "deleteSelected": "حذف {count} عنصرًا",
+        "currentFolder": "المجلد الحالي",
+        "selectAll": "تحديد كل ما هنا",
+        "refresh": "تحديث"
     },
     "trash": {
         "intro": "تُضغط العناصر المحذوفة وتُحفظ هنا قبل إزالتها نهائيًا.",
@@ -112,22 +121,23 @@
         "goToPath": "الانتقال إلى مسار...",
         "dropUp": "أفلت العناصر هنا لنقلها مستوى واحدًا لأعلى",
         "up": "الدليل الأعلى",
-        "root": "الانتقال إلى الجذر"
+        "root": "الانتقال إلى الجذر",
+        "expand": "توسيع {name}",
+        "collapse": "طي {name}",
+        "resize": "تغيير عرض الشريط الجانبي",
+        "treeFailed": "تعذّرت قراءة ذلك المجلد"
     },
     "editor": {
+        "filesTab": "الملفات",
+        "filesTabTitle": "العودة إلى قائمة الملفات",
         "readonly": "للقراءة فقط",
         "saving": "جارٍ الحفظ...",
-        "explorer": "المستكشف",
-        "file": "الملف",
-        "folder": "المجلد",
-        "lines": "الأسطر",
-        "tips": "نصائح",
+        "closeTab": "إغلاق {name}",
+        "confirmClose": "يحتوي {name} على تغييرات غير محفوظة. هل تريد إغلاقه؟",
         "tipSave": "Ctrl/Cmd+S للحفظ",
-        "tipFullscreen": "استخدم تحرير الشيفرة بملء الشاشة",
-        "tipSplit": "قسّم الملفات حسب المسؤولية",
-        "unsaved": "تغييرات غير محفوظة",
-        "saved": "محفوظ",
         "lineCount": "{count} سطر",
+        "cursor": "السطر {line}، العمود {column}",
+        "wrapLines": "تبديل التوليف التلقائي للأسطر (Alt+Z)",
         "openFull": "فتح الملف كاملًا",
         "modified": "معدّل",
         "noChanges": "لا تغييرات"
@@ -136,8 +146,7 @@
         "exit": "الخروج من مدير الملفات",
         "toggleSidebar": "إظهار/إخفاء الشريط الجانبي",
         "root": "الانتقال إلى الجذر",
-        "browse": "تصفح {url}",
-        "search": "ابحث في الملفات..."
+        "browse": "تصفح {url}"
     },
     "table": {
         "open": "فتح",
@@ -152,7 +161,6 @@
         "modified": "آخر تعديل",
         "calculate": "حساب",
         "calculating": "جارٍ الحساب…",
-        "noMatch": "لا توجد ملفات تطابق بحثك",
         "empty": "لا توجد ملفات في هذا الدليل"
     },
     "switcher": {
@@ -406,5 +414,33 @@
         "trashHint": "استعادة أو حذف نهائي",
         "delete": "حذف",
         "deleteHint": "إزالة العناصر المحددة"
+    },
+    "palette": {
+        "caseSensitive": "مطابقة حالة الأحرف",
+        "empty": "افتح ملفًا ليظهر هنا",
+        "failed": "تعذّر تنفيذ البحث",
+        "groupFiles": "الملفات",
+        "groupFolders": "المجلدات",
+        "groupOpen": "مفتوح",
+        "groupRecent": "الأحدث",
+        "hintMove": "للتنقل",
+        "hintOpen": "للفتح",
+        "includeHint": "الملفات التي يطابق اسمها هذا النمط فقط",
+        "includeIgnored": "المتجاهَلة",
+        "includeIgnoredHint": "ابحث أيضًا داخل ‎.git و node_modules وأمثالهما",
+        "includePlaceholder": "*.php",
+        "modeFiles": "الملفات",
+        "modeText": "النص",
+        "noResults": "لا شيء يطابق «{query}»",
+        "openHint": "ابحث في كل ما تم تحميله (Ctrl/Cmd+K)",
+        "placeholder": "ابحث في الملفات والمجلدات…",
+        "placeholderText": "ابحث في النص داخل الملفات…",
+        "scope": "يبحث في الحساب كله على الخادم",
+        "scopeFolder": "هذا المجلد",
+        "scopeFolderHint": "ابحث داخل المجلد المعروض فقط",
+        "searching": "جارٍ البحث…",
+        "trigger": "بحث",
+        "truncated": "تُعرض النتائج الأولى فقط",
+        "wholeWord": "كلمة كاملة"
     }
 }

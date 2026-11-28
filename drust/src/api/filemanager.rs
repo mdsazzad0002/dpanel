@@ -15,6 +15,10 @@ pub fn routes() -> Router<Arc<ApiState>> {
             post(crate::filemanager::browse::handle),
         )
         .route(
+            "/api/v1/filemanager/search",
+            post(crate::filemanager::search::handle),
+        )
+        .route(
             "/api/v1/filemanager/read",
             post(crate::filemanager::read::handle),
         )

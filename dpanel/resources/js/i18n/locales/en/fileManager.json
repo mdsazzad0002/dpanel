@@ -68,7 +68,16 @@
         "copy": "Copy",
         "zip": "Create Zip",
         "unzip": "Extract Archive",
-        "delete": "Delete"
+        "delete": "Delete",
+        "copyPath": "Copy path",
+        "copyRelativePath": "Copy relative path",
+        "pathCopied": "Copied: {path}",
+        "copyFailed": "Could not copy to the clipboard",
+        "selectedItems": "{count} items selected",
+        "deleteSelected": "Delete {count} items",
+        "currentFolder": "Current folder",
+        "selectAll": "Select everything here",
+        "refresh": "Refresh"
     },
     "trash": {
         "intro": "Deleted items are zipped and kept here before being permanently removed.",
@@ -112,22 +121,23 @@
         "goToPath": "Go to path...",
         "dropUp": "Drop items here to move them up one level",
         "up": "Up Directory",
-        "root": "Go to Root"
+        "root": "Go to Root",
+        "expand": "Expand {name}",
+        "collapse": "Collapse {name}",
+        "resize": "Resize the sidebar",
+        "treeFailed": "Could not read that folder"
     },
     "editor": {
+        "filesTab": "Files",
+        "filesTabTitle": "Back to the file list",
         "readonly": "Readonly",
         "saving": "Saving...",
-        "explorer": "Explorer",
-        "file": "File",
-        "folder": "Folder",
-        "lines": "Lines",
-        "tips": "Tips",
+        "closeTab": "Close {name}",
+        "confirmClose": "{name} has unsaved changes. Close it anyway?",
         "tipSave": "Ctrl/Cmd+S to save",
-        "tipFullscreen": "Use full-screen code editing",
-        "tipSplit": "Keep files split by responsibility",
-        "unsaved": "Unsaved changes",
-        "saved": "Saved",
         "lineCount": "{count} lines",
+        "cursor": "Ln {line}, Col {column}",
+        "wrapLines": "Toggle word wrap (Alt+Z)",
         "openFull": "Open full file",
         "modified": "Modified",
         "noChanges": "No changes"
@@ -136,8 +146,7 @@
         "exit": "Exit file manager",
         "toggleSidebar": "Toggle sidebar",
         "root": "Go to root",
-        "browse": "Browse {url}",
-        "search": "Search files..."
+        "browse": "Browse {url}"
     },
     "table": {
         "open": "Open",
@@ -152,7 +161,6 @@
         "modified": "Modified",
         "calculate": "Calculate",
         "calculating": "Calculating…",
-        "noMatch": "No files match your search",
         "empty": "No files in this directory"
     },
     "switcher": {
@@ -412,5 +420,33 @@
         "trashHint": "Restore or permanently delete",
         "delete": "Delete",
         "deleteHint": "Remove selected item(s)"
+    },
+    "palette": {
+        "caseSensitive": "Match case",
+        "empty": "Open a file to see it here",
+        "failed": "The search could not be run",
+        "groupFiles": "Files",
+        "groupFolders": "Folders",
+        "groupOpen": "Open",
+        "groupRecent": "Recent",
+        "hintMove": "to move",
+        "hintOpen": "to open",
+        "includeHint": "Only files whose name matches this pattern",
+        "includeIgnored": "Ignored",
+        "includeIgnoredHint": "Also look inside .git, node_modules and friends",
+        "includePlaceholder": "*.php",
+        "modeFiles": "Files",
+        "modeText": "Text",
+        "noResults": "Nothing matches “{query}”",
+        "openHint": "Search everything loaded (Ctrl/Cmd+K)",
+        "placeholder": "Search files and folders…",
+        "placeholderText": "Search the text inside files…",
+        "scope": "Searches the whole account, on the server",
+        "scopeFolder": "This folder",
+        "scopeFolderHint": "Search only under the folder on screen",
+        "searching": "Searching…",
+        "trigger": "Search",
+        "truncated": "Showing the first results only",
+        "wholeWord": "Whole word"
     }
 }

@@ -98,17 +98,16 @@ const currentFolderUrl = computed(() => {
         </div>
 
         <div class="flex items-center gap-2">
-            <div class="hidden items-center md:flex">
-                <div class="relative">
-                    <i class="bi bi-search pointer-events-none absolute left-2 top-1/2 -translate-y-1/2 text-xs text-slate-400"></i>
-                    <input
-                        v-model="fm.searchQuery"
-                        type="text"
-                        class="w-40 rounded-xl border border-slate-200/80 bg-white/80 py-1.5 pl-7 pr-2 text-xs shadow-sm outline-none transition focus:border-sky-400 focus:bg-white focus:ring-2 focus:ring-sky-400/15 dark:border-slate-700 dark:bg-slate-800/80 dark:text-slate-300 dark:focus:bg-slate-800"
-                        :placeholder="t('fileManager.topBar.search')"
-                    >
-                </div>
-            </div>
+            <button
+                type="button"
+                class="flex items-center gap-2 rounded-xl border border-slate-200/80 bg-white/80 py-1.5 pl-2.5 pr-2 text-xs text-slate-400 shadow-sm transition hover:border-sky-400 hover:text-slate-600 dark:border-slate-700 dark:bg-slate-800/80 dark:hover:text-slate-200"
+                :title="t('fileManager.palette.openHint')"
+                @click="fm.openPalette()"
+            >
+                <i class="bi bi-search text-xs"></i>
+                <span class="hidden lg:inline">{{ t('fileManager.palette.trigger') }}</span>
+                <kbd class="rounded border border-slate-200 px-1 py-0.5 font-sans text-[9px] dark:border-slate-600">Ctrl K</kbd>
+            </button>
 
             <div class="flex min-w-0 flex-1 items-center justify-end gap-2 overflow-x-auto">
                 <template v-for="(group, groupIndex) in (Array.isArray(fm.quickActionsGroups) ? fm.quickActionsGroups.filter(Boolean) : [])" :key="group?.label || groupIndex">

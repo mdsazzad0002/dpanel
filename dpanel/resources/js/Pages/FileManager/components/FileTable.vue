@@ -34,7 +34,7 @@ function runRowAction(item) {
 </script>
 
 <template>
-    <div class="flex-1 overflow-auto p-3">
+    <div class="flex-1 overflow-auto p-3" @contextmenu.prevent="fm.openBackgroundContextMenu($event)">
         <div class="overflow-x-auto rounded-2xl border border-slate-200/80 bg-white/80 shadow-[0_12px_40px_-18px_rgba(15,23,42,0.25)] backdrop-blur dark:border-slate-800/70 dark:bg-slate-900/70 dark:shadow-none">
             <table class="min-w-full text-left text-sm">
                 <thead class="sticky top-0 z-10 border-b border-slate-200/80 bg-white/90 backdrop-blur dark:border-slate-800/70 dark:bg-slate-900/90">
@@ -72,7 +72,7 @@ function runRowAction(item) {
                         draggable="true"
                         @click="fm.handleItemClick(item, $event)"
                         @dblclick="item.type === 'dir' ? fm.openPath(item.path) : fm.openFileInEditor(item.path)"
-                        @contextmenu.prevent="fm.openContextMenu(item, $event)"
+                        @contextmenu.prevent.stop="fm.openContextMenu(item, $event)"
                         @dragstart="fm.handleItemDragStart(item, $event)"
                         @dragend="fm.handleItemDragEnd"
                         @dragover="item.type === 'dir' ? fm.handleFolderTargetDragOver(item.path, $event) : null"
@@ -87,10 +87,8 @@ function runRowAction(item) {
                                 <div class="flex h-5 w-5 shrink-0 items-center justify-center rounded-lg transition-colors" :class="item.type === 'dir' ? 'bg-amber-100 text-amber-600 dark:bg-amber-900/30' : 'bg-slate-100 text-slate-500 dark:bg-slate-800'">
                                     <i class="bi text-sm" :class="fm.iconClassForItem(item)"></i>
                                 </div>
-                                <span class="truncate" :class="fm.nameClassForItem(item)">
-                                    {{ item.name }}
-                                </span>
-                                <span v-if="fm.unsavedFilePath === item.path" class="text-[10px] font-semibold text-amber-600">*</span>
+                                <span class="truncate" :class="fm.nameClassForItem(item)">{{ item.name }}</span>
+                                <span v-if="fm.isTabDirty(item.path)" class="text-[10px] font-semibold text-amber-600">*</span>
                             </div>
                             <div class="mt-0.5 text-[11px] text-slate-500 dark:text-slate-400 sm:hidden">
                                 {{ fm.typeLabelForItem(item) }} &middot;
@@ -138,7 +136,7 @@ function runRowAction(item) {
                     <tr v-if="fm.filteredItems.length === 0">
                         <td colspan="7" class="px-4 py-16 text-center">
                             <i class="bi bi-inbox text-4xl text-slate-300 dark:text-slate-600"></i>
-                            <p class="mt-3 text-sm text-slate-500">{{ fm.searchQuery ? t('fileManager.table.noMatch') : t('fileManager.table.empty') }}</p>
+                            <p class="mt-3 text-sm text-slate-500">{{ t('fileManager.table.empty') }}</p>
                         </td>
                     </tr>
                 </tbody>

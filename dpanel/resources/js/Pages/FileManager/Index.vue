@@ -10,6 +10,8 @@ import TopBar from './components/TopBar.vue';
 import SidebarTree from './components/SidebarTree.vue';
 import SelectionBar from './components/SelectionBar.vue';
 import FileTable from './components/FileTable.vue';
+import EditorTabs from './components/EditorTabs.vue';
+import SearchPalette from './components/SearchPalette.vue';
 import ContextMenu from './components/ContextMenu.vue';
 import ToastStack from './components/ToastStack.vue';
 import FileEditor from './components/FileEditor.vue';
@@ -103,29 +105,24 @@ const openTerminal = () => {
                     </div>
                 </div>
 
-                <SelectionBar :fm="fm" />
+                <EditorTabs :fm="fm" />
 
-                <div class="border-b border-slate-200/80 bg-white/40 px-3 py-2 md:hidden dark:border-slate-800/70 dark:bg-slate-900/30">
-                    <div class="relative">
-                        <i class="bi bi-search pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-xs text-slate-400"></i>
-                        <input
-                            v-model="fm.searchQuery"
-                            type="text"
-                            class="w-full rounded-xl border border-slate-200/80 bg-white/80 py-2 pl-8 pr-3 text-sm shadow-sm outline-none transition focus:border-sky-400 focus:bg-white dark:border-slate-700 dark:bg-slate-800/80 dark:text-slate-300 dark:focus:bg-slate-800"
-                            :placeholder="t('fileManager.topBar.search')"
-                        >
+                <FileEditor :fm="fm" />
+
+                <template v-if="!fm.activeFile">
+                    <SelectionBar :fm="fm" />
+
+                    <FileTable :fm="fm" />
+
+                    <div class="flex items-center justify-between border-t border-slate-200/80 bg-white/80 px-4 py-1.5 text-[11px] text-slate-500 backdrop-blur dark:border-slate-800/70 dark:bg-slate-950/70 dark:text-slate-400">
+                        <span>{{ t('fileManager.index.items', { count: fm.filteredItems.length }) }}</span>
+                        <span v-if="fm.selectedCount" class="font-medium text-blue-600 dark:text-blue-400">{{ t('fileManager.selection.selected', { count: fm.selectedCount }) }}</span>
                     </div>
-                </div>
-
-                <FileTable :fm="fm" />
-
-                <div class="flex items-center justify-between border-t border-slate-200/80 bg-white/80 px-4 py-1.5 text-[11px] text-slate-500 backdrop-blur dark:border-slate-800/70 dark:bg-slate-950/70 dark:text-slate-400">
-                    <span>{{ t('fileManager.index.items', { count: fm.filteredItems.length }) }}</span>
-                    <span v-if="fm.selectedCount" class="font-medium text-blue-600 dark:text-blue-400">{{ t('fileManager.selection.selected', { count: fm.selectedCount }) }}</span>
-                </div>
+                </template>
             </section>
         </main>
 
+        <SearchPalette :fm="fm" />
         <ContextMenu :fm="fm" />
         <FilePreview :fm="fm" />
         <SqliteOffcanvas :fm="fm" />
@@ -181,9 +178,8 @@ const openTerminal = () => {
             </Transition>
         </template>
 
-        <div v-if="fm.modalType" class="fixed inset-0 z-50 flex bg-black/40 p-2 sm:p-4" :class="fm.modalType === 'editor' ? 'items-stretch justify-stretch p-0 sm:p-0' : 'items-center justify-center'">
+        <div v-if="fm.modalType" class="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-2 sm:p-4">
             <div
-                v-if="fm.modalType !== 'editor'"
                 class="flex min-h-0 w-full flex-col overflow-hidden rounded-xl border border-slate-200 bg-white p-5 shadow-xl dark:border-slate-700 dark:bg-slate-900"
                 :class="fm.modalType === 'permissions' ? 'max-w-3xl max-h-[90vh]' : 'max-w-2xl max-h-[90vh]'"
             >
@@ -218,8 +214,6 @@ const openTerminal = () => {
                 <TrashModal :fm="fm" />
                 <UploadModal :fm="fm" />
             </div>
-
-            <FileEditor v-else :fm="fm" />
         </div>
     </div>
 </template>

@@ -474,6 +474,12 @@ Route::delete('/websites/{id}/filemanager/upload/{uploadId}', [WebsiteFileManage
 Route::patch('/websites/{id}/filemanager/permissions', [WebsiteFileManagerController::class, 'changePermissions'])
     ->middleware('role_or_permission:admin|reseller|manage_websites')
     ->name('websites.filemanager.permissions');
+Route::get('/websites/{id}/filemanager/search', [WebsiteFileManagerController::class, 'search'])
+    ->middleware(['role_or_permission:admin|reseller|manage_websites', 'throttle:90,1'])
+    ->name('websites.filemanager.search');
+Route::get('/websites/{id}/filemanager/tree', [WebsiteFileManagerController::class, 'folderTree'])
+    ->middleware('role_or_permission:admin|reseller|manage_websites')
+    ->name('websites.filemanager.tree');
 Route::get('/websites/{id}/filemanager/folder-size', [WebsiteFileManagerController::class, 'calculateFolderSize'])
     ->middleware('role_or_permission:admin|reseller|manage_websites')
     ->name('websites.filemanager.folder-size');

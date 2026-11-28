@@ -68,7 +68,16 @@
         "copy": "复制",
         "zip": "创建 Zip",
         "unzip": "解压归档",
-        "delete": "删除"
+        "delete": "删除",
+        "copyPath": "复制路径",
+        "copyRelativePath": "复制相对路径",
+        "pathCopied": "已复制：{path}",
+        "copyFailed": "无法复制到剪贴板",
+        "selectedItems": "已选择 {count} 项",
+        "deleteSelected": "删除 {count} 项",
+        "currentFolder": "当前文件夹",
+        "selectAll": "全选",
+        "refresh": "刷新"
     },
     "trash": {
         "intro": "已删除的项目在永久删除前会被压缩并保存在这里。",
@@ -112,22 +121,23 @@
         "goToPath": "转到路径...",
         "dropUp": "将项目放到这里以上移一级",
         "up": "上级目录",
-        "root": "转到根目录"
+        "root": "转到根目录",
+        "expand": "展开 {name}",
+        "collapse": "折叠 {name}",
+        "resize": "调整侧栏宽度",
+        "treeFailed": "无法读取该文件夹"
     },
     "editor": {
+        "filesTab": "文件",
+        "filesTabTitle": "返回文件列表",
         "readonly": "只读",
         "saving": "正在保存...",
-        "explorer": "资源管理器",
-        "file": "文件",
-        "folder": "文件夹",
-        "lines": "行数",
-        "tips": "提示",
+        "closeTab": "关闭 {name}",
+        "confirmClose": "{name} 有未保存的更改。仍要关闭吗？",
         "tipSave": "Ctrl/Cmd+S 保存",
-        "tipFullscreen": "使用全屏代码编辑",
-        "tipSplit": "按职责拆分文件",
-        "unsaved": "未保存的更改",
-        "saved": "已保存",
         "lineCount": "{count} 行",
+        "cursor": "第 {line} 行，第 {column} 列",
+        "wrapLines": "切换自动换行 (Alt+Z)",
         "openFull": "打开完整文件",
         "modified": "已修改",
         "noChanges": "无更改"
@@ -136,8 +146,7 @@
         "exit": "退出文件管理器",
         "toggleSidebar": "切换侧边栏",
         "root": "转到根目录",
-        "browse": "浏览 {url}",
-        "search": "搜索文件..."
+        "browse": "浏览 {url}"
     },
     "table": {
         "open": "打开",
@@ -152,7 +161,6 @@
         "modified": "修改时间",
         "calculate": "计算",
         "calculating": "正在计算…",
-        "noMatch": "没有文件匹配你的搜索",
         "empty": "此目录中没有文件"
     },
     "switcher": {
@@ -406,5 +414,33 @@
         "trashHint": "恢复或永久删除",
         "delete": "删除",
         "deleteHint": "删除所选项目"
+    },
+    "palette": {
+        "caseSensitive": "区分大小写",
+        "empty": "打开一个文件后会显示在这里",
+        "failed": "无法执行搜索",
+        "groupFiles": "文件",
+        "groupFolders": "文件夹",
+        "groupOpen": "已打开",
+        "groupRecent": "最近",
+        "hintMove": "移动",
+        "hintOpen": "打开",
+        "includeHint": "仅搜索名称匹配此模式的文件",
+        "includeIgnored": "忽略项",
+        "includeIgnoredHint": "同时搜索 .git、node_modules 等目录",
+        "includePlaceholder": "*.php",
+        "modeFiles": "文件",
+        "modeText": "文本",
+        "noResults": "没有匹配“{query}”的结果",
+        "openHint": "搜索已加载的全部内容 (Ctrl/Cmd+K)",
+        "placeholder": "搜索文件和文件夹…",
+        "placeholderText": "搜索文件内的文本…",
+        "scope": "在服务器上搜索整个账户",
+        "scopeFolder": "当前文件夹",
+        "scopeFolderHint": "仅在当前文件夹内搜索",
+        "searching": "搜索中…",
+        "trigger": "搜索",
+        "truncated": "仅显示前若干条结果",
+        "wholeWord": "全字匹配"
     }
 }

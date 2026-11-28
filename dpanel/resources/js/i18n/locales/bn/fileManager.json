@@ -68,7 +68,16 @@
         "copy": "Copy",
         "zip": "Zip তৈরি করুন",
         "unzip": "Archive extract করুন",
-        "delete": "মুছুন"
+        "delete": "মুছুন",
+        "copyPath": "Path কপি করুন",
+        "copyRelativePath": "Relative path কপি করুন",
+        "pathCopied": "কপি হয়েছে: {path}",
+        "copyFailed": "Clipboard-এ কপি করা গেল না",
+        "selectedItems": "{count}টি নির্বাচিত",
+        "deleteSelected": "{count}টি মুছুন",
+        "currentFolder": "এই ফোল্ডার",
+        "selectAll": "সব নির্বাচন করুন",
+        "refresh": "রিফ্রেশ"
     },
     "trash": {
         "intro": "মুছে ফেলা item zip করে স্থায়ীভাবে সরানোর আগে এখানে রাখা হয়।",
@@ -112,22 +121,23 @@
         "goToPath": "Path-এ যান...",
         "dropUp": "এক ধাপ উপরে সরাতে item এখানে ছাড়ুন",
         "up": "উপরের directory",
-        "root": "Root-এ যান"
+        "root": "Root-এ যান",
+        "expand": "{name} খুলুন",
+        "collapse": "{name} বন্ধ করুন",
+        "resize": "Sidebar ছোট-বড় করুন",
+        "treeFailed": "ওই ফোল্ডার পড়া গেল না"
     },
     "editor": {
+        "filesTab": "Files",
+        "filesTabTitle": "File তালিকায় ফিরুন",
         "readonly": "শুধু পড়া",
         "saving": "Save হচ্ছে...",
-        "explorer": "Explorer",
-        "file": "File",
-        "folder": "Folder",
-        "lines": "লাইন",
-        "tips": "পরামর্শ",
+        "closeTab": "{name} বন্ধ করুন",
+        "confirmClose": "{name}-এ সেভ না করা পরিবর্তন আছে। তবুও বন্ধ করবেন?",
         "tipSave": "Save করতে Ctrl/Cmd+S",
-        "tipFullscreen": "Full-screen code editing ব্যবহার করুন",
-        "tipSplit": "দায়িত্ব অনুযায়ী file আলাদা রাখুন",
-        "unsaved": "Save না করা পরিবর্তন",
-        "saved": "Save হয়েছে",
         "lineCount": "{count} লাইন",
+        "cursor": "লাইন {line}, কলাম {column}",
+        "wrapLines": "Word wrap চালু/বন্ধ (Alt+Z)",
         "openFull": "পুরো file খুলুন",
         "modified": "পরিবর্তিত",
         "noChanges": "কোনো পরিবর্তন নেই"
@@ -136,8 +146,7 @@
         "exit": "File manager থেকে বের হন",
         "toggleSidebar": "Sidebar দেখান/লুকান",
         "root": "Root-এ যান",
-        "browse": "{url} browse করুন",
-        "search": "File খুঁজুন..."
+        "browse": "{url} browse করুন"
     },
     "table": {
         "open": "খুলুন",
@@ -152,7 +161,6 @@
         "modified": "পরিবর্তিত",
         "calculate": "হিসাব করুন",
         "calculating": "হিসাব হচ্ছে…",
-        "noMatch": "আপনার খোঁজার সাথে কোনো file মেলেনি",
         "empty": "এই directory-তে কোনো file নেই"
     },
     "switcher": {
@@ -412,5 +420,33 @@
         "trashHint": "ফিরিয়ে আনুন বা স্থায়ীভাবে মুছুন",
         "delete": "মুছুন",
         "deleteHint": "নির্বাচিত item মুছুন"
+    },
+    "palette": {
+        "caseSensitive": "ছোট-বড় হাতের মিল",
+        "empty": "একটা file খুললে এখানে দেখা যাবে",
+        "failed": "সার্চ চালানো গেল না",
+        "groupFiles": "Files",
+        "groupFolders": "Folders",
+        "groupOpen": "খোলা",
+        "groupRecent": "সাম্প্রতিক",
+        "hintMove": "নড়াচড়া",
+        "hintOpen": "খুলুন",
+        "includeHint": "শুধু এই প্যাটার্নে মেলা file",
+        "includeIgnored": "Ignored",
+        "includeIgnoredHint": ".git, node_modules ইত্যাদির ভেতরেও খুঁজবে",
+        "includePlaceholder": "*.php",
+        "modeFiles": "File",
+        "modeText": "Text",
+        "noResults": "“{query}” এর সাথে কিছু মেলেনি",
+        "openHint": "লোড হওয়া সবকিছুতে সার্চ (Ctrl/Cmd+K)",
+        "placeholder": "File আর folder খুঁজুন…",
+        "placeholderText": "File-এর ভেতরের লেখা খুঁজুন…",
+        "scope": "সার্ভারে পুরো অ্যাকাউন্টে খোঁজে",
+        "scopeFolder": "এই ফোল্ডার",
+        "scopeFolderHint": "শুধু এই ফোল্ডারের ভেতরে খুঁজবে",
+        "searching": "খোঁজা হচ্ছে…",
+        "trigger": "সার্চ",
+        "truncated": "শুধু প্রথম কিছু ফল দেখানো হচ্ছে",
+        "wholeWord": "পুরো শব্দ"
     }
 }

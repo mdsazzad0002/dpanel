@@ -3,6 +3,7 @@ import { router, useForm, usePage } from '@inertiajs/vue3';
 import { EDITABLE_EXTENSIONS } from '../constants/editableExtensions';
 import { NON_EDITABLE_EXTENSIONS } from '../constants/nonEditableExtensions';
 import { formatBytes, resolveDisplayPath } from '../helpers/fileUtils';
+import { matchName } from '../helpers/fuzzySearch';
 import { iconClassForItem, nameClassForItem, typeLabelForItem } from '../helpers/fileIcons';
 import { getPermissionPreview } from '../helpers/permissions';
 import { previewKind } from '../helpers/previewTypes';
@@ -43,7 +44,26 @@ export function useFileManager(props) {
     const sidebarOpen = ref(true);
     const sortBy = ref('name');
     const sortDir = ref('asc');
-    const searchQuery = ref('');
+    // The quick-search window. Typing there asks the server, the way an
+    // editor's "find in files" does; it is not a filter over this listing.
+    const paletteOpen = ref(false);
+    const paletteQuery = ref('');
+    const paletteCursor = ref(0);
+    const paletteMode = ref('names');
+    const paletteScope = ref('root');
+    const paletteOptions = ref({
+        caseSensitive: false,
+        wholeWord: false,
+        include: '',
+        includeIgnored: false,
+    });
+    const paletteLoading = ref(false);
+    const paletteError = ref('');
+    const paletteTruncated = ref(false);
+    const paletteHits = ref([]);
+    const recentPaths = ref([]);
+    // The line a result asked the editor to jump to, by path.
+    const pendingEditorLines = ref(new Map());
     const isMobile = ref(false);
     const pathInput = ref(resolveDisplayPath(props.basePath, props.currentPath));
     const activeItemPath = ref(props.selectedFile?.path || props.items?.[0]?.path || '');
@@ -61,10 +81,25 @@ export function useFileManager(props) {
     const droppedUploadHint = ref('');
     const moveDragTargetPath = ref(null);
     const draggingItemPaths = ref([]);
-    const originalEditorContent = ref(props.selectedFile?.content ?? '');
+    // Files open in the editor, in tab order. Each one carries its own
+    // buffer, so switching tabs never costs the user unsaved work.
+    const openFiles = ref([]);
+    const activeFilePath = ref('');
+    // Set just before a navigation that is meant to overwrite a buffer (the
+    // "open full file" path), where the server's copy must win over what the
+    // tab already holds.
+    const replaceBufferPath = ref('');
     const unzipInProgress = ref(false);
     const cacheClearInProgress = ref(false);
     const treeOpenState = ref({});
+    // The server fills children only along the folder on screen, so the tree
+    // is kept here and branches are fetched as they are unfolded.
+    const treeNodes = ref([]);
+    const treeLoadingPaths = ref([]);
+    const SIDEBAR_WIDTH_KEY = 'dpanel-filemanager-sidebar-width';
+    const MIN_SIDEBAR_WIDTH = 180;
+    const MAX_SIDEBAR_WIDTH = 560;
+    const sidebarWidth = ref(readStoredSidebarWidth());
     const saveInProgress = ref(false);
     const renameInProgress = ref(false);
     const INTERNAL_MOVE_MIME = 'application/x-dpanel-item-paths';
@@ -93,26 +128,12 @@ export function useFileManager(props) {
 
     function closeContextMenu() {
         if (!contextMenu.value.visible) return;
-        contextMenu.value = {
-            visible: false,
-            x: 0,
-            y: 0,
-            itemPath: '',
-            itemType: '',
-            itemName: '',
-        };
+
+        contextMenu.value = { ...CLOSED_CONTEXT_MENU };
     }
 
     function closeModal() {
-        const wasEditor = modalType.value === 'editor';
         modalType.value = '';
-
-        if (wasEditor && props.selectedFile?.path) {
-            const url = new URL(window.location.href);
-            url.searchParams.delete('file_path');
-            url.searchParams.delete('full');
-            window.history.replaceState(window.history.state, '', url.toString());
-        }
     }
 
     function toggleSidebar() {
@@ -136,10 +157,19 @@ export function useFileManager(props) {
     }
 
     function openPath(path) {
+        showFilesTab();
+
         // Keep an explicit path parameter when navigating to the account root.
         // An empty query value is dropped by the router, causing the controller
         // to reopen the website's default directory instead of /home/{owner}.
-        router.get(panelRoute('websites.filemanager', fileManagerRouteParams({ path: path || '.' })));
+        //
+        // The visit keeps this component mounted: the open file tabs belong to
+        // it, and browsing a folder is not a reason to throw them away.
+        router.get(
+            panelRoute('websites.filemanager', fileManagerRouteParams({ path: path || '.' })),
+            {},
+            { preserveState: true },
+        );
     }
 
     const parentPath = computed(() => {
@@ -196,7 +226,7 @@ export function useFileManager(props) {
                 show_hidden: hiddenEnabled.value,
                 path: props.currentPath,
                 root: fileManagerRoot.value,
-                file_path: props.selectedFile?.path ?? '',
+                file_path: activeFilePath.value || '',
             },
             {
                 preserveScroll: true,
@@ -263,33 +293,209 @@ export function useFileManager(props) {
     }
 
     function handleWindowKeydown(event) {
+        // The code editor handles Escape and Ctrl/Cmd+S itself while it has
+        // focus, and marks those events handled. Anything it handled must
+        // not be acted on twice.
+        if (event.defaultPrevented) return;
+
         if (event.key === 'Escape') {
             closeContextMenu();
-            if (modalType.value) closeModal();
+            if (paletteOpen.value) closePalette();
+            else if (modalType.value) closeModal();
+
+            return;
+        }
+
+        const mod = event.ctrlKey || event.metaKey;
+
+        // Quick search: one window over the whole site, asked of the
+        // server, opened from anywhere. Shift searches file contents.
+        if (mod && !event.altKey && ['p', 'P', 'k', 'K'].includes(event.key)) {
+            if (modalType.value) return;
+
+            event.preventDefault();
+            paletteOpen.value ? closePalette() : openPalette(event.shiftKey ? 'content' : 'names');
+
+            return;
+        }
+
+        // Find in files, on the shortcut editors use for it.
+        if (mod && event.shiftKey && !event.altKey && (event.key === 'f' || event.key === 'F')) {
+            if (modalType.value) return;
+
+            event.preventDefault();
+            openPalette('content');
+
+            return;
+        }
+
+        // Focus may sit anywhere on the page — the tab strip, the toolbar —
+        // and the browser's "save this page" dialog is never what the user
+        // meant while a file is open.
+        if ((event.key === 's' || event.key === 'S') && mod && !event.altKey) {
+            if (!activeFile.value || modalType.value) return;
+
+            event.preventDefault();
+            submitSaveFile();
         }
     }
 
+    /** Normalizes a tree the server sent into the shape the sidebar walks. */
+    function cloneTree(nodes) {
+        if (!Array.isArray(nodes)) return [];
+
+        return nodes
+            .filter((node) => node && typeof node === 'object' && node.path)
+            .map((node) => ({
+                name: String(node.name || node.path.split('/').pop() || ''),
+                path: String(node.path),
+                hasChildren: Boolean(node.hasChildren),
+                children: cloneTree(node.children),
+            }));
+    }
+
+    /**
+     * Folds a freshly fetched branch into the tree. Every answer comes from
+     * the root with only one branch filled in, so a node whose children are
+     * empty in the answer keeps the children already on screen.
+     */
+    function mergeTree(current, incoming) {
+        const byPath = new Map((current || []).map((node) => [node.path, node]));
+
+        return incoming.map((node) => {
+            const previous = byPath.get(node.path);
+
+            return {
+                ...node,
+                children: node.children.length
+                    ? mergeTree(previous?.children || [], node.children)
+                    : (previous?.children || []),
+            };
+        });
+    }
+
+    function findTreeNode(nodes, path) {
+        for (const node of nodes) {
+            if (node.path === path) return node;
+            if (path.startsWith(node.path + '/')) {
+                const found = findTreeNode(node.children, path);
+                if (found) return found;
+            }
+        }
+
+        return null;
+    }
+
+    /** Unfolded by default along the folder being viewed, as VS Code does. */
+    function isTreeNodeOpen(path) {
+        const stored = treeOpenState.value[path];
+        if (typeof stored === 'boolean') return stored;
+
+        const current = String(props.currentPath || '');
+
+        return current === path || current.startsWith(path + '/');
+    }
+
     function toggleTreeNode(path) {
-        treeOpenState.value = {
-            ...treeOpenState.value,
-            [path]: !(treeOpenState.value[path] ?? false),
-        };
+        const open = !isTreeNodeOpen(path);
+        treeOpenState.value = { ...treeOpenState.value, [path]: open };
+        if (!open) return;
+
+        const node = findTreeNode(treeNodes.value, path);
+        if (node?.hasChildren && !node.children.length) {
+            fetchTreeBranch(path);
+        }
+    }
+
+    function fetchTreeBranch(path) {
+        if (treeLoadingPaths.value.includes(path)) return;
+
+        treeLoadingPaths.value = [...treeLoadingPaths.value, path];
+        window.axios
+            .get(panelRoute('websites.filemanager.tree', fileManagerRouteParams({
+                path,
+                show_hidden: hiddenEnabled.value,
+            })), { headers: { Accept: 'application/json' } })
+            .then((response) => {
+                treeNodes.value = mergeTree(treeNodes.value, cloneTree(response?.data?.tree));
+            })
+            .catch((error) => {
+                // A branch that could not be read stays folded, rather than
+                // sitting open and empty.
+                treeOpenState.value = { ...treeOpenState.value, [path]: false };
+                pushToast(error?.response?.data?.message || t('fileManager.sidebar.treeFailed'), 'error');
+            })
+            .finally(() => {
+                treeLoadingPaths.value = treeLoadingPaths.value.filter((entry) => entry !== path);
+            });
     }
 
     function isTreeNodeActive(path) {
-        return resolveDisplayPath(props.basePath, props.currentPath) === path || String(props.currentPath || '').startsWith(path + '/');
+        return String(props.currentPath || '') === path;
     }
 
-    const contextMenu = ref({
+    function readStoredSidebarWidth() {
+        try {
+            const stored = Number.parseInt(window.localStorage.getItem(SIDEBAR_WIDTH_KEY) || '', 10);
+            if (Number.isFinite(stored)) return clampSidebarWidth(stored);
+        } catch {
+            // Blocked storage: the default width stands.
+        }
+
+        return 240;
+    }
+
+    function clampSidebarWidth(width) {
+        return Math.min(MAX_SIDEBAR_WIDTH, Math.max(MIN_SIDEBAR_WIDTH, Math.round(width)));
+    }
+
+    function setSidebarWidth(width) {
+        sidebarWidth.value = clampSidebarWidth(width);
+    }
+
+    /** Called when the drag ends, so a drag writes to storage once. */
+    function persistSidebarWidth() {
+        try {
+            window.localStorage.setItem(SIDEBAR_WIDTH_KEY, String(sidebarWidth.value));
+        } catch {
+            // Blocked storage: the width lasts for this visit only.
+        }
+    }
+
+    const CLOSED_CONTEXT_MENU = {
         visible: false,
         x: 0,
         y: 0,
+        // 'item' is a right-click on a row or a sidebar folder; 'background'
+        // is a right-click on empty space, which acts on the folder itself.
+        kind: 'item',
         itemPath: '',
         itemType: '',
         itemName: '',
-    });
+        count: 0,
+    };
 
-    const contextItem = computed(() => localItems.value.find((item) => item.path === contextMenu.value.itemPath) || null);
+    const contextMenu = ref({ ...CLOSED_CONTEXT_MENU });
+
+    /** Right-clicking a folder in the sidebar opens the same menu. */
+    function openTreeContextMenu(node, event) {
+        if (!node?.path) return;
+
+        openContextMenu({ path: node.path, name: node.name, type: 'dir' }, event);
+    }
+
+    const contextItem = computed(() => {
+        const menu = contextMenu.value;
+        if (!menu.itemPath) return null;
+
+        // A folder right-clicked in the sidebar is not in the listing on
+        // screen, so the menu's own record of it stands in.
+        return localItems.value.find((item) => item.path === menu.itemPath) || {
+            path: menu.itemPath,
+            name: menu.itemName,
+            type: menu.itemType,
+        };
+    });
     const contextArchive = computed(() => contextItem.value?.type === 'file'
         && /\.(?:zip|tar|tar\.gz|tgz|gz)$/i.test(String(contextItem.value?.name || '')));
 
@@ -299,17 +505,65 @@ export function useFileManager(props) {
             activeItemPath.value = item.path;
         }
 
-        const x = Math.min(event.clientX, window.innerWidth - 240);
-        const y = Math.min(event.clientY, window.innerHeight - 400);
-
+        // The menu measures itself once it is on screen; these are the raw
+        // pointer coordinates.
         contextMenu.value = {
             visible: true,
-            x,
-            y,
+            x: event.clientX,
+            y: event.clientY,
+            kind: 'item',
             itemPath: item.path,
             itemType: item.type,
             itemName: item.name,
+            count: Math.max(1, selectedPaths.value.length),
         };
+    }
+
+    /** Right-clicking empty space in the listing acts on the folder shown. */
+    function openBackgroundContextMenu(event) {
+        contextMenu.value = {
+            visible: true,
+            x: event.clientX,
+            y: event.clientY,
+            kind: 'background',
+            itemPath: '',
+            itemType: 'dir',
+            itemName: String(props.currentPath || '').split('/').filter(Boolean).pop() || ownerRootLabel.value,
+            count: 0,
+        };
+    }
+
+    function triggerBackgroundAction(action) {
+        closeContextMenu();
+
+        switch (action) {
+            case 'create-folder':
+                openModal('create-folder');
+                break;
+            case 'create-file':
+                openModal('create-file');
+                break;
+            case 'upload':
+                openModal('upload');
+                break;
+            case 'select-all':
+                toggleSelectAll(true);
+                break;
+            case 'copy-path':
+                copyToClipboard(resolveDisplayPath(props.basePath, props.currentPath));
+                break;
+            case 'copy-relative-path':
+                copyToClipboard(String(props.currentPath || ''));
+                break;
+            case 'refresh':
+                refreshListing();
+                break;
+        }
+    }
+
+    /** Re-reads the folder without touching the open tabs or the selection. */
+    function refreshListing() {
+        router.reload({ only: ['items', 'directoryTree'] });
     }
 
     function handleItemDragStart(item, event) {
@@ -398,6 +652,9 @@ export function useFileManager(props) {
     }
 
     function handleTableDragEnter(event) {
+        // The editor shares the drop target with the file list; dropping a
+        // file on open code is not an upload.
+        if (activeFilePath.value) return;
         if (event.dataTransfer?.types?.includes(INTERNAL_MOVE_MIME)) return;
         tableDragDepth.value++;
         tableDragActive.value = true;
@@ -419,6 +676,8 @@ export function useFileManager(props) {
     function handleTableDrop(event) {
         tableDragDepth.value = 0;
         tableDragActive.value = false;
+
+        if (activeFilePath.value) return;
 
         if (event.dataTransfer?.types?.includes(INTERNAL_MOVE_MIME)) return;
 
@@ -518,24 +777,153 @@ export function useFileManager(props) {
             return;
         }
 
-        router.get(panelRoute('websites.filemanager', fileManagerRouteParams({
-            path: props.currentPath,
-            file_path: path,
-        })));
+        if (openFiles.value.some((entry) => entry.path === path)) {
+            activateTab(path);
+            return;
+        }
+
+        // A partial visit: the directory listing and tree on screen are
+        // already right, so the server only sends back the file itself.
+        router.get(
+            panelRoute('websites.filemanager', fileManagerRouteParams({
+                path: props.currentPath,
+                file_path: path,
+            })),
+            {},
+            { preserveState: true, preserveScroll: true, only: ['selectedFile'] },
+        );
+    }
+
+    const MAX_OPEN_FILES = 12;
+
+    /** Adds the file the server just sent as a tab, or refreshes its tab. */
+    function upsertOpenFile(file) {
+        if (!file?.path) return;
+
+        const content = file.content ?? '';
+        const existing = openFiles.value.find((entry) => entry.path === file.path);
+
+        if (existing) {
+            // Reopening a file the user has edited keeps their buffer. The
+            // one exception is "open full file", where the server's larger
+            // copy is the whole point.
+            const dirty = existing.content !== existing.original;
+            if (replaceBufferPath.value === file.path || !dirty) {
+                existing.content = content;
+                existing.original = content;
+            }
+            existing.readonly = Boolean(file.readonly);
+            existing.partial = Boolean(file.partial);
+            existing.can_load_full = Boolean(file.can_load_full);
+            existing.message = file.message || '';
+            existing.size = file.size ?? null;
+        } else {
+            openFiles.value.push({
+                path: file.path,
+                name: file.name || file.path.split('/').pop() || 'untitled',
+                content,
+                original: content,
+                readonly: Boolean(file.readonly),
+                partial: Boolean(file.partial),
+                can_load_full: Boolean(file.can_load_full),
+                message: file.message || '',
+                size: file.size ?? null,
+                gotoLine: 0,
+            });
+            pruneOpenFiles(file.path);
+        }
+
+        replaceBufferPath.value = '';
+        activeFilePath.value = file.path;
+        rememberRecentPath(file.path);
+        applyPendingLine(file.path);
+    }
+
+    /** File contents are held in memory; the oldest saved tab gives way. */
+    function pruneOpenFiles(keepPath) {
+        while (openFiles.value.length > MAX_OPEN_FILES) {
+            const index = openFiles.value.findIndex((entry) => (
+                entry.path !== keepPath && entry.content === entry.original
+            ));
+            if (index === -1) return;
+
+            openFiles.value.splice(index, 1);
+        }
+    }
+
+    function activateTab(path) {
+        if (!openFiles.value.some((entry) => entry.path === path)) return;
+
+        activeFilePath.value = path;
+        applyPendingLine(path);
+        syncEditorUrl(path);
+    }
+
+    /** The directory listing: tab zero, and what an empty path means. */
+    function showFilesTab() {
+        activeFilePath.value = '';
+        syncEditorUrl('');
+    }
+
+    /** Keeps ?file_path= on the tab in front, so a reload reopens it. */
+    function syncEditorUrl(path) {
+        const url = new URL(window.location.href);
+        if ((url.searchParams.get('file_path') || '') === path) return;
+
+        if (path) {
+            url.searchParams.set('file_path', path);
+        } else {
+            url.searchParams.delete('file_path');
+        }
+        url.searchParams.delete('full');
+        window.history.replaceState(window.history.state, '', url.toString());
+    }
+
+    function isFileOpen(path) {
+        return openFiles.value.some((entry) => entry.path === path);
+    }
+
+    function closeTab(path) {
+        const index = openFiles.value.findIndex((entry) => entry.path === path);
+        if (index === -1) return;
+
+        const file = openFiles.value[index];
+        if (file.content !== file.original
+            && !window.confirm(t('fileManager.editor.confirmClose', { name: file.name }))) {
+            return;
+        }
+
+        openFiles.value.splice(index, 1);
+        if (activeFilePath.value !== path) return;
+
+        // Fall to the tab that took this one's place, else the one before it.
+        const next = openFiles.value[index] || openFiles.value[index - 1] || null;
+        if (!next) {
+            showFilesTab();
+            return;
+        }
+
+        activeFilePath.value = next.path;
+        syncEditorUrl(next.path);
     }
 
     function loadFullFile() {
-        const file = props.selectedFile;
+        const file = activeFile.value;
         if (!file?.path || !file.partial || !file.can_load_full) return;
 
         const sizeLabel = `${(Number(file.size || 0) / (1024 * 1024)).toFixed(1)}MB`;
         if (!confirm(t('fileManager.manager.largeFileConfirm', { name: file.name, size: sizeLabel }))) return;
 
-        router.get(panelRoute('websites.filemanager', fileManagerRouteParams({
-            path: props.currentPath,
-            file_path: file.path,
-            full: 1,
-        })));
+        replaceBufferPath.value = file.path;
+        router.get(
+            panelRoute('websites.filemanager', fileManagerRouteParams({
+                path: props.currentPath,
+                file_path: file.path,
+                full: 1,
+            })),
+            {},
+            { preserveState: true, preserveScroll: true, only: ['selectedFile'] },
+        );
     }
 
     function downloadItem(item) {
@@ -915,20 +1303,27 @@ export function useFileManager(props) {
     }
 
     function submitSaveFile() {
-        if (saveInProgress.value || !hasUnsavedChanges.value || props.selectedFile?.readonly) return;
+        const file = activeFile.value;
+        if (saveInProgress.value || !file || file.readonly || file.content === file.original) return;
+
+        const filePath = file.path;
+        const content = file.content;
 
         saveInProgress.value = true;
         window.axios
             .patch(panelRoute('websites.filemanager.file.save', fileManagerRouteParams()), {
-                file_path: saveForm.file_path,
-                content: saveForm.content,
+                file_path: filePath,
+                content,
             }, {
                 headers: {
                     Accept: 'application/json',
                 },
             })
             .then((response) => {
-                originalEditorContent.value = saveForm.content;
+                // Only what actually went to the server counts as saved: the
+                // user may have typed on while the request was in flight.
+                const entry = openFiles.value.find((item) => item.path === filePath);
+                if (entry) entry.original = content;
                 const message = response?.data?.message || t('fileManager.manager.saved');
                 pushToast(message, 'success');
             })
@@ -939,6 +1334,36 @@ export function useFileManager(props) {
             .finally(() => {
                 saveInProgress.value = false;
             });
+    }
+
+    /**
+     * execCommand is the fallback: the clipboard API needs a secure context,
+     * and a panel reached over plain http would otherwise have no copy.
+     */
+    async function copyToClipboard(text) {
+        const value = String(text || '');
+
+        try {
+            if (window.navigator?.clipboard?.writeText) {
+                await window.navigator.clipboard.writeText(value);
+            } else {
+                const field = document.createElement('textarea');
+                field.value = value;
+                field.setAttribute('readonly', '');
+                field.style.position = 'fixed';
+                field.style.top = '-1000px';
+                field.style.opacity = '0';
+                document.body.appendChild(field);
+                field.select();
+                const copied = document.execCommand('copy');
+                field.remove();
+                if (!copied) throw new Error('copy rejected');
+            }
+
+            pushToast(t('fileManager.context.pathCopied', { path: value }), 'success');
+        } catch {
+            pushToast(t('fileManager.context.copyFailed'), 'error');
+        }
     }
 
     function triggerContextAction(action) {
@@ -960,7 +1385,8 @@ export function useFileManager(props) {
                 break;
             case 'permissions':
                 permissionForm.item_path = item.path;
-                permissionForm.permissions = String(item.permissions || '644');
+                // A folder picked from the sidebar carries no mode of its own.
+                permissionForm.permissions = String(item.permissions || (item.type === 'dir' ? '755' : '644'));
                 openModal('permissions');
                 break;
             case 'move':
@@ -988,6 +1414,12 @@ export function useFileManager(props) {
                 unzipForm.zip_path = item.path;
                 unzipForm.destination_path = props.currentPath || '';
                 openModal('unzip');
+                break;
+            case 'copy-path':
+                copyToClipboard(resolveDisplayPath(props.basePath, item.path));
+                break;
+            case 'copy-relative-path':
+                copyToClipboard(item.path);
                 break;
             case 'delete':
                 deleteForm.item_paths = selectedPaths.value.length ? selectedPaths.value : [item.path];
@@ -1054,7 +1486,6 @@ export function useFileManager(props) {
 
     const createFolderForm = useForm({ path: props.currentPath, name: '' });
     const createFileForm = useForm({ path: props.currentPath, name: '' });
-    const saveForm = useForm({ file_path: props.selectedFile?.path ?? '', content: props.selectedFile?.content ?? '' });
     const deleteForm = useForm({ item_paths: [], current_path: props.currentPath });
     const uploadForm = useForm({ path: props.currentPath, uploads: [] });
     const permissionForm = useForm({ item_path: '', current_path: props.currentPath, permissions: '644', recursive: false });
@@ -1119,15 +1550,223 @@ export function useFileManager(props) {
         items: Array.isArray(group.items) ? group.items.filter((item) => item.visible) : [],
     })));
 
+    /**
+     * The quick-search window. The walk itself happens in drust, the only
+     * part of the stack that can read a site owner's files, so the window
+     * reaches the whole account and not just what has been browsed.
+     */
+    const paletteTerm = computed(() => paletteQuery.value.trim());
+    const paletteContentMode = computed(() => paletteMode.value === 'content');
+
+    /**
+     * One flat list of rows the arrow keys walk. In file mode a row is a
+     * file or folder; in text mode a row is a single matching line, the way
+     * an editor's "find in files" lists them.
+     */
+    const paletteResults = computed(() => {
+        const term = paletteTerm.value;
+
+        if (!term) {
+            // Nothing typed yet: what is open, then what was opened recently.
+            const seen = new Set();
+            const rows = [];
+
+            for (const file of openFiles.value) {
+                seen.add(file.path);
+                rows.push({ path: file.path, name: file.name, type: 'file', group: 'open' });
+            }
+            for (const path of recentPaths.value) {
+                if (seen.has(path)) continue;
+
+                seen.add(path);
+                rows.push({ path, name: path.split('/').pop() || path, type: 'file', group: 'recent' });
+            }
+
+            return rows.slice(0, 12);
+        }
+
+        const openPaths = new Set(openFiles.value.map((file) => file.path));
+
+        if (paletteContentMode.value) {
+            const rows = [];
+            for (const hit of paletteHits.value) {
+                for (const match of (hit.matches || [])) {
+                    rows.push({
+                        path: hit.path,
+                        name: hit.name,
+                        type: 'file',
+                        group: 'text',
+                        line: match.line,
+                        column: match.column,
+                        length: match.length,
+                        text: match.text,
+                    });
+                }
+            }
+
+            return rows;
+        }
+
+        return paletteHits.value.map((hit) => ({
+            path: hit.path,
+            name: hit.name,
+            type: hit.type,
+            // The server ranked these; the ranges are worked out here so the
+            // window can show which characters earned the match.
+            ranges: matchName(hit.name, term)?.ranges || [],
+            group: openPaths.has(hit.path) ? 'open' : (hit.type === 'dir' ? 'dir' : 'file'),
+        }));
+    });
+
+    let paletteTimer = null;
+    let paletteRequest = null;
+
+    function schedulePaletteSearch() {
+        if (paletteTimer) clearTimeout(paletteTimer);
+
+        if (!paletteTerm.value) {
+            paletteRequest?.abort();
+            paletteHits.value = [];
+            paletteLoading.value = false;
+            paletteError.value = '';
+            paletteTruncated.value = false;
+
+            return;
+        }
+
+        paletteLoading.value = true;
+        // Typing should not fire a walk per keystroke.
+        paletteTimer = setTimeout(runPaletteSearch, 220);
+    }
+
+    function runPaletteSearch() {
+        const term = paletteTerm.value;
+        if (!term) return;
+
+        paletteRequest?.abort();
+        const controller = new AbortController();
+        paletteRequest = controller;
+
+        const options = paletteOptions.value;
+        window.axios
+            .get(panelRoute('websites.filemanager.search', fileManagerRouteParams({
+                query: term,
+                mode: paletteMode.value,
+                path: paletteScope.value === 'folder' ? (props.currentPath || '') : '',
+                include: options.include || '',
+                case_sensitive: options.caseSensitive,
+                whole_word: options.wholeWord,
+                include_ignored: options.includeIgnored,
+                show_hidden: hiddenEnabled.value,
+            })), { headers: { Accept: 'application/json' }, signal: controller.signal })
+            .then((response) => {
+                paletteHits.value = Array.isArray(response?.data?.results) ? response.data.results : [];
+                paletteTruncated.value = Boolean(response?.data?.truncated);
+                paletteError.value = '';
+                paletteCursor.value = 0;
+            })
+            .catch((error) => {
+                // A superseded keystroke is not a failure.
+                if (controller.signal.aborted) return;
+
+                paletteHits.value = [];
+                paletteError.value = error?.response?.data?.message || t('fileManager.palette.failed');
+            })
+            .finally(() => {
+                if (paletteRequest === controller) {
+                    paletteRequest = null;
+                    paletteLoading.value = false;
+                }
+            });
+    }
+
+    watch([paletteQuery, paletteMode, paletteScope, paletteOptions], () => {
+        paletteCursor.value = 0;
+        if (paletteOpen.value) schedulePaletteSearch();
+    }, { deep: true });
+
+    function openPalette(mode) {
+        if (mode) paletteMode.value = mode;
+        paletteQuery.value = '';
+        paletteHits.value = [];
+        paletteCursor.value = 0;
+        paletteError.value = '';
+        paletteTruncated.value = false;
+        paletteOpen.value = true;
+    }
+
+    function closePalette() {
+        paletteOpen.value = false;
+        if (paletteTimer) clearTimeout(paletteTimer);
+        paletteRequest?.abort();
+        paletteLoading.value = false;
+    }
+
+    function setPaletteMode(mode) {
+        paletteMode.value = mode === 'content' ? 'content' : 'names';
+    }
+
+    function movePaletteCursor(delta) {
+        const total = paletteResults.value.length;
+        if (!total) return;
+
+        paletteCursor.value = (paletteCursor.value + delta + total) % total;
+    }
+
+    function runPaletteEntry(entry) {
+        const target = entry || paletteResults.value[paletteCursor.value];
+        if (!target) return;
+
+        closePalette();
+        if (target.type === 'dir') {
+            openPath(target.path);
+
+            return;
+        }
+
+        if (target.line) {
+            // A text hit opens the file at the line it was found on.
+            const lines = new Map(pendingEditorLines.value);
+            lines.set(target.path, target.line);
+            pendingEditorLines.value = lines;
+        }
+
+        rememberRecentPath(target.path);
+        openFileInEditor(target.path);
+    }
+
+    /**
+     * Moves a pending jump onto the tab itself. The editor clears it once it
+     * has scrolled, so coming back to the tab later stays where the user
+     * left off rather than snapping to an old search hit.
+     */
+    function applyPendingLine(path) {
+        const line = pendingEditorLines.value.get(path);
+        if (!line) return;
+
+        const lines = new Map(pendingEditorLines.value);
+        lines.delete(path);
+        pendingEditorLines.value = lines;
+
+        const entry = openFiles.value.find((file) => file.path === path);
+        if (entry) entry.gotoLine = line;
+    }
+
+    function clearGotoLine(path) {
+        const entry = openFiles.value.find((file) => file.path === path);
+        if (entry) entry.gotoLine = 0;
+    }
+
+    function rememberRecentPath(path) {
+        if (!path) return;
+
+        recentPaths.value = [path, ...recentPaths.value.filter((entry) => entry !== path)].slice(0, 12);
+    }
+
     const filteredItems = computed(() => {
         let list = Array.isArray(localItems.value)
             ? localItems.value.filter((item) => item && typeof item === 'object' && Boolean(item.path))
             : [];
-
-        if (searchQuery.value.trim()) {
-            const q = searchQuery.value.toLowerCase();
-            list = list.filter((item) => String(item.name || '').toLowerCase().includes(q));
-        }
 
         list.sort((a, b) => {
             if (a.type === 'dir' && b.type !== 'dir') return -1;
@@ -1163,31 +1802,42 @@ export function useFileManager(props) {
 
     const treeRows = computed(() => {
         const rows = [];
-        const walk = (nodes, level = 0) => {
-            if (!Array.isArray(nodes)) return;
+        const walk = (nodes, level) => {
             for (const node of nodes) {
-                if (!node || typeof node !== 'object') continue;
-                if (!node.path) continue;
-                const open = treeOpenState.value[node.path] ?? (level < 1);
-                rows.push({ ...node, level, expanded: open });
-                if (open && node.children) {
+                const expanded = isTreeNodeOpen(node.path);
+                rows.push({
+                    name: node.name,
+                    path: node.path,
+                    hasChildren: node.hasChildren,
+                    level,
+                    expanded,
+                    loading: treeLoadingPaths.value.includes(node.path),
+                });
+                if (expanded && node.children.length) {
                     walk(node.children, level + 1);
                 }
             }
         };
-        walk(props.directoryTree);
+        walk(treeNodes.value, 0);
+
         return rows;
     });
 
-    const hasUnsavedChanges = computed(() => saveForm.content !== originalEditorContent.value);
-    const unsavedFilePath = computed(() => (hasUnsavedChanges.value ? saveForm.file_path : ''));
-    const editorFileName = computed(() => saveForm.file_path.split('/').pop() || 'untitled');
-    const editorFileFolder = computed(() => {
-        const parts = String(saveForm.file_path || '').split('/').filter(Boolean);
-        parts.pop();
-        return parts.join('/') || '.';
+    const activeFile = computed(() => openFiles.value.find((entry) => entry.path === activeFilePath.value) || null);
+    const editorContent = computed({
+        get: () => activeFile.value?.content ?? '',
+        set: (value) => {
+            if (activeFile.value) activeFile.value.content = value ?? '';
+        },
     });
-    const editorLineCount = computed(() => Math.max(1, String(saveForm.content || '').replace(/\n$/, '').split('\n').length));
+    const editorPath = computed(() => activeFile.value?.path || '');
+    const hasUnsavedChanges = computed(() => Boolean(activeFile.value) && activeFile.value.content !== activeFile.value.original);
+    const unsavedPaths = computed(() => openFiles.value
+        .filter((entry) => entry.content !== entry.original)
+        .map((entry) => entry.path));
+    const isTabDirty = (path) => unsavedPaths.value.includes(path);
+    const editorFileName = computed(() => activeFile.value?.name || editorPath.value.split('/').pop() || 'untitled');
+    const editorLineCount = computed(() => Math.max(1, String(editorContent.value || '').replace(/\n$/, '').split('\n').length));
     const permissionDigits = computed(() => {
         const digits = String(permissionForm.permissions || '').replace(/^0+/, '').slice(0, 3);
         return digits.length === 3 ? digits : '';
@@ -1215,7 +1865,7 @@ export function useFileManager(props) {
     );
 
     function handleEditorBeforeUnload(event) {
-        if (hasUnsavedChanges.value) {
+        if (unsavedPaths.value.length) {
             event.preventDefault();
             event.returnValue = '';
         }
@@ -1233,23 +1883,39 @@ export function useFileManager(props) {
     );
 
     watch(
+        () => props.directoryTree,
+        (value) => {
+            treeNodes.value = mergeTree(treeNodes.value, cloneTree(value));
+        },
+        { immediate: true },
+    );
+
+    // Another site, or another root inside it, is another tree entirely.
+    watch(
+        () => [props.basePath, props.rootFolder],
+        () => {
+            treeNodes.value = cloneTree(props.directoryTree);
+            treeOpenState.value = {};
+        },
+    );
+
+    watch(
         () => props.showHidden,
         (value) => {
             hiddenEnabled.value = Boolean(value);
         },
     );
 
+    // A file arriving from the server opens as a tab and takes focus. Its
+    // absence says nothing: browsing a folder from inside the editor leaves
+    // the open tabs exactly as they were.
     watch(
         () => props.selectedFile,
         (value) => {
-            saveForm.file_path = value?.path ?? '';
-            saveForm.content = value?.content ?? '';
-            originalEditorContent.value = value?.content ?? '';
-            if (value?.path) {
-                activeItemPath.value = value.path;
-            } else if (modalType.value === 'editor' && !props.openEditorModal) {
-                closeModal();
-            }
+            if (!value?.path) return;
+
+            upsertOpenFile(value);
+            activeItemPath.value = value.path;
         },
         { immediate: true },
     );
@@ -1274,7 +1940,7 @@ export function useFileManager(props) {
 
             const exists = list.some((item) => item.path === activeItemPath.value);
             if (!exists) {
-                activeItemPath.value = props.selectedFile?.path || list[0].path;
+                activeItemPath.value = activeFilePath.value || list[0].path;
             }
 
             if (contextMenu.value.visible) {
@@ -1282,17 +1948,6 @@ export function useFileManager(props) {
                 if (!contextExists) {
                     closeContextMenu();
                 }
-            }
-        },
-    );
-
-    watch(
-        () => props.selectedFile,
-        (value) => {
-            if (value?.path) {
-                modalType.value = 'editor';
-            } else if (modalType.value === 'editor' && !props.openEditorModal) {
-                closeModal();
             }
         },
     );
@@ -1305,11 +1960,8 @@ export function useFileManager(props) {
         if (props.openUploadTab) {
             openModal('upload');
         }
-        if (props.openEditorModal || props.selectedFile?.path) {
-            modalType.value = 'editor';
-        }
-        if (props.selectedFile?.path) {
-            activeItemPath.value = props.selectedFile.path;
+        if (activeFilePath.value) {
+            activeItemPath.value = activeFilePath.value;
         }
         window.addEventListener('beforeunload', handleEditorBeforeUnload);
     });
@@ -1336,7 +1988,6 @@ export function useFileManager(props) {
         sidebarOpen,
         sortBy,
         sortDir,
-        searchQuery,
         isMobile,
         pathInput,
         activeItemPath,
@@ -1355,8 +2006,11 @@ export function useFileManager(props) {
         droppedUploadHint,
         moveDragTargetPath,
         draggingItemPaths,
-        originalEditorContent,
+        openFiles,
+        activeFilePath,
         treeOpenState,
+        treeLoadingPaths,
+        sidebarWidth,
         saveInProgress,
         contextMenu,
         toasts,
@@ -1369,7 +2023,6 @@ export function useFileManager(props) {
         // forms
         createFolderForm,
         createFileForm,
-        saveForm,
         deleteForm,
         uploadForm,
         permissionForm,
@@ -1388,16 +2041,34 @@ export function useFileManager(props) {
         isSupportedArchiveSelected,
         quickActionsGroups,
         filteredItems,
+        paletteOpen,
+        paletteQuery,
+        paletteCursor,
+        paletteMode,
+        paletteScope,
+        paletteOptions,
+        paletteLoading,
+        paletteError,
+        paletteTruncated,
+        paletteResults,
+        openPalette,
+        closePalette,
+        setPaletteMode,
+        movePaletteCursor,
+        runPaletteEntry,
+        clearGotoLine,
         treeRows,
         items: computed(() => localItems.value),
         directoryTree: computed(() => props.directoryTree || []),
-        selectedFile: computed(() => props.selectedFile || null),
+        activeFile,
+        editorContent,
+        editorPath,
         contextItem,
         contextArchive,
         hasUnsavedChanges,
-        unsavedFilePath,
+        unsavedPaths,
+        isTabDirty,
         editorFileName,
-        editorFileFolder,
         editorLineCount,
         permissionDigits,
         permissionPreview,
@@ -1446,7 +2117,18 @@ export function useFileManager(props) {
         handleUploadDragLeave,
         handleUploadDrop,
         handleUploadChange,
+        setSidebarWidth,
+        persistSidebarWidth,
+        openTreeContextMenu,
+        openBackgroundContextMenu,
+        triggerBackgroundAction,
+        refreshListing,
+        copyToClipboard,
         openFileInEditor,
+        activateTab,
+        showFilesTab,
+        closeTab,
+        isFileOpen,
         isSqliteFile,
         sqliteItem,
         openSqlite,

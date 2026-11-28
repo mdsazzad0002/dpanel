@@ -114,4 +114,90 @@ class WebsiteFileManagerController extends WebsiteController
 
         return response()->json(['success' => true]);
     }
+
+    /**
+     * The folder tree, expanded down to one branch.
+     *
+     * The page's own tree only carries children along the folder being
+     * viewed, so the sidebar asks for a branch the moment it is unfolded.
+     * drust always answers from the root, with children filled in along the
+     * requested path; the client merges that into the branches it already
+     * holds.
+     */
+    public function folderTree(Request $request, string $token, string $id): JsonResponse
+    {
+        $website = $this->findAuthorizedWebsiteOrFail($id);
+
+        $validated = $request->validate([
+            'path' => ['nullable', 'string', 'max:1500'],
+        ]);
+
+        $scopeRoot = $this->sanitizeRelativePath((string) $request->query('root', ''));
+        $basePath = $this->resolveFileManagerBasePath($website, $scopeRoot);
+        $relative = $this->sanitizeRelativePath((string) ($validated['path'] ?? ''));
+        $siteOwner = (string) ($website['site_owner'] ?? $this->extractSiteOwnerFromRootPath($basePath));
+        $showHidden = $request->has('show_hidden')
+            ? $request->boolean('show_hidden')
+            : (bool) ($website['filemanager_show_hidden'] ?? false);
+
+        try {
+            $listing = $this->filemanagerService->browseDirectory($siteOwner, $basePath, $relative, $showHidden);
+        } catch (\Throwable $e) {
+            return response()->json(['message' => 'Failed to read the folder tree. '.$e->getMessage()], 422);
+        }
+
+        return response()->json(['tree' => $listing['directory_tree']]);
+    }
+
+    /**
+     * Search the account's files: names by default, or the text inside them.
+     *
+     * The walk happens in drust, which is the only part of the stack that
+     * can read a site owner's files, and which bounds the work itself. The
+     * route is throttled because one request can touch a whole tree.
+     */
+    public function search(Request $request, string $token, string $id): JsonResponse
+    {
+        $website = $this->findAuthorizedWebsiteOrFail($id);
+
+        $validated = $request->validate([
+            'query' => ['required', 'string', 'min:1', 'max:200'],
+            'path' => ['nullable', 'string', 'max:1500'],
+            'mode' => ['nullable', 'in:names,content'],
+            'include' => ['nullable', 'string', 'max:100'],
+            'case_sensitive' => ['nullable', 'boolean'],
+            'whole_word' => ['nullable', 'boolean'],
+            'include_ignored' => ['nullable', 'boolean'],
+            'max_results' => ['nullable', 'integer', 'min:1', 'max:500'],
+        ]);
+
+        $scopeRoot = $this->sanitizeRelativePath((string) $request->query('root', ''));
+        $basePath = $this->resolveFileManagerBasePath($website, $scopeRoot);
+        $siteOwner = (string) ($website['site_owner'] ?? $this->extractSiteOwnerFromRootPath($basePath));
+        $showHidden = $request->has('show_hidden')
+            ? $request->boolean('show_hidden')
+            : (bool) ($website['filemanager_show_hidden'] ?? false);
+
+        try {
+            $found = $this->filemanagerService->search(
+                $siteOwner,
+                $basePath,
+                $this->sanitizeRelativePath((string) ($validated['path'] ?? '')),
+                (string) $validated['query'],
+                [
+                    'mode' => $validated['mode'] ?? 'names',
+                    'case_sensitive' => $request->boolean('case_sensitive'),
+                    'whole_word' => $request->boolean('whole_word'),
+                    'include' => (string) ($validated['include'] ?? ''),
+                    'show_hidden' => $showHidden,
+                    'include_ignored' => $request->boolean('include_ignored'),
+                    'max_results' => (int) ($validated['max_results'] ?? 200),
+                ],
+            );
+        } catch (\Throwable $e) {
+            return response()->json(['message' => 'Search failed. '.$e->getMessage()], 422);
+        }
+
+        return response()->json($found);
+    }
 }

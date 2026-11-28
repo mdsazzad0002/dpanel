@@ -11,6 +11,7 @@ pub(crate) mod fix_permissions;
 pub(crate) mod inspect;
 pub(crate) mod read;
 pub(crate) mod remove;
+pub(crate) mod search;
 pub(crate) mod size;
 pub(crate) mod sqlite;
 pub(crate) mod unzip;

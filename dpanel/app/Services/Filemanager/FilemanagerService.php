@@ -186,6 +186,41 @@ class FilemanagerService
         ];
     }
 
+    /**
+     * Recursive search under the file manager root: file names, or the text
+     * inside files. drust bounds the walk itself (entries, results, bytes
+     * per file and wall clock) and says so through `truncated`.
+     *
+     * @param  array<string, mixed>  $options  mode, case_sensitive, whole_word, include, show_hidden, include_ignored, max_results
+     * @return array{results:array<int,array<string,mixed>>,truncated:bool,scanned:int,mode:string}
+     */
+    public function search(string $username, string $basePath, string $path, string $query, array $options = []): array
+    {
+        $result = $this->filemanagerApiRequest('search', [
+            'username' => $this->normalizeUsername($username),
+            'base_path' => $this->normalizeAbsolutePath($basePath),
+            'path' => trim(str_replace('\\', '/', $path), '/'),
+            'query' => $query,
+            'mode' => ($options['mode'] ?? 'names') === 'content' ? 'content' : 'names',
+            'case_sensitive' => (bool) ($options['case_sensitive'] ?? false),
+            'whole_word' => (bool) ($options['whole_word'] ?? false),
+            'include' => (string) ($options['include'] ?? ''),
+            'show_hidden' => (bool) ($options['show_hidden'] ?? false),
+            'include_ignored' => (bool) ($options['include_ignored'] ?? false),
+            'max_results' => (int) ($options['max_results'] ?? 200),
+        ]);
+        if (! $result['success']) {
+            throw new \RuntimeException($result['output'] !== '' ? $result['output'] : 'Rust filemanager could not run the search.');
+        }
+
+        return [
+            'results' => array_values((array) ($result['data']['results'] ?? [])),
+            'truncated' => (bool) ($result['data']['truncated'] ?? false),
+            'scanned' => (int) ($result['data']['scanned'] ?? 0),
+            'mode' => (string) ($result['data']['mode'] ?? 'names'),
+        ];
+    }
+
     /** @return array<string, mixed> */
     public function inspectWebsiteApplication(string $username, string $rootPath): array
     {
